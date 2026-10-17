@@ -8,6 +8,8 @@ mod face_pick;
 mod features;
 #[path = "serve_history.rs"]
 mod history;
+#[path = "serve_loft_pick.rs"]
+mod loft_pick;
 #[path = "serve_sketch.rs"]
 mod sketch;
 #[path = "serve_sketch_create.rs"]
@@ -637,6 +639,16 @@ impl Studio {
                     None => Response::error(400, "annotations need ?id="),
                 }
             }
+            ("GET", "/sketch-studio-loft-seams.mjs") => Response::text(
+                200,
+                "text/javascript",
+                include_str!("web/sketch-studio-loft-seams.mjs"),
+            ),
+            ("GET", "/sketch-studio-loft-pick.mjs") => Response::text(
+                200,
+                "text/javascript",
+                include_str!("web/sketch-studio-loft-pick.mjs"),
+            ),
             ("GET", "/sketch-studio-loft-guides.mjs") => Response::text(
                 200,
                 "text/javascript",
@@ -769,6 +781,10 @@ impl Studio {
                 "text/javascript",
                 include_str!("web/profile-controls.mjs"),
             ),
+            ("POST", "/api/loft-profile-pick") => match self.loft_profile_pick(body) {
+                Ok(data) => Response::json(200, &data),
+                Err(error) => Response::error(422, &error),
+            },
             ("POST", "/api/sketch-source-view") => match self.sketch_source_view(body) {
                 Ok(data) => Response::json(200, &data),
                 Err(error) => Response::error(422, &error),

@@ -678,6 +678,15 @@ fn profile_correspondence_tracks_parameters_keeps_history_and_rejects_stale_anch
         let result = changed.regenerate_incremental(&s, &original).unwrap();
         assert!(result.regeneration.rebuilt.contains(&"body".into()));
         assert!(s.is_valid(result.shape("body").unwrap()).unwrap());
+        let seams = result
+            .loft_profile_seams(
+                &s,
+                &family.features[0].operation,
+                &changed.resolved_parameters().unwrap(),
+            )
+            .unwrap();
+        assert!((seams[0].points[0].y - 10.).abs() < 1e-7);
+        assert!((seams[1].points[0].z - 30.).abs() < 1e-7);
         let tangents = result
             .loft_end_tangents(
                 &s,
@@ -789,4 +798,77 @@ fn independent_correspondence_parameter_invalidates_loft_without_rebuilding_prof
         .abs()
             < 1e-5
     );
+}
+
+#[test]
+fn loft_seam_inspection_matches_exact_anchors_traversal_and_parameters_without_retained_handles() {
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/model/aligned-profile-loft.request.json"
+    ))
+    .unwrap();
+    let mut family = ModelDocument::from_json(&request["model"].to_string())
+        .unwrap()
+        .family;
+    let session = Session::new().unwrap();
+    for reverse in [false, true] {
+        let FeatureOperation::ProfileLoft { correspondence, .. } =
+            &mut family.features[0].operation
+        else {
+            panic!()
+        };
+        for alignment in correspondence.values_mut() {
+            alignment.reverse = reverse;
+        }
+        let generated = part(&family).regenerate(&session).unwrap();
+        let handles = session.shape_count().unwrap();
+        let seams = generated
+            .loft_profile_seams(
+                &session,
+                &family.features[0].operation,
+                &part(&family).resolved_parameters().unwrap(),
+            )
+            .unwrap();
+        assert_eq!(session.shape_count().unwrap(), handles);
+        assert_eq!(seams.len(), 2);
+        for (i, seam) in seams.iter().enumerate() {
+            assert_eq!(seam.station, i);
+            assert_eq!(seam.hole, None);
+            assert_eq!(seam.reverse, reverse);
+            let start = seam.points[0];
+            let radius = if i == 0 { 8. } else { 4. };
+            assert!(start.x.abs() < 1e-7);
+            assert!((start.y - radius).abs() < 1e-7);
+            assert!((start.z - if i == 0 { 0. } else { 20. }).abs() < 1e-7);
+            assert_eq!(seam.points.len(), 5);
+            for p in &seam.points {
+                assert!((p.x.hypot(p.y) - radius).abs() < 1e-7);
+            }
+            assert_eq!(seam.points[1].x > 0., reverse);
+        }
+    }
+    let FeatureOperation::ProfileLoft {
+        start_constraint,
+        end_constraint,
+        correspondence,
+        ..
+    } = &mut family.features[0].operation
+    else {
+        panic!()
+    };
+    *start_constraint = None;
+    *end_constraint = None;
+    correspondence.clear();
+    let generated = part(&family).regenerate(&session).unwrap();
+    assert!(
+        generated
+            .loft_profile_seams(
+                &session,
+                &family.features[0].operation,
+                &part(&family).resolved_parameters().unwrap()
+            )
+            .unwrap()
+            .is_empty()
+    );
+    drop(generated);
+    assert_eq!(session.shape_count().unwrap(), 0);
 }

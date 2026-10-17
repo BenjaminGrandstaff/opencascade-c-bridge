@@ -631,3 +631,10 @@ family-space millimetres or retained formulas. Multi-edge profiles require an
 existing vertex; full periodic single-edge profiles support exact continuous
 seam placement. Preview, Apply, history and Save preserve profile-ID alignment.
 See [loft correspondence](../../docs/LOFTS.md#profile-correspondence-schema-171-abi-78).
+
+**Edit loft** now shows native seam starts and traversal arrows for constrained
+smooth lofts. Each outer/hole station has **Pick … start in canvas**. Corner picks
+snap to existing native vertices; supported periodic boundaries snap exactly to
+the curve. Confirmed picks use fixed family coordinates, and Preview validates
+all variants. Escape cancels the pick and keeps the draft. Schema 171 / ABI 78
+are unchanged. See [canvas starts](../../docs/LOFTS.md#canvas-starts-and-traversal-markers).

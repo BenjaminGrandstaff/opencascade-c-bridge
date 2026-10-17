@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {fixture} from './sketch-studio-test-fixture.mjs';
 import {installStudioSolids} from './sketch-studio-solids.mjs';
 import {basePlane} from './sketch-studio-plane.mjs';
+const seam=()=>({anchors:[[0,0,0],[1,0,0],[2,0,0],[3,0,0],[4,0,0]],detail:{measurement:'loft_profile_seam',profile:'profile',station:0,hole:null,reverse:false,coordinate_system:'family-local mm'}});
 const mm=value=>({literal:{value,dimension:'length',unit:'millimeter'}});
 const features=()=>[{id:'profile',operation:{sketch_face:{sketch:{}}}},{id:'body',operation:{extrude:{input:'profile',direction:{components:{x:mm(0),y:mm(0),z:{parameter:'depth'}}}}}}];
 const graph=()=>({version:1,features:features(),parameters:[{id:'depth',parameter_type:{scalar:'length'}}],output:'body'});
@@ -88,17 +89,26 @@ test('solid face picking Escape retains the form; field edits and close clear ta
 });
 
 test('verified loft guides appear with the preview and clear on field edits, rejection and close',async t=>{
- const response={...preview(),annotations:{scenes:[{kind:'solid',instance:'part',feature:'made-part',annotations:[{anchors:[[0,0,0],[0,0,2]],detail:{measurement:'loft_end_tangent',end:'start',origin_mm:[0,0,0],derivative_mm:[0,0,6],strength_mm:6,handle_scale:1/3}}]}]}};let reject=false;
+ const response={...preview(),annotations:{scenes:[{kind:'solid',instance:'part',feature:'made-part',annotations:[{anchors:[[0,0,0],[0,0,2]],detail:{measurement:'loft_end_tangent',end:'start',origin_mm:[0,0,0],derivative_mm:[0,0,6],strength_mm:6,handle_scale:1/3}},seam()]}]}};let reject=false;
  const f=setup(t,{api:(path,options)=>!options?graph():reject?{...response,can_apply:false,gltf:undefined,error:'bad tangent'}:response});await f.open();f.enter('Result feature name','made-part');
- const context={matrix:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],width:100,height:100,element:(tag,attrs)=>({tag,attrs})},shown=()=>f.studio.decorate(context).filter(n=>n.attrs?.['data-loft-tangent']);
- await f.button('Preview solid').onclick();assert(shown().length>0);f.enter('Extrusion depth (mm)','20');assert.equal(shown().length,0);
+ const context={matrix:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],width:100,height:100,element:(tag,attrs)=>({tag,attrs})},shown=()=>f.studio.decorate(context).filter(n=>n.attrs?.['data-loft-tangent']||n.attrs?.['data-loft-seam']);
+ await f.button('Preview solid').onclick();assert(shown().some(n=>n.attrs?.['data-loft-seam']));f.enter('Extrusion depth (mm)','20');assert.equal(shown().length,0);
  await f.button('Preview solid').onclick();assert(shown().length>0);reject=true;await f.button('Preview solid').onclick();assert.equal(shown().length,0);reject=false;await f.button('Preview solid').onclick();f.solids.close();assert.equal(shown().length,0);
 });
 
 test('opening an accepted loft shows native guides without requiring a no-change preview',async t=>{
  const loft={id:'body',operation:{profile_loft:{profiles:['profile','upper'],holes:[],ruled:false,start_constraint:{normal_to_profile:true,magnitude:mm(6)}}}};
  const f=setup(t,{api:()=>({...graph(),features:[features()[0],{id:'upper',operation:{sketch_wire:{sketch:{}}}},loft]})});
- f.studio.scenes=[{kind:'solid',instance:'part',feature:'body',annotations:[{anchors:[[0,0,0],[0,0,2]],detail:{measurement:'loft_end_tangent',end:'start',origin_mm:[0,0,0],derivative_mm:[0,0,6],strength_mm:6,handle_scale:1/3}}]}];await f.open();await f.button('Edit loft body').onclick();
+ f.studio.scenes=[{kind:'solid',instance:'part',feature:'body',annotations:[{anchors:[[0,0,0],[0,0,2]],detail:{measurement:'loft_end_tangent',end:'start',origin_mm:[0,0,0],derivative_mm:[0,0,6],strength_mm:6,handle_scale:1/3}},seam()]}];await f.open();await f.button('Edit loft body').onclick();
  const context={matrix:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],width:100,height:100,element:(tag,attrs)=>({tag,attrs})};assert(f.studio.decorate(context).some(n=>n.attrs?.['data-loft-tangent']));assert.equal(f.studio.solidPreview,null);
  f.input('Start loft strength source').value='literal';f.input('Start loft strength source').onchange();assert(!f.studio.decorate(context).some(n=>n.attrs?.['data-loft-tangent']));
+});
+
+test('loft canvas Escape and preview cancel pending anchor picks while keeping the solid form',async t=>{
+ const loft={id:'body',operation:{profile_loft:{profiles:['profile','upper'],holes:[],ruled:false,start_constraint:{normal_to_profile:true,magnitude:mm(6)}}}};
+ const source={version:1,instance:'part',profile:'profile',accepted:true,coordinate_system:'family-local mm',continuous:false,origin_mm:[0,0,0],normal:[0,0,1],vertices:[[0,0,0]],lines:[[[0,0,0],[1,0,0]]]};
+ const f=setup(t,{api:(path,options)=>!options?{...graph(),features:[features()[0],{id:'upper',operation:{sketch_wire:{sketch:{}}}},loft]}:path==='/api/loft-profile-pick'?source:{...preview(),output:'body'}});await f.open();await f.button('Edit loft body').onclick();
+ let pending=f.button('Pick outer station 1 start in canvas').onclick();await f.flush();assert(f.solids.anchorPicker.active);assert.equal(f.studio.tool,'solid-loft-anchor');f.studio.onKey({key:'Escape'});await pending;assert.equal(f.panel.hidden,false);assert.equal(f.solids.anchorPicker.source,null);
+ pending=f.button('Pick outer station 1 start in canvas').onclick();await f.flush();assert(f.solids.anchorPicker.active);await f.button('Preview solid').onclick();await pending;assert.equal(f.solids.anchorPicker.source,null);assert.equal(f.panel.hidden,false);
+ pending=f.button('Pick outer station 1 start in canvas').onclick();await f.flush();f.solids.close();await pending;assert.equal(f.panel.hidden,true);assert.equal(f.solids.anchorPicker.source,null);
 });

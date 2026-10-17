@@ -2136,3 +2136,15 @@ invalidation. Unknown profile IDs, nonmatching anchors, and free/ruled usage fai
 rather than silently falling back. The station editor keeps settings by profile
 ID, preserves formulas, prunes removed sources, and uses the existing all-variant
 preview/apply/history/save transaction.
+
+Constrained loft seam inspection now shares the construction aligner, publishing
+native start points and short traversal samples for each outer/hole station.
+These annotations use family coordinates and count toward view vertex budgets.
+The studio draws them only for the exact accepted or verified direct loft output;
+field changes and lifecycle invalidation clear them alongside end handles.
+A bounded, read-only native profile snapshot supports canvas corner/periodic seam
+picking. Only clicks request native snapping; hover uses the snapshot. Confirmed
+picks author fixed length coordinates, with no retained topology indices. Version,
+instance, draft and form guards reject late results. Preview cancels pending picks
+and validates the authored anchor across every instance. No model schema or ABI
+change is needed (171 / 78).

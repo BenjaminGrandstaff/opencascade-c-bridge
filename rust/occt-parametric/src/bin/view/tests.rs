@@ -6808,3 +6808,126 @@ fn loft_correspondence_checks_every_variant_and_survives_history_and_save() {
         Some(&expected)
     );
 }
+
+#[test]
+fn loft_canvas_picks_snap_exact_corners_and_periodic_boundaries_without_editing_the_model() {
+    let circle: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/aligned-profile-loft.request.json"
+    ))
+    .unwrap();
+    for (doc, profile, continuous) in [
+        (sketch_block_document(), "profile", false),
+        (
+            ModelDocument::from_json(&circle["model"].to_string()).unwrap(),
+            "lower",
+            true,
+        ),
+    ] {
+        let directory = Directory::new();
+        let model = PathBuf::from(directory.model(&doc));
+        let file = fs::read_to_string(&model).unwrap();
+        let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+        let state = get(&mut studio, "/api/state").1;
+        let gltf = studio.handle("GET", "/api/model.gltf", b"").body;
+        for path in [
+            "/sketch-studio-loft-seams.mjs",
+            "/sketch-studio-loft-pick.mjs",
+        ] {
+            assert_eq!(studio.handle("GET", path, b"").status, 200);
+        }
+        let query = json!({"version":state["version"],"instance":"block","profile":profile});
+        let response = studio.handle(
+            "POST",
+            "/api/loft-profile-pick",
+            query.to_string().as_bytes(),
+        );
+        assert_eq!(
+            response.status,
+            200,
+            "{}",
+            String::from_utf8_lossy(&response.body)
+        );
+        let source: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(source["continuous"], continuous);
+        assert_eq!(
+            source["vertices"].as_array().unwrap().len(),
+            if continuous { 1 } else { 4 }
+        );
+        assert!(
+            source["lines"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|line| line.as_array().unwrap().len() <= 257)
+        );
+        let anchor = if continuous {
+            json!([0., 8., 0.])
+        } else {
+            source["vertices"][0].clone()
+        };
+        let mut position = anchor.clone();
+        position[1] = json!(position[1].as_f64().unwrap() + 0.01);
+        let mut pick = query.clone();
+        pick["position_mm"] = position;
+        pick["maximum_distance_mm"] = json!(0.02);
+        let response = studio.handle(
+            "POST",
+            "/api/loft-profile-pick",
+            pick.to_string().as_bytes(),
+        );
+        assert_eq!(
+            response.status,
+            200,
+            "{}",
+            String::from_utf8_lossy(&response.body)
+        );
+        let chosen: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        for i in 0..3 {
+            assert!(
+                (chosen["position_mm"][i].as_f64().unwrap() - anchor[i].as_f64().unwrap()).abs()
+                    < 1e-7
+            );
+        }
+        assert!(chosen.get("vertex").is_none());
+        assert!(chosen.get("edge").is_none());
+        for bad in [
+            "stale",
+            "instance",
+            "solid",
+            "missing",
+            "distance",
+            "partial",
+            "off-boundary",
+        ] {
+            let mut rejected = pick.clone();
+            match bad {
+                "stale" => rejected["version"] = json!(99999),
+                "instance" => rejected["instance"] = json!("absent"),
+                "solid" => rejected["profile"] = json!("body"),
+                "missing" => rejected["profile"] = json!("absent"),
+                "distance" => rejected["maximum_distance_mm"] = json!(-1.),
+                "partial" => {
+                    rejected
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("maximum_distance_mm");
+                }
+                _ => rejected["position_mm"] = json!([10000., 10000., 10000.]),
+            }
+            assert_ne!(
+                studio
+                    .handle(
+                        "POST",
+                        "/api/loft-profile-pick",
+                        rejected.to_string().as_bytes()
+                    )
+                    .status,
+                200,
+                "{bad}"
+            );
+        }
+        assert_eq!(get(&mut studio, "/api/state").1, state);
+        assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, gltf);
+        assert_eq!(fs::read_to_string(&model).unwrap(), file);
+    }
+}

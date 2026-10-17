@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 165 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 765 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 89 + viewer Node 437 + branch command 2 + model command 93, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 165 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 766 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 90 + viewer Node 446 + branch command 2 + model command 93, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,18 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases (195 with the parallel glTF case) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Loft canvas starts and traversal markers (schema 171, ABI 78 unchanged):
+  native read-only seam inspection exposes exact aligned starts and short
+  boundary traversal samples for every outer/hole station. The studio shows
+  labelled rings/arrows for accepted or verified direct constrained lofts and
+  clears them with stale previews. Canvas picks snap existing corners or
+  supported full periodic boundaries through a bounded native snapshot/query.
+  Confirmed picks author fixed family coordinates; cancellation preserves
+  formulas. Preview, Escape, fields, model/instance changes and Close cancel
+  pending picks, with late-response guards and all-variant Apply validation.
+  Native inspection is included in the 1,000-regeneration performance checks
+  (aligned lofts: 3.93 seconds against the existing 10-second budget).
 
 - Loft profile correspondence (schema 171, ABI 78): exact start anchors and
   traversal reversal for outer and hole station profiles. Saved settings use
@@ -36,7 +48,7 @@ tracks status and order.
   aligned-profile example and 1,000-regeneration benchmark cover this path
   (3.11 seconds against the existing 10-second budget).
   Existing vertex starts and full single-edge periodic seams are supported;
-  canvas anchor picking, seam markers and edge splitting remain future work.
+  edge splitting remains future work.
 
 - Loft end visualization (schema 170, ABI 77 unchanged): native annotations
   expose resolved end directions, full strengths and true one-third-strength

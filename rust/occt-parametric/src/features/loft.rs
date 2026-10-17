@@ -50,7 +50,78 @@ pub struct ResolvedLoftEndTangent {
     pub normal_to_profile: bool,
 }
 
+/// Exact start and a short native curve segment in boundary traversal order.
+#[derive(Clone, Debug)]
+pub struct ResolvedLoftProfileSeam {
+    pub profile: String,
+    pub station: usize,
+    /// Zero-based hole track, or None for the outer track.
+    pub hole: Option<usize>,
+    pub reverse: bool,
+    pub points: Vec<Vec3>,
+}
+
 impl GeneratedResult<'_> {
+    /// Inspect the correspondence actually used by a constrained smooth loft.
+    /// Supply the operation and resolved parameters used for this generation.
+    /// Free/ruled lofts have automatic compatibility and publish no manual seams.
+    pub fn loft_profile_seams(
+        &self,
+        session: &Session,
+        operation: &FeatureOperation,
+        parameters: &HashMap<String, ParameterValue>,
+    ) -> Result<Vec<ResolvedLoftProfileSeam>, ModelError> {
+        let FeatureOperation::ProfileLoft {
+            profiles,
+            holes,
+            ruled,
+            start_constraint,
+            end_constraint,
+            correspondence,
+        } = operation
+        else {
+            return Ok(Vec::new());
+        };
+        if *ruled || start_constraint.is_none() && end_constraint.is_none() {
+            return Ok(Vec::new());
+        }
+        let resolved = resolve_correspondence(correspondence, parameters)?;
+        let mut seams = Vec::new();
+        for (track, ids) in std::iter::once(profiles).chain(holes.iter()).enumerate() {
+            for (station, id) in ids.iter().enumerate() {
+                let source = shape(&self.shapes, id)?;
+                let extracted;
+                let wire = match session.shape_type(source)? {
+                    ShapeType::Wire => source,
+                    ShapeType::Face if session.subshape_count(source, ShapeType::Wire)? == 1 => {
+                        extracted = session.subshape(source, ShapeType::Wire, 0)?;
+                        &extracted
+                    }
+                    _ => {
+                        return Err(ModelError::new(
+                            "loft seam inspection requires single-boundary profiles",
+                        ));
+                    }
+                };
+                let (anchor, reverse) = resolved.get(id).copied().unwrap_or((None, false));
+                // This shares the construction operation, including traversal and exact periodic seams.
+                let aligned = session.align_profile_wire(wire, anchor, reverse)?;
+                let edge = session.subshape(&aligned, ShapeType::Edge, 0)?;
+                let points = (0..=4)
+                    .map(|i| session.curve_point_at_fraction(&edge, f64::from(i) * 0.02))
+                    .collect::<Result<Vec<_>, _>>()?;
+                seams.push(ResolvedLoftProfileSeam {
+                    profile: id.clone(),
+                    station,
+                    hole: track.checked_sub(1),
+                    reverse,
+                    points,
+                });
+            }
+        }
+        Ok(seams)
+    }
+
     /// Inspect terminal conditions with the same resolver used to construct them.
     /// `operation` and `parameters` must be those used for this generation.
     pub fn loft_end_tangents(

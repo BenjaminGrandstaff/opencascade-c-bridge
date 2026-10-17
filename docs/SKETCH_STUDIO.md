@@ -1034,3 +1034,11 @@ use any exact boundary point. Existing anchor formulas remain preserved until
 explicitly replaced. Manual correspondence requires a smooth loft with at least
 one end constraint. Preview rejects stale anchors in any instance. See
 [profile correspondence](LOFTS.md#profile-correspondence-schema-171-abi-78).
+
+For constrained smooth lofts, **Edit loft** displays native start rings and
+traversal arrows for each outer/hole station. **Pick … start in canvas** selects
+an existing corner or a point on a supported full periodic boundary. Fit frames
+the amber source; drag orbits; Escape cancels without losing the loft draft.
+A confirmed pick uses fixed family coordinates and replaces the existing anchor
+formula; cancellation preserves it. Preview verifies every instance before
+Apply. See [canvas starts and traversal markers](LOFTS.md#canvas-starts-and-traversal-markers).

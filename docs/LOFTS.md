@@ -295,10 +295,43 @@ controls. Choose an entered point or retain the existing formula. Entered XYZ
 coordinates use family millimetres; use **Show loft station** to inspect a source.
 Removing a station or hole track removes its alignment entries; moving stations
 retains their profile IDs. Preview checks every family variant before Apply, and
-saved correspondence participates in undo, redo and Save. Anchor picking and
-seam markers on the canvas are not yet implemented.
+saved correspondence participates in undo, redo and Save. Use **Pick … start in canvas** to select an exact corner or supported periodic
+boundary point.
 
 [The aligned-profile example](../tools/model/aligned-profile-loft.request.json)
 uses radius/height parameters for both circular seams. The scale benchmark checks
 1,000 regenerations, exact volume, original source edge counts, tangent queries
 and released handles against the existing 10-second budget.
+
+## Canvas starts and traversal markers
+
+For a direct constrained smooth loft, **Edit loft** shows the native start of
+every outer and hole profile. Teal outer markers and amber hole markers label
+the station; short arrows follow the actual boundary traversal. These sample the
+first eight percent of the first edge's parameter range, rather than displaying
+an estimated analytic tangent. Blue/purple end-condition handles remain separate.
+Verified previews replace the accepted markers. Fields, rejection, Close and
+model/instance changes clear them; free/ruled lofts have no manual seam markers.
+
+Choose **Pick outer station … start in canvas** or the corresponding hole button.
+The accepted source boundary appears in amber. Multi-edge profiles expose only
+existing corners; a supported full periodic single-edge curve allows a continuous
+boundary pick. Native snapping verifies the chosen point. Fit frames the source,
+dragging orbits, and Escape cancels while retaining the loft draft. Old requests
+cannot restore overlays after cancellation, field edits or model changes.
+
+A confirmed pick replaces that profile's start formula with fixed family-space
+XYZ coordinates. Cancellation preserves the formula. Preview still checks all
+variants and rejects an anchor that does not match another variant or a later
+profile edit; retain a parameter formula when the anchor must follow edits.
+No topology index is stored. Native queries and picking are read-only until the
+usual Preview/Apply/Save transaction.
+
+`GeneratedResult::loft_profile_seams` exposes `ResolvedLoftProfileSeam` records to
+Rust callers, using the same alignment operation as construction and retaining
+no native handles. Native annotations use `detail.measurement: loft_profile_seam`
+with profile ID, zero-based station/hole indices, reversal and five family-space
+samples in `anchors`. The read-only `/api/loft-profile-pick` endpoint returns a
+bounded accepted boundary snapshot, or an exact snapped point for a finite hint
+and positive distance tolerance. Both require the current version and instance.
+These additions keep model schema 171 and ABI 78 unchanged.

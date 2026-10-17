@@ -355,3 +355,17 @@ test('loft correspondence editor preserves formulas, edits anchors and keeps hol
  await button(host,'Remove loft station 3').onclick();await button(host,'Preview solid').onclick();op=calls.at(-1).features[0].operation.profile_loft;assert.equal(op.correspondence,undefined);
  }finally{delete globalThis.document;delete globalThis.Option;}
 });
+
+test('canvas loft starts preserve formulas on cancel and reject stale replies before replacing an anchor',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const saved={id:'transition',operation:{profile_loft:{profiles:['profile','upper'],holes:[],ruled:false,start_constraint:{normal_to_profile:true,magnitude:depth(20)},correspondence:{upper:{start_point:{parameter:'anchor'}}}}}};
+ const host=new Element('div'),calls=[];let resolve,invalidations=0;
+ createSolidEditor({host,instance:()=> 'part',pickLoftAnchor:()=>new Promise(r=>resolve=r),invalidatePreview:()=>invalidations++,preview:async()=>{},applied:async()=>{},restore:async()=>{},request:async(path,options)=>{if(!options)return {version:1,features:[...base,{id:'upper',operation:{sketch_wire:{sketch:{}}}},saved],output:'transition',parameters:[]};calls.push(JSON.parse(options.body));return {can_apply:true};}});
+ await button(host,'Sketch to solid').onclick();await button(host,'Edit loft transition').onclick();
+ let pending=button(host,'Pick outer station 2 start in canvas').onclick();resolve(null);await pending;await button(host,'Preview solid').onclick();assert.deepEqual(calls.at(-1).features,[saved]);
+ pending=button(host,'Pick outer station 2 start in canvas').onclick();control(host,'Outer station 2 traversal').value='reverse';control(host,'Outer station 2 traversal').onchange();resolve({profile:'upper',position_mm:[9,9,9]});await pending;assert.equal(control(host,'Outer station 2 start anchor').value,'preserve');
+ pending=button(host,'Pick outer station 2 start in canvas').onclick();const before=invalidations;resolve({profile:'upper',position_mm:[0,4,20]});await pending;assert(invalidations>before);assert.equal(control(host,'Outer station 2 start anchor').value,'literal');
+ await button(host,'Preview solid').onclick();const alignment=calls.at(-1).features[0].operation.profile_loft.correspondence.upper;assert.equal(alignment.reverse,true);assert.deepEqual(alignment.start_point.components,{x:depth(0),y:depth(4),z:depth(20)});
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});

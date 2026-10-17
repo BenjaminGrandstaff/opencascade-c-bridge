@@ -751,7 +751,8 @@ tangent directions and parameter-linked strengths (schema 169, ABI 77), with
 native derivative checks, exact section curves, and studio controls.
 [Profile correspondence](docs/LOFTS.md#profile-correspondence-schema-171-abi-78)
 adds exact per-profile start anchors and traversal reversal for constrained smooth
-lofts, including hole tracks (schema 171, ABI 78).
+lofts, including hole tracks (schema 171, ABI 78). The studio also displays
+resolved seam starts/traversal arrows and supports exact canvas anchor picks.
 
 [Saved-profile lofts](docs/LOFTS.md) build solid transitions directly from sketch
 faces and closed wires, including native circles, ellipses, arcs and splines.

@@ -47,6 +47,7 @@ pub(super) fn feature_dimensions(
     sweep_route_length(scene, feature, budget, annotations)?;
     loft_section_spacing(scene, feature, annotations)?;
     loft_end_tangents(scene, feature, annotations)?;
+    loft_profile_seams(scene, feature, budget, annotations)?;
     hole_limit(scene, feature, annotations)?;
     extrusion_dimension(scene, feature, annotations)
 }
@@ -1159,6 +1160,37 @@ fn loft_section_spacing(
             }
             .into(),
         );
+    }
+    Ok(())
+}
+
+/// Source boundary starts and traversal, resolved through the construction aligner.
+fn loft_profile_seams(
+    scene: &SolidScene<'_, '_>,
+    feature: &FeatureDefinition,
+    budget: &mut Budget,
+    annotations: &mut Vec<Value>,
+) -> Result<(), Failure> {
+    for seam in scene
+        .generated
+        .loft_profile_seams(scene.session, &feature.operation, scene.parameters)
+        .stage("visualization")?
+    {
+        check_budget(&mut budget.vertices, seam.points.len(), "vertex")?;
+        let track = seam
+            .hole
+            .map_or("outer".into(), |h| format!("hole-{}", h + 1));
+        let label = seam
+            .hole
+            .map_or("Outer".into(), |h| format!("Hole {}", h + 1));
+        let anchors = seam.points.into_iter().map(point).collect::<Vec<_>>();
+        annotations.push(Annotation {
+            id:format!("loft-seam-{track}-{}",seam.station+1),
+            label:format!("{label} station {} start",seam.station+1),
+            kind:AnnotationKind::Constraint,status:AnnotationStatus::Measured,
+            targets:vec![scene.output.into()],parameters:Vec::new(),anchors:json!(anchors),
+            detail:json!({"measurement":"loft_profile_seam","profile":seam.profile,"station":seam.station,"hole":seam.hole,"reverse":seam.reverse,"coordinate_system":"family-local mm","driving":false}),
+        }.into());
     }
     Ok(())
 }

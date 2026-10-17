@@ -36,12 +36,19 @@ export function createLoftCorrespondenceControls(loft){
    }
    return Object.keys(result).length?{correspondence:Object.fromEntries(Object.entries(result))}:{correspondence:undefined};
   },
-  render(id,label,{select,number,render}){
+  render(id,label,{select,number,render,button,content,pickAnchor,invalidate,checkpoint,message}){
    if(!id)return;
    const s=state(id);
    select(`${label} traversal`,[['forward','Original'],['reverse','Reversed']],s.reverse?'reverse':'forward',value=>s.reverse=value==='reverse');
    const choices=[['default','Original start'],['literal','Entered start point']];if(s.saved?.start_point)choices.push(['preserve','Keep existing start formula']);
    select(`${label} start anchor`,choices,s.source,value=>{s.source=value;render();});
+   if(pickAnchor)content.append(button(`Pick ${label.toLowerCase()} start in canvas`,async()=>{
+    invalidate();const current=checkpoint();
+    const picked=await pickAnchor(id);
+    if(!current()||!picked)return;
+    if(picked.profile!==id||!Array.isArray(picked.position_mm)||picked.position_mm.length!==3||!picked.position_mm.every(Number.isFinite))throw Error('The picked loft start does not match this profile.');
+    invalidate();s.values=[...picked.position_mm];s.source='literal';render();message('Start anchor selected at fixed family coordinates. Preview checks every instance.');
+   }));
    if(s.source==='literal')for(const [i,key] of ['X','Y','Z'].entries())number(`${label} start ${key} (mm)`,s.values[i],value=>s.values[i]=value);
   }
  };

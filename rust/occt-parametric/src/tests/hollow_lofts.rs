@@ -241,6 +241,20 @@ fn constrained_hollow_lofts_interpolate_both_tracks_without_losing_wall_history(
         );
     }
     let generated = part(&doc).regenerate(&session).unwrap();
+    let handles = session.shape_count().unwrap();
+    let seams = generated
+        .loft_profile_seams(
+            &session,
+            &doc.family.features[0].operation,
+            &part(&doc).resolved_parameters().unwrap(),
+        )
+        .unwrap();
+    assert_eq!(seams.len(), 4);
+    assert_eq!(session.shape_count().unwrap(), handles);
+    assert_eq!(seams[2].hole, Some(0));
+    assert!(seams[2].reverse);
+    assert!(seams[2].points[0].x.abs() < 1e-7);
+    assert!((seams[2].points[0].y - 4.).abs() < 1e-7);
     let body = generated.shape("body").unwrap();
     let expected = 20. * std::f64::consts::PI * (64. - 32. + 16. * 13. / 35.) * 0.75;
     assert!((session.volume(body).unwrap() - expected).abs() < 1e-4);

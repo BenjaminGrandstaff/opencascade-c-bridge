@@ -3028,6 +3028,26 @@ fn loft_viewer_exposes_resolved_native_end_derivatives_and_true_control_handle_l
             .iter()
             .find(|s| s["kind"] == "solid" && s["feature"] == "body")
             .unwrap();
+        let seams = scene["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|a| a["detail"]["measurement"] == "loft_profile_seam")
+            .collect::<Vec<_>>();
+        assert_eq!(seams.len(), 2);
+        for (i, seam) in seams.iter().enumerate() {
+            assert_eq!(seam["detail"]["station"], i);
+            assert_eq!(seam["detail"]["hole"], Value::Null);
+            assert_eq!(seam["anchors"].as_array().unwrap().len(), 5);
+            let start = &seam["anchors"][0];
+            let radius = if i == 0 { 8. } else { 4. };
+            let (x, y) = (start[0].as_f64().unwrap(), start[1].as_f64().unwrap());
+            assert!((x.hypot(y) - radius).abs() < 1e-7);
+            if example == "aligned-profile-loft" {
+                assert!(x.abs() < 1e-7);
+                assert!((y - radius).abs() < 1e-7);
+            }
+        }
         for end in ["start", "end"] {
             let a = scene["annotations"]
                 .as_array()

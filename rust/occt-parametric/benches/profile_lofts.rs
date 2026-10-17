@@ -44,6 +44,14 @@ fn run(source: &str, expected: f64, label: &str) {
                 &parameters,
             )
             .unwrap();
+        let seams = result
+            .loft_profile_seams(
+                &session,
+                &document.family.features[0].operation,
+                &parameters,
+            )
+            .unwrap();
+        assert_eq!(seams.len(), if label == "saved-profile" { 0 } else { 2 });
         if label != "saved-profile" {
             assert_eq!(tangents.len(), 2);
             assert!(!tangents[0].end && tangents[1].end);
