@@ -93,6 +93,6 @@ export function installStudioSolids(studio, document) {
   const load = studio.onLoad; studio.onLoad = () => { close(); load?.(); };
   const key = studio.onKey; studio.onKey = event => { if (event.key === 'Escape' && session) { close(); return true; } return key?.(event) ?? false; };
   panel.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } });
-  studio.fill(document.getElementById('solid-features'), html('h2', {}, 'Solid features'), html('button', {onclick: open}, 'Extrude, revolve or sweep'));
+  studio.fill(document.getElementById('solid-features'), html('h2', {}, 'Solid features'), html('button', {onclick: open}, 'Extrude, revolve, sweep or loft'));
   return {open, close};
 }

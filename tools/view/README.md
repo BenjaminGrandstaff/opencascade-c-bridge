@@ -137,9 +137,9 @@ view instead of a flat overlay:
   curves, then the mirror line, direction line or center point, with a
   dashed guide, and record linked sketch patterns. A mirror of half an
   outline closes it through the axis, and patterned holes stay holes.
-- **Solid features.** **Extrude, revolve or sweep** uses the active applied sketch
+- **Solid features.** **Extrude, revolve, sweep or loft** uses the active applied sketch
   and its plane axes, previews the native result in 3D, then applies one model
-  history step. Existing extrusions, revolutions and sweeps retain their parameter/formula drivers.
+  history step. Existing extrusions, revolutions, sweeps and lofts retain their parameter/formula drivers.
   Close or changing values restores the accepted model; all variants must pass.
 - **Planes.** New plane builds a datum plane offset or angled from a base
   plane, on a picked face, midway between two picked faces, or through three
@@ -306,7 +306,7 @@ annotation view. No schema or native ABI change is needed.
 
 ### Sketch-to-solid controls
 
-In the studio, choose **Extrude, revolve or sweep** in the side panel; the classic
+In the studio, choose **Extrude, revolve, sweep or loft** in the side panel; the classic
 viewer uses **Sketch to solid**. These controls create an extrusion, revolution
 or path sweep, add material by union, or remove material by cut. Select an existing **Sketch / planar profile**, enter a
 result feature name, and choose a target solid for union/cut. The profile's current
@@ -345,6 +345,17 @@ sketch in the studio. **Least twist**, **Frenet**, **Fixed** and **Binormal dire
 control how the section turns; binormal uses a normalized family-coordinate
 vector. **Edit sweep …** keeps authored binormal formulas by default, with an
 explicit option to replace them. Sweeps can create new solids or union/cut tools.
+
+Choose **Solid feature → Loft through profiles** to join ordered, distinct
+closed sections on different planes. Each section needs one boundary.
+Choose **Smooth** or **Ruled** surfaces. **Add loft station**, Remove and the
+Earlier/Later controls edit the section order. **Add loft hole track** adds an
+inner profile at every station; reordering/removing stations moves all tracks
+together. All choices must be filled and every saved profile reference distinct.
+**Show loft station …** activates its sketch. **Edit loft …** retains ordered
+sections and holes; source sketch parameters remain linked. Lofts can also
+supply union/cut tools. Native limits are 2–1000 stations and at most 100 hole
+tracks; validation rejects invalid sections, crossing holes and non-solid output.
 
 **Preview solid** displays candidate 3D geometry and per-instance solid count and
 volume while the accepted document, glTF, and file remain unchanged. Valid

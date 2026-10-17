@@ -1780,6 +1780,141 @@ fn sweep_edits_preserve_binormal_drivers_and_reject_another_instances_zero_direc
     assert_eq!(saved.family.features[0], expected);
 }
 
+#[test]
+fn profile_loft_controls_preview_hollow_boolean_tools_and_save_ordered_tracks() {
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/hollow-loft.request.json"
+    ))
+    .unwrap();
+    for (mode, factor) in [("new", 560.0), ("cut", 560.0 / 3.0), ("fuse", 2240.0 / 3.0)] {
+        let directory = Directory::new();
+        let mut model_json = request["model"].clone();
+        if mode == "cut" {
+            model_json["family"]["features"][0]["operation"]["profile_loft"]["holes"] = json!([]);
+        }
+        let document = ModelDocument::from_json(&model_json.to_string()).unwrap();
+        let model = PathBuf::from(directory.model(&document));
+        let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+        assert_eq!(studio.handle("GET", "/solid-loft.mjs", b"").status, 200);
+        let data = get(&mut studio, "/api/features").1;
+        let state = get(&mut studio, "/api/state").1;
+        let mesh = studio.handle("GET", "/api/model.gltf", b"").body;
+        let loft = if mode == "fuse" {
+            json!({"profiles":["lower-bore","upper-bore"],"holes":[],"ruled":true})
+        } else {
+            json!({"profiles":["lower","upper"],"holes":[["lower-bore","upper-bore"]],"ruled":true})
+        };
+        let tool = json!({"id":"tool","operation":{"profile_loft":loft}});
+        let features = match mode {
+            "cut" => {
+                json!([tool,{"id":"result","operation":{"cut":{"object":"body","tool":"tool"}}}])
+            }
+            "fuse" => {
+                json!([tool,{"id":"result","operation":{"fuse":{"left":"body","right":"tool"}}}])
+            }
+            _ => json!([tool]),
+        };
+        let output = if mode == "new" { "tool" } else { "result" };
+        let mut edit = json!({"version":data["version"],"instance":"duct","expected":data["features"],"action":"add","features":features,"output":output,"apply":false});
+        let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+        assert_eq!(
+            response.status,
+            200,
+            "{}",
+            String::from_utf8_lossy(&response.body)
+        );
+        let result: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(result["can_apply"], true, "{}", result["error"]);
+        assert!(
+            (result["geometry"]["duct"]["volume_mm3"].as_f64().unwrap()
+                - factor * std::f64::consts::PI)
+                .abs()
+                < 1e-5
+        );
+        assert_eq!(result["geometry"]["duct"]["solids"], 1);
+        assert!(!result["gltf"]["meshes"].as_array().unwrap().is_empty());
+        assert_eq!(get(&mut studio, "/api/state").1, state);
+        assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, mesh);
+        edit["apply"] = json!(true);
+        assert_eq!(
+            studio
+                .handle("POST", "/api/features", edit.to_string().as_bytes())
+                .status,
+            200
+        );
+        history(&mut studio, "undo");
+        assert_eq!(
+            get(&mut studio, "/api/features").1["features"],
+            data["features"]
+        );
+        history(&mut studio, "redo");
+        let current = get(&mut studio, "/api/features").1;
+        let mut replacement = current["features"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["id"] == "tool")
+            .unwrap()
+            .clone();
+        replacement["operation"]["profile_loft"]["ruled"] = json!(false);
+        let edit = json!({"version":current["version"],"instance":"duct","expected":current["features"],"action":"replace","features":[replacement],"output":output,"apply":true});
+        assert_eq!(
+            studio
+                .handle("POST", "/api/features", edit.to_string().as_bytes())
+                .status,
+            200
+        );
+        assert_eq!(studio.handle("POST", "/api/save", b"").status, 200);
+        let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+        let expected: FeatureDefinition =
+            serde_json::from_value(edit["features"][0].clone()).unwrap();
+        assert_eq!(
+            saved.family.features.iter().find(|f| f.id == "tool"),
+            Some(&expected)
+        );
+        assert!(
+            document
+                .family
+                .requirements
+                .iter()
+                .all(|r| saved.family.requirements.contains(r))
+        );
+        assert_eq!(saved.family.parameters, document.family.parameters);
+    }
+}
+
+#[test]
+fn profile_loft_controls_reject_hole_tracks_that_fail_another_instance() {
+    let directory = Directory::new();
+    let mut request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/hollow-loft.request.json"
+    ))
+    .unwrap();
+    request["model"]["family"]["features"][0]["operation"]["profile_loft"]["holes"] = json!([]);
+    request["model"]["instances"].as_array_mut().unwrap().push(json!({"clone":{"id":"wide-bore","source":"duct","overrides":{"upper_bore_radius":{"scalar":{"value":5,"dimension":"length","unit":"millimeter"}}},"provenance":"test"}}));
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let data = get(&mut studio, "/api/features").1;
+    let state = get(&mut studio, "/api/state").1;
+    let mut feature = data["features"][0].clone();
+    feature["operation"]["profile_loft"]["holes"] = json!([["lower-bore", "upper-bore"]]);
+    let mut edit = json!({"version":data["version"],"instance":"duct","expected":data["features"],"action":"replace","features":[feature],"output":"body","apply":false});
+    let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+    assert_eq!(response.status, 200);
+    let result: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(result["can_apply"], false, "{}", result["error"]);
+    assert!(result["gltf"].is_null());
+    edit["apply"] = json!(true);
+    assert_eq!(
+        studio
+            .handle("POST", "/api/features", edit.to_string().as_bytes())
+            .status,
+        422
+    );
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+}
+
 fn history(studio: &mut serve::Studio, direction: &str) -> serde_json::Value {
     let version = get(studio, "/api/state").1["version"].clone();
     let response = studio.handle(

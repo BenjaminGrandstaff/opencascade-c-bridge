@@ -633,6 +633,9 @@ impl Studio {
                     None => Response::error(400, "annotations need ?id="),
                 }
             }
+            ("GET", "/solid-loft.mjs") => {
+                Response::text(200, "text/javascript", include_str!("web/solid-loft.mjs"))
+            }
             ("GET", "/solid-editor.mjs") => {
                 Response::text(200, "text/javascript", include_str!("web/solid-editor.mjs"))
             }

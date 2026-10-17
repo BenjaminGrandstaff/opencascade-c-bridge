@@ -241,9 +241,9 @@ catalogue; display-only glyphs and edited-curve names cannot be sources.
 
 ## Making a solid from a sketch
 
-Choose **Extrude, revolve or sweep** in the left panel after applying the sketch.
+Choose **Extrude, revolve, sweep or loft** in the left panel after applying the sketch.
 The active applied profile is selected by default and its plane normal supplies
-the initial extrusion direction. Choose extrusion, revolution or path sweep,
+the initial extrusion direction. Choose extrusion, revolution, path sweep or loft,
 then a new solid, material addition (union) or material removal (cut). Name the
 result and select a target solid for a boolean.
 The applied profile's holes and additional regions become part of the extrusion.
@@ -281,6 +281,20 @@ family-coordinate vector compatible with the whole path. **Edit sweep …** pres
 until explicitly replaced. New solids, unions and cuts all support sweep tools.
 Native preview rejects invalid paths, orientations or non-solid results before
 Apply, and checks every family instance.
+
+Choose **Loft through profiles** to join profiles on different planes. Select
+at least two **Outer profile at station …** entries in order along the part.
+Each profile must contain one closed boundary; use distinct saved sketch faces,
+closed wires or single-boundary planar regions. **Smooth** joins stations with
+smooth surfaces; **Ruled** keeps straight connections between sections.
+
+For hollow parts, **Add loft hole track** adds one inner-profile choice at every
+station. Every track must stay inside its outer sections. Add or remove stations
+and move them earlier/later; these operations keep all hole tracks aligned.
+**Show loft station …** activates that section's sketch. **Edit loft …** retains
+the saved section order, hole tracks and parameter-driven source sketches.
+Lofts can create new solids or supply union/cut tools. Native preview checks the
+whole family before Apply.
 
 **Preview solid** displays the native validated mesh in the 3D viewer, with
 solid count and volume for the selected instance in the form. Fit uses the
@@ -858,7 +872,7 @@ to the instance it was made on.
 | Explicit outer loops, holes and additional regions | Yes | Material boundaries panel, ordered canvas picks, Preview and draft history |
 | Region discovery initialization | Yes | Material boundaries panel, arrangement curves, cell seeds and merging |
 | Full dependencies | Yes | Advanced drawer hosts the classic panel |
-| Sketch to solid | Studio panel | Native 3D extrusion/revolve/sweep/union/cut previews, existing sweep editing and model history |
+| Sketch to solid | Studio panel | Native 3D extrusion/revolve/sweep/loft/union/cut previews, existing sweep editing and model history |
 | Preview, Apply, Undo, Redo, Save | Yes | Toolbar; Revert stays in the classic viewer |
 | Several instances | Yes | Instance menu in the header; see [Instances](#instances) |
 

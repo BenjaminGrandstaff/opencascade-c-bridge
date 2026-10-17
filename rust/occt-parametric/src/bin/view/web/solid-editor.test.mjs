@@ -1,3 +1,4 @@
+import {loftDefinition,editLoftStations} from './solid-loft.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {sweepOrientation,revolutionDefinition,extrusionDirection,readDirection,controlledDirection,solidChanges,createSolidEditor} from './solid-editor.mjs';
@@ -113,5 +114,45 @@ test('sweep form chooses an applied wire and edits preserve binormal formula dri
  control(host,'Sweep orientation').value='fixed';control(host,'Sweep orientation').onchange();await button(host,'Preview solid').onclick();assert.equal(calls[0].features[0].operation.sweep.orientation,'fixed');
  await button(host,'Edit sweep pipe').onclick();assert.equal(control(host,'Sweep orientation').value,'preserve');await button(host,'Preview solid').onclick();assert.deepEqual(calls[1].features,[saved]);
  control(host,'Sweep orientation').value='binormal';control(host,'Sweep orientation').onchange();control(host,'Binormal Y').value='2';control(host,'Binormal Y').oninput();await button(host,'Preview solid').onclick();assert(calls[2].features[0].operation.sweep.orientation.binormal.direction.components.y.literal.value>0);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});
+
+
+test('loft definitions validate ordered outer sections, distinct complete hole tracks and limits',()=>{
+ const features=['a','b','c','ha','hb','hc'].map(id=>({id})),definition={profiles:['a','b','c'],holes:[['ha','hb','hc']],ruled:true};
+ assert.deepEqual(loftDefinition(features,definition),definition);
+ for(const invalid of [{profiles:['a']},{profiles:['a','a']},{profiles:['a','b'],holes:[['ha']]},{profiles:['a','b'],holes:[['a','hb']]},{profiles:['a','missing']},{profiles:['a','b'],ruled:'yes'},{profiles:Array(1001).fill('a')},{profiles:['a','b'],holes:Array(101).fill(['ha','hb'])}])assert.throws(()=>loftDefinition(features,invalid));
+ assert.deepEqual(definition.profiles,['a','b','c']);
+});
+test('loft station moves, insertion and removal align every hole track without mutating sources',()=>{
+ const definition={profiles:['a','b','c'],holes:[['ha','hb','hc'],['ja','jb','jc']],ruled:false};
+ const moved=editLoftStations(definition,'earlier',2);assert.deepEqual(moved.profiles,['a','c','b']);assert.deepEqual(moved.holes,[['ha','hc','hb'],['ja','jc','jb']]);
+ assert.deepEqual(editLoftStations(moved,'later',1),definition);
+ const added=editLoftStations(definition,'add');assert.equal(added.profiles.at(-1),'');assert(added.holes.every(track=>track.at(-1)===''));
+ const removed=editLoftStations(definition,'remove',1);assert.deepEqual(removed.holes,[['ha','hc'],['ja','jc']]);assert.deepEqual(definition.profiles,['a','b','c']);
+ assert.throws(()=>editLoftStations(removed,'remove',0),/two/);assert.throws(()=>editLoftStations(definition,'earlier',0),/further/);assert.throws(()=>editLoftStations(definition,'remove',-1),/existing/);
+});
+test('loft solid graphs use native sections for new solids, boolean tools and stable replacements',()=>{
+ const features=[...base,{id:'upper',operation:{sketch_wire:{sketch:{}}}}],loft={profiles:['profile','upper'],holes:[],ruled:false};
+ for(const mode of ['new','fuse','cut']){
+  const graph=solidChanges(features,{kind:'profile_loft',loft,id:'transition',mode,target:'body'});assert.deepEqual(graph.features[0].operation,{profile_loft:loft});if(mode!=='new')assert.equal(graph.features[0].id,'transition-loft');
+ }
+ const editing={id:'transition',operation:{profile_loft:loft}};
+ assert.equal(solidChanges([...features,editing],{kind:'profile_loft',loft,id:'transition',editing}).action,'replace');
+});
+test('loft form reorders outer and hole profiles together and preserves edited native tracks',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const host=new Element('div'),calls=[];
+ const saved={id:'duct',operation:{profile_loft:{profiles:['lower','middle','upper'],holes:[['bore-lower','bore-middle','bore-upper']],ruled:true}}};
+ const features=['lower','middle','upper','bore-lower','bore-middle','bore-upper'].map(id=>({id,operation:{sketch_wire:{sketch:{}}}}));features.push(saved);
+ createSolidEditor({host,instance:()=> 'part',preview:async()=>{},applied:async()=>{},restore:async()=>{},request:async(path,options)=>{if(!options)return {version:1,features,output:'duct',parameters:[]};calls.push(JSON.parse(options.body));return {can_apply:true};}});
+ await button(host,'Sketch to solid').onclick();control(host,'Sketch / planar profile').value='middle';control(host,'Sketch / planar profile').onchange();control(host,'Solid feature').value='profile_loft';control(host,'Solid feature').onchange();assert.equal(control(host,'Outer profile at station 1').value,'middle');await button(host,'Edit loft duct').onclick();assert.equal(control(host,'Sketch / planar profile'),undefined);await button(host,'Preview solid').onclick();assert.deepEqual(calls[0].features,[saved]);
+ await button(host,'Move station 3 earlier').onclick();assert.equal(control(host,'Outer profile at station 2').value,'upper');assert.equal(control(host,'Hole 1 at station 2').value,'bore-upper');
+ await button(host,'Remove loft station 2').onclick();assert.equal(control(host,'Outer profile at station 2').value,'middle');assert.equal(control(host,'Hole 1 at station 2').value,'bore-middle');
+ await button(host,'Add loft station').onclick();assert.equal(control(host,'Hole 1 at station 3').value,'');control(host,'Outer profile at station 3').value='upper';control(host,'Outer profile at station 3').onchange();control(host,'Hole 1 at station 3').value='bore-upper';control(host,'Hole 1 at station 3').onchange();
+ await button(host,'Preview solid').onclick();assert.deepEqual(calls[1].features,[saved]);
+ await button(host,'Add loft hole track').onclick();assert(control(host,'Hole 2 at station 3'));await button(host,'Remove loft hole track 2').onclick();assert.equal(control(host,'Hole 2 at station 3'),undefined);
+ assert.deepEqual(features.at(-1),saved);
  }finally{delete globalThis.document;delete globalThis.Option;}
 });

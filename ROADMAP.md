@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 742 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 75 + viewer Node 394 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 742 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 77 + viewer Node 398 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,18 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Studio profile lofts (schema 165, ABI 76 unchanged): create and edit native
+  lofts through ordered saved profiles, including hollow sections with explicit
+  hole tracks and lofted union/cut tools. Smooth/ruled controls, section adding,
+  removal and ordering keep outer and inner tracks aligned. Saved profile
+  references and source sketch parameters remain linked. Shared solid previews,
+  graph/version guards, all-instance checks and model history cover the new
+  operation. All 398 viewer Node tests and 77 view-command tests pass, including
+  hollow volumes, booleans, editing, saved tracks and another instance's invalid
+  bore. Browser checks cover three-section hollow lofts, station/hole ordering,
+  section activation, validation, native preview, Apply, Undo/Redo and Save.
+  Sketch performance budgets and all-target Clippy pass.
 
 - Studio path sweeps (schema 165, ABI 76 unchanged): create or edit native
   solid sweeps from applied profiles and separate sketch wires or helices,
