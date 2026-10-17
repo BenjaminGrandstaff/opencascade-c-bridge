@@ -601,6 +601,31 @@ outline again; until then the preview says the profile is not a continuous
 boundary and Apply is refused. Deletion is linear in the sketch's size: the
 Node tests delete from a 10,000-line chain in well under a second.
 
+## Modify tools
+
+The palette's Modify group records the model's own edits, so the source
+geometry and its constraints stay and the outline is derived from them.
+Once a sketch has such edits, the edited outline draws solid and the curves
+it was derived from draw dashed behind it.
+
+- **Fillet** (I) and **Chamfer** (H): hover rings the corners of the outer
+  profile (points where two of its curves meet); click one and type a
+  radius, or one or two distances (incoming, outgoing), as numbers in
+  millimetres or parameter names. The edit is a profile `fillet` or
+  `chamfer` operation; clicking a corner again replaces it. Holes and
+  regions take corner edits through Advanced → region edits.
+- **Extend** (W): hover near the end of a line, arc or spline and the
+  studio shows where it would run, straight along its end tangent or round
+  an arc's circle, up to the first other curve it meets. Click to record an
+  `extend_to` curve operation to that curve, with a search limit a little
+  past the hit; the kernel finds the exact crossing. Extending the same end
+  again replaces it.
+
+Every edit goes into the draft, previews at once, and Undo removes it; the
+new Delete also removes edits that name deleted geometry. Finding the
+first crossing is O(curve segments) for a line and O(segments × 128) for an
+arc, under 200 ms on 10,000 curves in the Node tests.
+
 ## Parity with the classic editor
 
 | Capability | Studio | Notes |
@@ -616,6 +641,7 @@ Node tests delete from a 10,000-line chain in well under a second.
 | 36 typed constraints and dimensions with parameters | Yes | Selection bar, inspector, Dimension tool |
 | Edit driving dimensions | Studio inline | Double-click a label or Edit in the inspector; reference dimensions are read-only |
 | Remove constraints | Yes | Inspector |
+| Fillet, chamfer and extend by clicking | Studio only | Modify tools; see [Modify tools](#modify-tools) |
 | Delete geometry | Studio only | Delete key or inspector, with dependents; see [Deleting](#deleting) |
 | Crossing points and spline samples | Yes | Named points panel, native candidates, on-canvas markers and draft history |
 | Weighted point links | Yes | Named points panel, canvas sources, literal/parameter weights and preserved formulas |

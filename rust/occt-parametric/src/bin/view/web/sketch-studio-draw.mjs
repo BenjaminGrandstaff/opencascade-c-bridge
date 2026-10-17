@@ -360,7 +360,7 @@ export function installDrawing(studio, document) {
       const layer = studio.activeLayer();
       if (!layer) studio.say('Choose or start a sketch layer to draw on.', true);
       else if (hasDraftHistory() && studio.draft.feature !== layer.feature) studio.say(`Apply or discard the draft of ${studio.draft.feature} first.`, true);
-      else studio.say(`${tool.label}: ${tool.hint} Hold Alt to draw without automatic constraints.`);
+      else studio.say(`${tool.label}: ${tool.hint}${CLICKS[id] ? ' Hold Alt to draw without automatic constraints.' : ''}`);
     } else {
       studio.say(tool.hint);
     }
@@ -591,7 +591,7 @@ export function installDrawing(studio, document) {
   // ── Toolbar ──────────────────────────────────────────────────────────
   studio.renderToolbar = () => {
     // A side palette: each tool as its shape's icon over its name, in
-    // Edit (select, dimension) and Draw groups.
+    // Edit (select, dimension), Draw and Modify groups.
     const button = (tool) => {
       const icon = html('span', { 'aria-hidden': 'true' });
       icon.innerHTML = `<svg viewBox="0 0 24 24">${ICONS[tool.id]}</svg>`;
@@ -601,11 +601,13 @@ export function installDrawing(studio, document) {
         onclick: () => studio.setTool(tool.id),
       }, icon, tool.label, html('kbd', {}, tool.key));
     };
-    const edit = TOOLS.filter((tool) => !CLICKS[tool.id]);
+    const edit = TOOLS.filter((tool) => !CLICKS[tool.id] && !tool.group);
     const draw = TOOLS.filter((tool) => CLICKS[tool.id]);
+    const modify = TOOLS.filter((tool) => tool.group === 'modify');
     studio.fill(document.getElementById('tools'),
       html('h2', {}, 'Edit'), html('div', { class: 'palette' }, edit.map(button)),
-      html('h2', {}, 'Draw'), html('div', { class: 'palette' }, draw.map(button)));
+      html('h2', {}, 'Draw'), html('div', { class: 'palette' }, draw.map(button)),
+      html('h2', {}, 'Modify'), html('div', { class: 'palette' }, modify.map(button)));
     const extra = [];
     if (studio.tool === 'polygon') {
       extra.push(html('label', {}, 'Sides',

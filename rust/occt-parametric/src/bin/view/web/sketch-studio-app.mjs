@@ -5,7 +5,7 @@ import {
   basePlane, lookAt, pickFace, planeNormal, project, projectLocal, rayToLocal, toGltf,
 } from './sketch-studio-plane.mjs';
 import { PALETTE, layersFrom, nextFeatureName, planeLabel } from './sketch-studio-layers.mjs';
-import { localBounds, planeGrid, sketchPaths, sketchPoints } from './sketch-studio-overlay.mjs';
+import { localBounds, pathData, planeGrid, sketchPaths, sketchPoints } from './sketch-studio-overlay.mjs';
 import {captureGeneratedPoints, bindGeneratedPoints} from './generated-points.mjs';
 import { installDrawing } from './sketch-studio-draw.mjs';
 import { installConstraints } from './sketch-studio-constrain.mjs';
@@ -15,6 +15,7 @@ import { installPlanes } from './sketch-studio-plane-panel.mjs';
 import {installStudioLinks} from './sketch-studio-links.mjs';
 import {installPointPicking} from './sketch-studio-picks.mjs';
 import { installDelete } from './sketch-studio-delete.mjs';
+import { installModify } from './sketch-studio-modify.mjs';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const format = (value) => Number(Number(value).toPrecision(6)).toString();
@@ -177,14 +178,22 @@ export function startStudio(document) {
         // light faces and dark geometry over dark ones.
         for (const path of paths) if (path.d) element('path', { d: path.d, class: 'halo' }, group);
       }
+      // With profile or curve edits, the edited outline draws solid and the
+      // source curves it was derived from dashed behind it.
+      const sources = editedSources(layer.feature, scene);
       for (const path of paths) {
         if (!path.d) continue;
         const look = style?.curve(entities.get(path.id));
+        const source = sources.has(path.id);
         element('path', {
-          d: path.d, class: look?.selected ? 'curve selected' : 'curve',
+          d: path.d, class: `curve${look?.selected ? ' selected' : ''}${source ? ' source' : ''}`,
           stroke: look?.selected ? 'var(--accent)' : look ? color(look.state) : layer.color,
-          'stroke-width': look?.selected ? 4 : 2, 'data-entity': path.id,
+          'stroke-width': look?.selected ? 4 : source ? 1.5 : 2, 'data-entity': path.id,
         }, group);
+      }
+      for (const line of scene.edited_profile ?? []) {
+        const d = pathData(line, layer.frame, matrix, width, height);
+        if (d) element('path', { d, class: 'curve edited', stroke: layer.color, 'stroke-width': 2.5 }, group);
       }
       if (isActive) {
         for (const point of sketchPoints(scene, layer.frame, matrix, width, height)) {
@@ -203,6 +212,19 @@ export function startStudio(document) {
       empty.hidden = studio.layers.length > 0;
       empty.textContent = 'No sketches yet. Choose New sketch to start one on a plane or a face.';
     }
+  }
+
+  /**
+   * Curves an edited outline was derived from, drawn dashed: the profile's
+   * curves (every line when it lists none) and curves with their own edits,
+   * once the scene has an edited outline.
+   */
+  function editedSources(feature, scene) {
+    if (!(scene.edited_profile ?? []).length) return new Set();
+    const definition = studio.draft?.feature === feature ? studio.draft.definition : studio.definitions[feature];
+    const profile = definition?.profile?.length ? definition.profile : (definition?.lines ?? []).map((l) => l.id);
+    const edited = (definition?.curve_operations ?? []).map((op) => Object.values(op)[0]?.entity);
+    return new Set([...profile, ...edited].filter(Boolean));
   }
 
   /**
@@ -662,6 +684,7 @@ export function startStudio(document) {
   studio.drawing = installDrawing(studio, document);
   installConstraints(studio, document);
   installDelete(studio, document);
+  installModify(studio, document);
   installExtras(studio, document);
   installPlanes(studio, document);
   installPointPicking(studio, document);

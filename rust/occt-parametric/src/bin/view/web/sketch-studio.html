@@ -108,6 +108,8 @@
   #view svg .grid { stroke: var(--grid); stroke-width: 1; fill: none; }
   #view svg .axis { stroke: var(--axis); stroke-width: 1.4; fill: none; }
   #view svg .curve { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  #view svg .curve.source { stroke-dasharray: 5 4; opacity: 0.75; }
+  #view svg .curve.edited { pointer-events: none; }
   #view svg .inactive { opacity: 0.35; }
   #view svg .point { stroke: var(--panel); stroke-width: 1.5; }
   #view svg .ghost { fill: none; stroke: var(--ghost); stroke-width: 2; stroke-dasharray: 6 4; }

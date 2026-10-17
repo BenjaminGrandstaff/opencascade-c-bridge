@@ -6,6 +6,7 @@ import {inheritGeneratedReferences} from './generated-points.mjs';
 import {ADDITIONAL,drawAdditional,additionalGhost} from './sketch-studio-primitives.mjs';
 import { drawPrimitive,primitiveGhost } from './canvas-tools.mjs';
 import { rulesToConstraints, tangentLineAt } from './sketch-studio-infer.mjs';
+import { MODIFY_ICONS, MODIFY_TOOLS } from './sketch-studio-modify.mjs';
 
 export const TOOLS = [
   { id: 'select', label: 'Select', key: 'V', hint: 'Click geometry to select it. Drag to orbit.' },
@@ -25,6 +26,7 @@ export const TOOLS = [
   { id: 'point', label: 'Point', key: 'P', hint: 'Click to place a point.' },
   {id:'text',label:'Text',key:'T',hint:'Set content and installed font, then click its baseline anchor. Native Preview builds glyph outlines.'},
   { id: 'dimension', label: 'Dimension', key: 'D', hint: 'Click a line, circle or arc, or two points or lines, then type the value and press Enter.' },
+  ...MODIFY_TOOLS.map((tool) => ({ ...tool, group: 'modify' })),
 ];
 
 /**
@@ -32,6 +34,7 @@ export const TOOLS = [
  * text colour, one per tool, each picturing the shape it draws.
  */
 export const ICONS = {
+  ...MODIFY_ICONS,
   center_rectangle:'<rect x="3" y="6" width="18" height="12"/><path d="M9 12h6M12 9v6"/>',
   arc_three:'<path d="M3 17Q12 -5 21 17"/><circle cx="3" cy="17" r="1.5"/><circle cx="12" cy="6" r="1.5"/><circle cx="21" cy="17" r="1.5"/>',
   elliptical_arc:'<path d="M3 12a9 6 0 1 1 9 6"/><circle cx="3" cy="12" r="1.5"/>',

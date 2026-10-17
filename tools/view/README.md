@@ -121,6 +121,11 @@ view instead of a flat overlay:
   Backspace removes the selection and what depends on it (constraints,
   unused endpoints, loop members); redrawing a deleted outline edge closes
   the outline again.
+- **Modify.** Fillet (`I`) and Chamfer (`H`) take a corner of the outline
+  and a typed value or parameter; Extend (`W`) runs a curve's end on to the
+  next curve it meets, previewed while you hover. They record the model's
+  profile and curve edits, so the edited outline draws solid over its
+  dashed sources.
 - **Planes.** New plane builds a datum plane offset or angled from a base
   plane, on a picked face, midway between two picked faces, or through three
   picked or typed points, with a live preview. Its values become parameters
