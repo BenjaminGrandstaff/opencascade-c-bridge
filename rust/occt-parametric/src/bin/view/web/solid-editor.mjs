@@ -92,7 +92,7 @@ export function solidEditOutput(data,editing) {
   while(pending.length){const id=pending.pop();if(!id||seen.has(id))continue;seen.add(id);pending.push(...(data.dependencies?.[id]??[]));}
   return seen.has(editing.id)&&data.features.some(f=>f.id===data.output&&solidTarget(f))?data.output:editing.id;
 }
-export function createSolidEditor({host,request,instance,preview,applied,restore,showSketch=()=>{},showSolid=()=>{},initialProfile=()=>null,profileDirection=()=>null,profileAxis=()=>null,invalidatePreview=()=>{},pickSolidEdge=null,pickLimitingFace=null,cancelLimitingFacePick=()=>{},autoStart=false}) {
+export function createSolidEditor({host,request,instance,preview,applied,restore,showSketch=()=>{},showSolid=()=>{},initialProfile=()=>null,profileDirection=()=>null,profileAxis=()=>null,invalidatePreview=()=>{},pickSolidEdge=null,pickHolePosition=null,pickLimitingFace=null,cancelLimitingFacePick=()=>{},autoStart=false}) {
   let data=null,editing=null,busy=false,mode='new',id='',input='',target='',extent='distance',axis=[0,0,1],depth=10,source='literal',preserved=null;
   let kind='extrude',origin=[0,0,0],angle=360,axisSource='literal',savedRevolve=null,path='',orientation='corrected_frenet',binormal=[0,0,1],savedOrientation=null,loft={profiles:[],holes:[],ruled:false},loftStarted=false;
   let limitTarget='',limitFace='z:maximum',savedFace=null,limitDirectionSource='literal';
@@ -144,7 +144,7 @@ export function createSolidEditor({host,request,instance,preview,applied,restore
       content.append(button('Show source sketch',()=>showSketch(input)));
     }
     if(!editing&&!isEdgeFinish(kind)&&kind!=='hole'&&mode!=='new')select('Target solid',[['','Choose target'],...data.features.filter(solidTarget).map(f=>[f.id,f.id])],target,value=>target=value);
-    if(kind==='hole')holeControls.render({select,number,content,button,features:data.features.filter(solidTarget),parameters:data.parameters,editing,invalidate,pickFace:pickLimitingFace,cancelPick:cancelLimitingFacePick,message,current:{render,checkpoint:()=>{const turn=formTurn;return ()=>turn===formTurn&&Boolean(data)&&kind==='hole';}}});
+    if(kind==='hole')holeControls.render({select,number,content,button,features:data.features.filter(solidTarget),parameters:data.parameters,editing,invalidate,pickPosition:pickHolePosition,pickFace:pickLimitingFace,cancelPick:cancelLimitingFacePick,message,current:{render,checkpoint:()=>{const turn=formTurn;return ()=>turn===formTurn&&Boolean(data)&&kind==='hole';}}});
     if(kind==='extrude'){
       select('Extrusion extent',[['distance','One direction'],['symmetric','Symmetric (total depth)'],['up_to_next','Up to next face'],['up_to_face','Up to selected face']],extent,value=>{extent=value;render();});
       if(['distance','symmetric'].includes(extent)){

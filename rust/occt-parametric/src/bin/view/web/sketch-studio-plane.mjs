@@ -115,15 +115,15 @@ export function gridSpacing(pixelsPerMm, minimumPixels = 24) {
 }
 
 /**
- * The face index of the nearest mesh triangle a renderer ray hits, or -1.
+ * The nearest mesh hit as {face, point_mm}, or null. The point is in family mm.
  * Triangles are `{face, points}` in model millimetres, as solid scenes list
  * them. O(triangles).
  */
-export function pickFace(triangles, { origin, direction }) {
+export function pickFaceHit(triangles, { origin, direction }) {
   const o = fromGltf(origin);
   const d = directionFromGltf(direction);
   let best = Infinity;
-  let face = -1;
+  let hit = null;
   for (const { face: index, points: [a, b, c] } of triangles) {
     const e1 = sub(b, a);
     const e2 = sub(c, a);
@@ -139,8 +139,13 @@ export function pickFace(triangles, { origin, direction }) {
     const t = dot(e2, r) / determinant;
     if (t > 0 && t < best) {
       best = t;
-      face = index;
+      hit = {face:index,point_mm:add(o,scale(d,t))};
     }
   }
-  return face;
+  return hit;
+}
+
+/** Compatibility face-index picker; -1 when the ray misses. */
+export function pickFace(triangles, ray) {
+  return pickFaceHit(triangles,ray)?.face ?? -1;
 }

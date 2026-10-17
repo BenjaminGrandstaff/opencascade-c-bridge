@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 758 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 84 + viewer Node 424 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 758 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 85 + viewer Node 428 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,20 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases (195 with the parallel glTF case) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Studio canvas hole placement (schema 168, ABI 76 unchanged): click an actual
+  entry point on a planar source face and use the inward native face normal as
+  the drilling axis. A blue entry marker/direction line accompanies the source
+  overlay. Placement saves fixed family coordinates, explicitly replacing
+  position/axis formulas while retaining the other hole settings. It does not
+  create an associative face attachment; moving the face requires re-picking.
+  Escape retains the form; stale field/model/instance replies are discarded.
+  All 428 viewer Node tests and 85 view-command tests pass, covering exact
+  nearest ray hits, unit conversion, invalid normals/planes, stale picks and
+  inward top/bottom/side normals with validated hole volumes and saved graphs.
+  Browser checks cover real off-center and side-face placement, cancellation,
+  marker/preview, editing, Apply, Undo/Redo and Save. Clippy and sketch
+  performance budgets pass.
 
 - Studio hole finishes (schema 168, ABI 76 unchanged): author and edit
   counterbores, countersinks, optional 60-degree counterbore floor relief and

@@ -43,3 +43,15 @@ test('late finishing edge replies are discarded after cancel',async()=>{
  let resolve;const edgeScene={...scene,lines:[[[0,0,1],[1,0,1]]],edges:[{edge:4,line:0}]};const f=fixture(path=>path==='/api/sketch-source-view'?{...source(),scenes:[edgeScene]}:new Promise(r=>resolve=r));f.studio.viewport=()=>({matrix:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],width:100,height:100});
  const pending=f.picker.pick('stop',f.current,'edge');await flush();const click=f.picker.click({button:0,clientX:50,clientY:49.95});f.picker.cancel();resolve({});await click;assert.equal(await pending,null);assert.equal(f.picker.source,null);
 });
+
+test('hole placement uses the clicked triangle point and inward native normal, not the face center',async()=>{
+ const f=fixture(),pending=f.picker.pick('stop',f.current,'hole');await flush();await f.picker.click(event);const result=await pending;
+ assert.deepEqual(result.position_mm,[0.5,0.5,1]);assert.deepEqual(result.axis,[-0,-0,-1]);assert.notDeepEqual(result.position_mm,chosen().origin_mm);assert.equal(result.face_index,undefined);
+ const context={matrix:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],width:100,height:100,element:(tag,attrs)=>({tag,attrs})};assert(f.studio.decorate(context).some(n=>n.attrs['data-hole-position']));assert(f.studio.decorate(context).some(n=>n.attrs['data-hole-axis']));f.picker.cancel();assert.deepEqual(f.studio.decorate(context),[]);
+});
+test('hole placement rejects invalid or off-plane native normals and ignores late replies',async()=>{
+ for(const invalid of [{normal:[0,0,0]},{normal:[NaN,0,1]},{origin_mm:[0,0,2]}]){
+  const f=fixture(path=>path==='/api/sketch-source-view'?source():({...chosen(),...invalid}));const pending=f.picker.pick('stop',f.current,'hole');await flush();await f.picker.click(event);assert(f.picker.active);assert.match(f.messages.at(-1),/rejected/);f.picker.cancel();assert.equal(await pending,null);
+ }
+ let resolve;const f=fixture(path=>path==='/api/sketch-source-view'?source():new Promise(r=>resolve=r));const pending=f.picker.pick('stop',f.current,'hole');await flush();const click=f.picker.click(event);f.picker.cancel();resolve(chosen());await click;assert.equal(await pending,null);assert.equal(f.picker.source,null);
+});

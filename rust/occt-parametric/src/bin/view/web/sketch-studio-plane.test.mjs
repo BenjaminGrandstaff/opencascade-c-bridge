@@ -81,3 +81,10 @@ test('face picking returns the nearest triangle face along the ray', () => {
   assert.equal(pickFace(triangles, up), 3);
   assert.equal(pickFace(triangles, { origin: toGltf([40, 6, 50]), direction: [0, -1, 0] }), -1);
 });
+
+test('face hits return the nearest exact family-coordinate point with unit conversion',async()=>{
+ const {pickFaceHit,pickFace,toGltf}=await import('./sketch-studio-plane.mjs');
+ const mesh=[{face:4,points:[[0,0,1],[10,0,1],[0,10,1]]},{face:8,points:[[0,0,3],[10,0,3],[0,10,3]]}],ray={origin:toGltf([2,3,10]),direction:[0,-1,0]};
+ assert.deepEqual(pickFaceHit(mesh,ray),{face:8,point_mm:[2,3,3]});assert.equal(pickFace(mesh,ray),8);
+ assert.equal(pickFaceHit(mesh,{origin:toGltf([20,20,10]),direction:[0,-1,0]}),null);assert.equal(pickFaceHit(mesh,{origin:toGltf([2,3,10]),direction:[0,1,0]}),null);
+});

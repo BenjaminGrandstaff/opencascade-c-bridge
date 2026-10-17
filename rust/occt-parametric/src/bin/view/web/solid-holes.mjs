@@ -33,8 +33,16 @@ export function createHoleControls(saved=null,target='') {
    const finish=state.finish==='plain'?'plain':state.finish==='counterbore'?{counterbore:{diameter:expression('counterbore diameter'),depth:expression('counterbore depth'),...(state.relief?{relief:expression('relief diameter')}:{})}}:{countersink:{diameter:expression('countersink diameter'),angle_radians:expression('countersink angle')}};
    return {...structuredClone(original),input:state.input,position:state.placement==='preserve'?structuredClone(original.position):vector(state.position,'length'),axis:state.placement==='preserve'?structuredClone(original.axis):vector(state.axis,'scalar'),diameter:expression('diameter'),extent:state.extent==='blind'?{blind:{depth:expression('depth')}}:state.extent==='up_to_face'?{up_to_face:{face:structuredClone(state.face)}}:state.extent,bottom,finish};
   },
-  render({select,number,content,button,features,parameters,editing,invalidate,pickFace,cancelPick,message,current}){
+  render({select,number,content,button,features,parameters,editing,invalidate,pickPosition,pickFace,cancelPick,message,current}){
    select('Drill solid',[['','Choose solid'],...features.filter(f=>f.id!==editing?.id).map(f=>[f.id,f.id])],state.input,value=>{state.input=value;state.face=null;current.render();});
+   if(pickPosition)content.append(button('Place hole on face in canvas',async()=>{
+    if(!state.input)throw Error('Choose a solid to drill first.');
+    invalidate();const valid=current.checkpoint(),input=state.input;message('Click the hole entry on a planar source face. Escape cancels.');
+    const picked=await pickPosition(input);if(!valid())return;
+    if(!picked){message('Hole placement canceled. Draft retained.');return;}
+    if(picked.target!==input||!Array.isArray(picked.position_mm)||picked.position_mm.length!==3||!picked.position_mm.every(Number.isFinite)||!Array.isArray(picked.axis)||picked.axis.length!==3||!picked.axis.every(Number.isFinite)||Math.hypot(...picked.axis)===0)throw Error('The picked hole placement does not match the drilled solid.');
+    state.position=[...picked.position_mm];state.axis=[...picked.axis];state.placement='literal';current.render();message('Hole entry selected at a fixed family-coordinate position. The axis points into the face. Preview checks every instance; moving the face requires picking again.');
+   }),button('Cancel hole placement',()=>{invalidate();cancelPick();message('Hole placement canceled. Draft retained.');}));
    if(original)select('Hole placement source',[['preserve','Keep existing position and axis formulas'],['literal','Entered position and axis']],state.placement,value=>{state.placement=value;current.render();});
    for(const [i,key] of ['X','Y','Z'].entries())number(`Hole position ${key} (mm)`,Number.isFinite(state.position[i])?state.position[i]:'',value=>state.position[i]=value).disabled=state.placement==='preserve';
    for(const [i,key] of ['X','Y','Z'].entries())number(`Hole axis ${key}`,Number.isFinite(state.axis[i])?state.axis[i]:'',value=>state.axis[i]=value).disabled=state.placement==='preserve';

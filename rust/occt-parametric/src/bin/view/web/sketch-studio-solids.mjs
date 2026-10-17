@@ -62,6 +62,7 @@ export function installStudioSolids(studio, document) {
     studio.fill(panel, html('header', {}, html('h2', {}, 'Sketch to solid'), html('button', {onclick: close}, 'Close')), host);
     panel.hidden = false;
     createSolidEditor({host, request, instance: () => studio.instance, autoStart: true,
+      pickHolePosition: target => picker.pick(target,current,'hole'),
       pickSolidEdge: target => picker.pick(target,current,'edge'),
       pickLimitingFace: target => picker.pick(target,current),
       cancelLimitingFacePick: () => picker.cancel(),

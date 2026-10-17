@@ -6381,3 +6381,97 @@ fn studio_hole_finishes_preview_analytic_volumes_and_preserve_edited_drivers() {
         );
     }
 }
+
+#[test]
+fn canvas_hole_face_normals_point_inward_for_top_bottom_and_side_entries() {
+    for (axis, coordinate, point, normal, extent) in [
+        (
+            2,
+            10.0,
+            [8.0, 9.0, 10.0],
+            [0.0, 0.0, 1.0],
+            json!("through_all"),
+        ),
+        (
+            2,
+            0.0,
+            [8.0, 9.0, 0.0],
+            [0.0, 0.0, -1.0],
+            json!({"blind":{"depth":{"literal":{"value":2.0,"dimension":"length","unit":"millimeter"}}}}),
+        ),
+        (
+            0,
+            0.0,
+            [0.0, 9.0, 2.5],
+            [-1.0, 0.0, 0.0],
+            json!({"blind":{"depth":{"literal":{"value":2.0,"dimension":"length","unit":"millimeter"}}}}),
+        ),
+    ] {
+        let directory = Directory::new();
+        let model = PathBuf::from(directory.model(&edge_finish_document()));
+        let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+        let data = get(&mut studio, "/api/features").1;
+        let response = studio.handle(
+            "POST",
+            "/api/sketch-source-view",
+            json!({"version":data["version"],"instance":"block","output":"body"})
+                .to_string()
+                .as_bytes(),
+        );
+        let source: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        let scene = source["scenes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["kind"] == "solid" && s["feature"] == "body")
+            .unwrap();
+        let face = scene["mesh"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| {
+                t["points"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|p| (p[axis].as_f64().unwrap() - coordinate).abs() < 1e-8)
+            })
+            .unwrap()["face"]
+            .as_u64()
+            .unwrap() as usize;
+        let (status, picked) = pick_face(&mut studio, "block", "body", face);
+        assert_eq!(status, 200);
+        for (i, n) in normal.iter().enumerate() {
+            assert!((picked["normal"][i].as_f64().unwrap() - n).abs() < 1e-8);
+        }
+        let q = |v| json!({"literal":{"value":v,"dimension":"length","unit":"millimeter"}});
+        let a = |i: usize| json!({"literal":{"value":-picked["normal"][i].as_f64().unwrap(),"dimension":"scalar","unit":null}});
+        let feature = json!({"id":"placed-hole","operation":{"hole":{"input":"body","position":{"components":{"x":q(point[0]),"y":q(point[1]),"z":q(point[2])}},"axis":{"components":{"x":a(0),"y":a(1),"z":a(2)}},"diameter":q(2.0),"extent":extent,"bottom":"flat","finish":"plain"}}});
+        let mut edit = json!({"version":data["version"],"instance":"block","expected":data["features"],"action":"add","features":[feature],"output":"placed-hole","apply":false});
+        let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+        let preview: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(preview["can_apply"], true, "{preview}");
+        for (id, height) in [("block", 10.0), ("thin", 5.0)] {
+            let depth = if coordinate == 10.0 { height } else { 2.0 };
+            let expected = height * 1000.0 - std::f64::consts::PI * depth;
+            assert!(
+                (preview["geometry"][id]["volume_mm3"].as_f64().unwrap() - expected).abs() < 1e-5
+            );
+        }
+        edit["apply"] = json!(true);
+        assert_eq!(
+            studio
+                .handle("POST", "/api/features", edit.to_string().as_bytes())
+                .status,
+            200
+        );
+        assert_eq!(studio.handle("POST", "/api/save", b"").status, 200);
+        let saved = ModelDocument::from_json(&fs::read_to_string(model).unwrap()).unwrap();
+        let expected: FeatureDefinition =
+            serde_json::from_value(edit["features"][0].clone()).unwrap();
+        assert_eq!(
+            saved.family.features.iter().find(|f| f.id == "placed-hole"),
+            Some(&expected)
+        );
+    }
+}

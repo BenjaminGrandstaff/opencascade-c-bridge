@@ -291,3 +291,18 @@ test('hole recess and drill-point controls convert degrees, link parameters and 
  enter('Hole countersink angle (degrees)',90);choose('Hole countersink diameter source','literal');enter('Hole countersink diameter (mm)',-2);const rejected=calls.length;await button(host,'Preview solid').onclick();assert.equal(calls.length,rejected);
  }finally{delete globalThis.document;delete globalThis.Option;}
 });
+
+test('canvas hole placement replaces placement formulas explicitly and ignores stale or canceled picks',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const saved={id:'drilled',operation:{hole:{input:'body',position:{parameter:'entry'},axis:{parameter:'axis'},diameter:depth(4),extent:{blind:{depth:depth(2)}},bottom:'flat',finish:'plain'}}};
+ const host=new Element('div'),calls=[];let resolve;
+ createSolidEditor({host,instance:()=> 'part',pickHolePosition:()=>new Promise(r=>resolve=r),preview:async()=>{},applied:async()=>{},restore:async()=>{},request:async(path,options)=>{if(!options)return {version:1,features:[...base,saved],output:'drilled',parameters:[]};calls.push(JSON.parse(options.body));return {can_apply:true};}});
+ await button(host,'Sketch to solid').onclick();await button(host,'Edit hole drilled').onclick();
+ let picking=button(host,'Place hole on face in canvas').onclick();resolve(null);await picking;await button(host,'Preview solid').onclick();assert.deepEqual(calls.at(-1).features,[saved]);
+ picking=button(host,'Place hole on face in canvas').onclick();control(host,'Hole bottom').value='drill_point';control(host,'Hole bottom').onchange();resolve({target:'body',position_mm:[99,99,99],axis:[0,0,-1]});await picking;assert.equal(control(host,'Hole placement source').value,'preserve');
+ picking=button(host,'Place hole on face in canvas').onclick();resolve({target:'body',position_mm:[8,9,10],axis:[0,0,-1]});await picking;
+ assert.equal(control(host,'Hole placement source').value,'literal');assert.equal(control(host,'Hole position X (mm)').value,8);assert.equal(control(host,'Hole axis Z').value,-1);
+ await button(host,'Preview solid').onclick();const hole=calls.at(-1).features[0].operation.hole;assert.deepEqual(hole.position.components,{x:depth(8),y:depth(9),z:depth(10)});assert.deepEqual(hole.diameter,saved.operation.hole.diameter);assert.equal(hole.face_index,undefined);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});

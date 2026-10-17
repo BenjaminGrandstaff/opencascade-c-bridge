@@ -415,6 +415,21 @@ formula. New holes start plain with flat bottoms. Preview checks every instance
 before Apply. Hole edits share model Undo/Redo and Save with the other solid
 features.
 
+In the studio, **Place hole on face in canvas** loads the accepted drilled
+source as an amber overlay. Click the desired entry point on a planar face.
+The position uses the actual click, rather than the face center; the axis is the
+inward native face normal. A blue point and direction line mark the selection.
+Fit frames the source, dragging orbits, and Escape or **Cancel hole placement**
+retains the draft. Curved faces are rejected; field, source, model or instance
+changes discard pending picks.
+
+Canvas placement explicitly replaces position and axis formulas with entered
+family-coordinate values. Existing formula choices remain available when
+editing. Refine the entered coordinates numerically after picking as needed.
+The position is fixed: if the source face moves, pick again. Preview
+checks every family variant, including whether the hole removes material.
+Hole placement requires no model-format change and saves no mesh indices.
+
 **Hole entry finish** offers a plain bore, counterbore or countersink.
 Counterbores take a diameter and recess depth, plus optional **60° floor relief**
 with its own diameter. Countersinks take an entry diameter and included angle.
