@@ -869,6 +869,21 @@ const char* view_error(
         }
     }
     seen.clear();
+    if (view.size_count != 0 && view.sizes == nullptr) {
+        return "view annotation arrays are missing";
+    }
+    for (size_t index = 0; index < view.size_count; ++index) {
+        if (view.sizes[index] >= pmi.size_count) {
+            return "a view shows an unknown size";
+        }
+        if (pmi.sizes[view.sizes[index]].presentation == nullptr) {
+            return "a view shows only annotations with presentations";
+        }
+        if (!seen.insert(view.sizes[index]).second) {
+            return "a view shows an annotation at most once";
+        }
+    }
+    seen.clear();
     for (size_t index = 0; index < view.tolerance_count; ++index) {
         if (view.tolerances[index] >= pmi.tolerance_count) {
             return "a view shows an unknown tolerance";
@@ -989,6 +1004,9 @@ Bnd_Box view_bounds(const occt_bridge_step_pmi_t& pmi, const std::vector<const T
     }
     for (size_t index = 0; index < pmi.tolerance_count; ++index) {
         add(pmi.tolerances[index].presentation);
+    }
+    for (size_t index = 0; index < pmi.size_count; ++index) {
+        add(pmi.sizes[index].presentation);
     }
     return bounds;
 }
@@ -1435,6 +1453,11 @@ const char* pmi_error(const occt_bridge_step_pmi_t& pmi, const std::vector<const
             return error;
         }
     }
+    for (size_t index = 0; index < pmi.size_count; ++index) {
+        if (const char* error = presentation(pmi.sizes[index].presentation)) {
+            return error;
+        }
+    }
     std::sort(names.begin(), names.end());
     if (std::adjacent_find(names.begin(), names.end()) != names.end()) {
         return "presentation names must be unique";
@@ -1527,6 +1550,7 @@ void add_pmi(
         Handle(XCAFDimTolObjects_DimensionObject) object = new XCAFDimTolObjects_DimensionObject;
         object->SetLowerBound(size.lower_mm);
         object->SetUpperBound(size.upper_mm);
+        present(object, size.presentation);
         if (size.kind == OCCT_BRIDGE_STEP_SIZE_DIAMETER) {
             object->SetType(XCAFDimTolObjects_DimensionType_Size_Diameter);
             XCAFDoc_Dimension::Set(label)->SetObject(object);
@@ -1716,6 +1740,9 @@ void finish_pmi(
         for (size_t entry = 0; entry < view.tolerance_count; ++entry) {
             show(pmi.tolerances[view.tolerances[entry]].presentation);
         }
+        for (size_t entry = 0; entry < view.size_count; ++entry) {
+            show(pmi.sizes[view.sizes[entry]].presentation);
+        }
         Handle(StepRepr_HArray1OfRepresentationItem) array =
             new StepRepr_HArray1OfRepresentationItem(1, static_cast<int>(items.size()));
         for (size_t item = 0; item < items.size(); ++item) {
@@ -1809,9 +1836,10 @@ bool verify_pmi(const char* path, occt_bridge_step_pmi_t& pmi, const std::vector
             if (entry.claimed || entry.type != type || !faces_match) {
                 continue;
             }
-            const uint32_t losses = close(entry.lower, size.lower_mm) && close(entry.upper, size.upper_mm)
-                ? 0u
-                : OCCT_BRIDGE_PMI_LOST_VALUE;
+            const uint32_t losses = (close(entry.lower, size.lower_mm) && close(entry.upper, size.upper_mm)
+                    ? 0u
+                    : OCCT_BRIDGE_PMI_LOST_VALUE)
+                | presentation_losses(size.presentation, presentations);
             if (chosen == SIZE_MAX || losses < best) {
                 best = losses;
                 chosen = candidate;
@@ -1939,6 +1967,9 @@ bool verify_pmi(const char* path, occt_bridge_step_pmi_t& pmi, const std::vector
         }
         for (size_t entry = 0; view.out_tolerances_lost != nullptr && entry < view.tolerance_count; ++entry) {
             view.out_tolerances_lost[entry] = lost(pmi.tolerances[view.tolerances[entry]].presentation);
+        }
+        for (size_t entry = 0; view.out_sizes_lost != nullptr && entry < view.size_count; ++entry) {
+            view.out_sizes_lost[entry] = lost(pmi.sizes[view.sizes[entry]].presentation);
         }
     }
     if (pmi.dataset != nullptr && pmi.dataset->out_losses != nullptr) {

@@ -308,6 +308,8 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
     const occt_bridge_step_presentation_t datum_e = drawn("datum E", false, 40);
     const occt_bridge_step_presentation_t flatness = drawn("flatness", false, 40);
     const occt_bridge_step_presentation_t holes = drawn("hole position", true, 0);
+    // The holes' size dimension, drawn above their position frame.
+    const occt_bridge_step_presentation_t hole_size = drawn("hole size", false, 0);
     const occt_bridge_step_datum_t datums[] = {
         {"A", {0, bottom, 1}, &datum_a},
         {"B", {0, left, 1}, nullptr},
@@ -336,8 +338,8 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
         {{1, pin_side, 1}, OCCT_BRIDGE_GDT_TOTAL_RUNOUT, 0.03, 0, OCCT_BRIDGE_MATERIAL_RFS, 0, 0, pin_axis, 1, nullptr},
     };
     occt_bridge_step_size_t sizes[] = {
-        {{0, faces.holes.data(), 2}, OCCT_BRIDGE_STEP_SIZE_DIAMETER, 9.9, 10.2},
-        {{0, sides, 2}, OCCT_BRIDGE_STEP_SIZE_WIDTH, 99.9, 100.1},
+        {{0, faces.holes.data(), 2}, OCCT_BRIDGE_STEP_SIZE_DIAMETER, 9.9, 10.2, &hole_size},
+        {{0, sides, 2}, OCCT_BRIDGE_STEP_SIZE_WIDTH, 99.9, 100.1, nullptr},
     };
     uint32_t datum_losses[5] = {9, 9, 9, 9, 9};
     uint32_t tolerance_losses[5] = {9, 9, 9, 9, 9};
@@ -354,13 +356,15 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
     // The top view shows the plate alone; the front view both parts.
     const size_t plate_only[] = {0};
     const size_t both_parts[] = {0, 1};
+    const size_t top_sizes[] = {0};
+    uint8_t top_sizes_lost[1] = {9};
     const occt_bridge_step_view_t views[] = {
         {"TOP", {0, 0, -1}, {0, 2, 0}, top_datums, 2, top_tolerances, 2, top_datums_lost, top_tolerances_lost,
-            nullptr, 0, plate_only, 1},
+            nullptr, 0, plate_only, 1, top_sizes, 1, top_sizes_lost},
         // Up need not be square to the direction. A section through the
         // first hole, clipped to the plate's lower half.
         {"FRONT", {0, 1, 0}, {0, 0.5, 1}, nullptr, 0, front_tolerances, 1, nullptr, front_tolerances_lost, section, 2,
-            both_parts, 2},
+            both_parts, 2, nullptr, 0, nullptr},
     };
     uint32_t view_losses[2] = {9, 9};
     // Released at revision B with two approvals; the model is the authority.
@@ -410,7 +414,7 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
             "the root product carries the dataset");
     }
     check(top_datums_lost[0] == 0 && top_datums_lost[1] == 0 && top_tolerances_lost[0] == 0
-            && top_tolerances_lost[1] == 0 && front_tolerances_lost[0] == 0,
+            && top_tolerances_lost[1] == 0 && front_tolerances_lost[0] == 0 && top_sizes_lost[0] == 0,
         "views show their annotations");
     {
         Handle(XCAFApp_Application) application = XCAFApp_Application::GetApplication();
@@ -443,7 +447,7 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
     // Tolerances without size dimensions keep their millimetre values,
     // which OCCT's writer alone would write in metres.
     const occt_bridge_step_view_t flat_view{
-        "TOP", {0, 0, -1}, {0, 1, 0}, nullptr, 0, top_tolerances, 1, nullptr, nullptr, nullptr, 0, nullptr, 0};
+        "TOP", {0, 0, -1}, {0, 1, 0}, nullptr, 0, top_tolerances, 1, nullptr, nullptr, nullptr, 0, nullptr, 0, nullptr, 0, nullptr};
     uint32_t alone_losses[1] = {9};
     uint32_t alone_view[1] = {9};
     occt_bridge_step_pmi_t alone{
@@ -500,13 +504,15 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
     missing.target = {0, beyond, 1};
     refused({nullptr, 0, &missing, 1, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr, nullptr}, "face beyond the plate's");
     const occt_bridge_step_view_t bare{
-        "TOP", {0, 0, -1}, {0, 1, 0}, nullptr, 0, front_tolerances, 1, nullptr, nullptr, nullptr, 0, nullptr, 0};
+        "TOP", {0, 0, -1}, {0, 1, 0}, nullptr, 0, front_tolerances, 1, nullptr, nullptr, nullptr, 0, nullptr, 0, nullptr, 0, nullptr};
     refused({nullptr, 0, tolerances, 2, nullptr, 0, nullptr, nullptr, nullptr, &bare, 1, nullptr, nullptr},
         "view of an annotation without a presentation");
     const occt_bridge_step_view_t level{
-        "TOP", {0, 0, -1}, {0, 0, 2}, nullptr, 0, nullptr, 0, nullptr, nullptr, nullptr, 0, nullptr, 0};
+        "TOP", {0, 0, -1}, {0, 0, 2}, nullptr, 0, nullptr, 0, nullptr, nullptr, nullptr, 0, nullptr, 0, nullptr, 0, nullptr};
     refused({nullptr, 0, nullptr, 0, nullptr, 0, nullptr, nullptr, nullptr, &level, 1, nullptr, nullptr}, "up along the view");
     const occt_bridge_step_clipping_plane_t long_normal[] = {{{0, 0, 0}, {0, 2, 0}}};
+    const size_t sizes_wide = 1;
+    const size_t sizes_beyond = 2;
     const size_t unknown_part[] = {2};
     occt_bridge_step_view_t stray = views[1];
     stray.parts = unknown_part;
@@ -521,6 +527,14 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
     stray.parts = nullptr;
     refused({datums, 5, tolerances, 2, nullptr, 0, nullptr, nullptr, nullptr, &stray, 1, nullptr, nullptr},
         "view part arrays are missing");
+    occt_bridge_step_view_t undrawn_size = views[1];
+    undrawn_size.sizes = &sizes_wide;
+    undrawn_size.size_count = 1;
+    refused({datums, 5, tolerances, 2, sizes, 2, nullptr, nullptr, nullptr, &undrawn_size, 1, nullptr, nullptr},
+        "a view shows only annotations with presentations");
+    undrawn_size.sizes = &sizes_beyond;
+    refused({datums, 5, tolerances, 2, sizes, 2, nullptr, nullptr, nullptr, &undrawn_size, 1, nullptr, nullptr},
+        "a view shows an unknown size");
     occt_bridge_step_view_t loose = views[1];
     loose.clipping_planes = long_normal;
     loose.clipping_plane_count = 1;

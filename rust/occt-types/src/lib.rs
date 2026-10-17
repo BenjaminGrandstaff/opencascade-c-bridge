@@ -414,6 +414,8 @@ pub struct StepSize<'a> {
     pub kind: StepSizeKind,
     pub lower_mm: f64,
     pub upper_mm: f64,
+    /// The size dimension drawn in 3D.
+    pub presentation: Option<StepPresentation<'a>>,
 }
 
 /// A clipping plane of a saved view: the view shows the side `normal` (a
@@ -430,7 +432,8 @@ pub struct StepClippingPlane {
 /// section or clipped view keeps only the region inside all of its
 /// `clipping_planes` (at most 16). A view that lists `parts` (component
 /// indexes, each at most once) shows those parts alone; one that lists none
-/// leaves visibility to the reader.
+/// leaves visibility to the reader. It also shows the size dimensions
+/// indexed by `sizes`, each with a presentation.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StepView<'a> {
     pub name: &'a str,
@@ -440,6 +443,7 @@ pub struct StepView<'a> {
     pub tolerances: &'a [usize],
     pub clipping_planes: &'a [StepClippingPlane],
     pub parts: &'a [usize],
+    pub sizes: &'a [usize],
 }
 
 /// A sign-off on a dataset's release; `date` is `YYYY-MM-DD`.
@@ -511,7 +515,8 @@ impl StepPmiLoss {
 
 /// What reading a saved view back did not recover: the whole view, its
 /// camera's direction or up, and per index of [`StepView::datums`] and
-/// [`StepView::tolerances`] whether the view shows that annotation.
+/// [`StepView::tolerances`] and [`StepView::sizes`] whether the view shows
+/// that annotation.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct StepViewLoss {
     pub view: bool,
@@ -521,6 +526,7 @@ pub struct StepViewLoss {
     pub parts: bool,
     pub datums: Vec<bool>,
     pub tolerances: Vec<bool>,
+    pub sizes: Vec<bool>,
 }
 
 impl StepViewLoss {
@@ -531,6 +537,7 @@ impl StepViewLoss {
             && !self.parts
             && !self.datums.contains(&true)
             && !self.tolerances.contains(&true)
+            && !self.sizes.contains(&true)
     }
 }
 

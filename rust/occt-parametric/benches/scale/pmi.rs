@@ -209,6 +209,7 @@ fn drawing(pattern: bool) -> DrawingDefinition {
             feature_control_frames: frames,
             clipping_planes: Vec::new(),
             parts: Vec::new(),
+            sizes: Vec::new(),
         }
     };
     let mut annotation_views = vec![
@@ -225,6 +226,12 @@ fn drawing(pattern: bool) -> DrawingDefinition {
             vec!["flat".into()],
         ),
     ];
+    // The top view shows every hole's size dimension above its frame.
+    annotation_views[0].sizes = frames
+        .iter()
+        .filter(|f| f.size_limits.is_some())
+        .map(|f| f.id.clone())
+        .collect();
     // The isometric view is a section through the middle row of holes,
     // showing the plate.
     annotation_views[1].parts = vec![InstanceOutputRef {
@@ -297,7 +304,8 @@ pub(crate) fn pmi_case(definition: &FamilyDefinition, pattern: bool) -> Outcome 
     };
     // Measured about 1.9 s for either: two regenerations of the plate (the
     // graph's and the local one its selectors run on) take 1.2 s, and the
-    // AP242 write and read-back 0.5 s.
+    // AP242 write and read-back 0.5 s. Drawing the 400 size dimensions in
+    // the top view adds about 0.15 s.
     timed(name, ms(6_000), Expectation::Required, || {
         let definition = drilled(definition);
         let session = Session::new().map_err(|error| failure(error.to_string()))?;
@@ -336,9 +344,14 @@ pub(crate) fn pmi_case(definition: &FamilyDefinition, pattern: bool) -> Outcome 
             .iter()
             .map(|v| v.annotations.len())
             .sum::<usize>();
-        if !report.complete() || (tolerances, sizes) != expected || shown != holes + 8 {
+        let drawn_sizes = report.views[0].sizes.len();
+        if !report.complete()
+            || (tolerances, sizes) != expected
+            || shown != holes + 8
+            || drawn_sizes != expected.1
+        {
             return Err(failure(format!(
-                "{tolerances} tolerances, {sizes} sizes, {shown} shown, complete {}",
+                "{tolerances} tolerances, {sizes} sizes, {shown} shown, {drawn_sizes} sizes drawn, complete {}",
                 report.complete()
             )));
         }

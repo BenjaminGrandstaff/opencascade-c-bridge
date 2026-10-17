@@ -269,9 +269,16 @@ impl DrawingStepPmi for DrawingDefinition {
             .map(|tolerance| resolve(&tolerance.target, tolerance.id))
             .collect::<Result<Vec<_>, _>>()?;
         // A datum feature of size and its own position control may give the
-        // same limits on the same faces; one size dimension states them.
-        let mut sizes = Vec::new();
-        let mut seen = HashSet::new();
+        // same limits on the same faces; one size dimension states them,
+        // drawn as the first of them that a view shows. `written[i]` is the
+        // size dimension planned size i became.
+        let mut sizes: Vec<(
+            &PlannedSize<'_>,
+            std::rc::Rc<Resolved>,
+            Option<PmiPresentation>,
+        )> = Vec::new();
+        let mut seen = HashMap::new();
+        let mut written = Vec::with_capacity(plan.sizes.len());
         for size in &plan.sizes {
             let resolved = resolve(&size.target, size.id)?;
             let key = (
@@ -280,9 +287,14 @@ impl DrawingStepPmi for DrawingDefinition {
                 size.lower_mm.to_bits(),
                 size.upper_mm.to_bits(),
             );
-            if seen.insert(key) {
-                sizes.push((size, resolved));
+            let index = *seen.entry(key).or_insert_with(|| {
+                sizes.push((size, resolved, None));
+                sizes.len() - 1
+            });
+            if sizes[index].2.is_none() {
+                sizes[index].2 = size.presentation(!sizes[index].1.width)?;
             }
+            written.push(index);
         }
         let references = plan
             .tolerances
@@ -334,7 +346,7 @@ impl DrawingStepPmi for DrawingDefinition {
             .collect::<Vec<_>>();
         let step_sizes = sizes
             .iter()
-            .map(|(size, resolved)| StepSize {
+            .map(|(size, resolved, drawn)| StepSize {
                 target: faces(resolved),
                 kind: if resolved.width {
                     StepSizeKind::Width
@@ -343,6 +355,7 @@ impl DrawingStepPmi for DrawingDefinition {
                 },
                 lower_mm: size.lower_mm,
                 upper_mm: size.upper_mm,
+                presentation: presentation(drawn),
             })
             .collect::<Vec<_>>();
         let planes = plan
@@ -353,6 +366,19 @@ impl DrawingStepPmi for DrawingDefinition {
                     .iter()
                     .map(|&(origin, normal)| StepClippingPlane { origin, normal })
                     .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let view_sizes = plan
+            .views
+            .iter()
+            .map(|view| {
+                let mut shown = Vec::with_capacity(view.sizes.len());
+                for &size in &view.sizes {
+                    if !shown.contains(&written[size]) {
+                        shown.push(written[size]);
+                    }
+                }
+                shown
             })
             .collect::<Vec<_>>();
         let view_parts = plan
@@ -369,8 +395,8 @@ impl DrawingStepPmi for DrawingDefinition {
         let step_views = plan
             .views
             .iter()
-            .zip(planes.iter().zip(&view_parts))
-            .map(|(view, (planes, parts))| StepView {
+            .zip(planes.iter().zip(view_parts.iter().zip(&view_sizes)))
+            .map(|(view, (planes, (parts, sizes)))| StepView {
                 name: view.name,
                 direction: Vec3::new(
                     -view.axes.direction.x,
@@ -382,6 +408,7 @@ impl DrawingStepPmi for DrawingDefinition {
                 tolerances: &view.tolerances,
                 clipping_planes: planes,
                 parts,
+                sizes,
             })
             .collect::<Vec<_>>();
         let approvals = plan
@@ -461,7 +488,7 @@ impl DrawingStepPmi for DrawingDefinition {
                 loss,
             ));
         }
-        for ((size, resolved), loss) in sizes.iter().zip(&verification.sizes) {
+        for ((size, resolved, _), loss) in sizes.iter().zip(&verification.sizes) {
             items.push(item(
                 size.id,
                 PmiItemKind::Size,
@@ -475,7 +502,8 @@ impl DrawingStepPmi for DrawingDefinition {
             .views
             .iter()
             .zip(&verification.views)
-            .map(|(view, loss)| {
+            .zip(&view_sizes)
+            .map(|((view, loss), shown_sizes)| {
                 let mut lost_annotations: Vec<String> = Vec::new();
                 let lost_ids = view
                     .datums
@@ -517,6 +545,16 @@ impl DrawingStepPmi for DrawingDefinition {
                         None
                     },
                     lost_annotations,
+                    sizes: shown_sizes
+                        .iter()
+                        .map(|&size| sizes[size].0.id.to_owned())
+                        .collect(),
+                    lost_sizes: shown_sizes
+                        .iter()
+                        .zip(&loss.sizes)
+                        .filter(|(_, lost)| **lost)
+                        .map(|(&size, _)| sizes[size].0.id.to_owned())
+                        .collect(),
                 }
             })
             .collect();

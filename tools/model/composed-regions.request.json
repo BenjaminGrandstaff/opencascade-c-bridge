@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 173,
+    "schema_version": 174,
     "family": {
       "id": "composed-regions",
       "version": 1,

@@ -96,10 +96,11 @@ impl PmiExchangeReport {
     /// Every exported item and view read back with nothing lost.
     pub fn verified(&self) -> bool {
         self.items.iter().all(|item| item.lost.is_empty())
-            && self
-                .views
-                .iter()
-                .all(|view| view.lost.is_none() && view.lost_annotations.is_empty())
+            && self.views.iter().all(|view| {
+                view.lost.is_none()
+                    && view.lost_annotations.is_empty()
+                    && view.lost_sizes.is_empty()
+            })
             && self
                 .dataset
                 .as_ref()
@@ -170,6 +171,52 @@ pub struct PlannedSize<'a> {
     pub target: PmiTarget<'a>,
     pub lower_mm: f64,
     pub upper_mm: f64,
+    /// Where the size dimension is drawn when an annotation view shows it:
+    /// above its frame or datum feature symbol, in that annotation's plane.
+    drawing: Option<SizeDrawing>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct SizeDrawing {
+    plane: AnnotationPlane,
+    position: [f64; 2],
+    /// Members of the pattern whose frame it is drawn above.
+    count: usize,
+    lettering: DrawingLettering,
+}
+
+impl PlannedSize<'_> {
+    /// The size dimension `[nX ][Ø]lower-upper` drawn in 3D, as a diameter
+    /// or a width as its faces give, when a view shows it.
+    pub fn presentation(&self, diameter: bool) -> Result<Option<PmiPresentation>, ModelError> {
+        let Some(drawing) = &self.drawing else {
+            return Ok(None);
+        };
+        let mut d = gdt::scratch(drawing.lettering);
+        let mut text = String::new();
+        if drawing.count > 1 {
+            text.push_str(&format!("{}X ", drawing.count));
+        }
+        if diameter {
+            text.push('Ø');
+        }
+        text.push_str(&limits_text(self.lower_mm, self.upper_mm));
+        d.gdt_labels.push(DrawingLabel {
+            position_mm: drawing.position,
+            text,
+            stack: None,
+            height_mm: drawing.lettering.notes,
+        });
+        drawing
+            .plane
+            .presentation(format!("size {}", self.id), &d)
+            .map(Some)
+    }
+
+    /// Whether an annotation view shows this size dimension.
+    pub fn drawn(&self) -> bool {
+        self.drawing.is_some()
+    }
 }
 
 /// The drawing GD&T a PMI export writes, in drawing order.
@@ -226,6 +273,21 @@ fn limits_mm(limits: &DrawingSizeLimits) -> Result<(f64, f64), ModelError> {
     Ok((limits.lower.normalized()?, limits.upper.normalized()?))
 }
 
+/// Limit dimensioning on one line (Y14.5): the lower limit, a dash and the
+/// upper, both in millimetres with the same decimals (at most four).
+fn limits_text(lower_mm: f64, upper_mm: f64) -> String {
+    let decimals = |value: f64| {
+        (0..4)
+            .find(|&d| {
+                let scale = 10f64.powi(d);
+                ((value * scale).round() / scale - value).abs() <= 1e-9 * value.abs().max(1.0)
+            })
+            .unwrap_or(4) as usize
+    };
+    let d = decimals(lower_mm).max(decimals(upper_mm));
+    format!("{lower_mm:.d$}-{upper_mm:.d$}")
+}
+
 impl DrawingDefinition {
     /// The datum features and feature control frames whose attachments name
     /// `faces` on an output for which `exported` holds, as PMI on those
@@ -248,6 +310,12 @@ impl DrawingDefinition {
         // The first view showing each datum feature and frame sets its plane.
         let mut feature_view: HashMap<&str, usize> = HashMap::new();
         let mut frame_view: HashMap<&str, usize> = HashMap::new();
+        // IDs whose size dimension some view shows.
+        let shown_sizes: HashSet<&str> = self
+            .annotation_views
+            .iter()
+            .flat_map(|view| view.sizes.iter().map(String::as_str))
+            .collect();
         for (index, view) in self.annotation_views.iter().enumerate() {
             for id in &view.datum_features {
                 feature_view.entry(id.as_str()).or_insert(index);
@@ -263,6 +331,8 @@ impl DrawingDefinition {
             )
         };
         let mut datum_index = HashMap::new();
+        // Planned size of each datum feature and frame ID.
+        let mut size_index: HashMap<&str, usize> = HashMap::new();
         // Planned tolerances of each frame ID.
         let mut frame_tolerances: HashMap<&str, std::ops::Range<usize>> = HashMap::new();
         for feature in &self.datum_features {
@@ -279,14 +349,23 @@ impl DrawingDefinition {
                 output: &attachment.output,
                 faces: vec![faces],
             };
+            let mut size_drawing = None;
             let presentation = match feature_view.get(feature.id.as_str()) {
                 Some(&view) => {
                     let mut d = gdt::scratch(lettering);
                     gdt::draw_datum_feature(feature, [0.0, 0.0], attachment.offset_mm, &mut d);
-                    Some(
-                        plane(view, attachment)?
-                            .presentation(format!("datum {}", feature.label), &d)?,
-                    )
+                    let plane = plane(view, attachment)?;
+                    if feature.size_limits.is_some() && shown_sizes.contains(feature.id.as_str()) {
+                        // Above the symbol's 8 mm box.
+                        let offset = attachment.offset_mm;
+                        size_drawing = Some(SizeDrawing {
+                            plane: plane.clone(),
+                            position: [offset[0], offset[1] + 10.0],
+                            count: 1,
+                            lettering,
+                        });
+                    }
+                    Some(plane.presentation(format!("datum {}", feature.label), &d)?)
                 }
                 None => None,
             };
@@ -299,11 +378,13 @@ impl DrawingDefinition {
             });
             if let Some(limits) = &feature.size_limits {
                 let (lower_mm, upper_mm) = limits_mm(limits)?;
+                size_index.insert(&feature.id, plan.sizes.len());
                 plan.sizes.push(PlannedSize {
                     id: &feature.id,
                     target,
                     lower_mm,
                     upper_mm,
+                    drawing: size_drawing,
                 });
             }
         }
@@ -372,6 +453,7 @@ impl DrawingDefinition {
                 .filter_map(|f| frame_view.get(f.id.as_str()).copied())
                 .min();
             let mut presentations: Vec<Option<PmiPresentation>> = vec![None; segments.len()];
+            let mut size_drawing = None;
             if let Some(view) = view {
                 let mut drawn = vec![gdt::scratch(lettering); segments.len()];
                 let offset = attachment.offset_mm;
@@ -382,15 +464,27 @@ impl DrawingDefinition {
                     offset,
                     &mut drawn,
                 )?;
-                if frames.len() > 1 {
+                // A shown size dimension goes above the frame and carries
+                // the pattern's count; otherwise the count stands alone.
+                let above = [offset[0], offset[1] + 8.0 * segments.len() as f64 + 2.0];
+                let plane = plane(view, attachment)?;
+                if first.size_limits.is_some()
+                    && frames.iter().any(|f| shown_sizes.contains(f.id.as_str()))
+                {
+                    size_drawing = Some(SizeDrawing {
+                        plane: plane.clone(),
+                        position: above,
+                        count: frames.len(),
+                        lettering,
+                    });
+                } else if frames.len() > 1 {
                     drawn[0].gdt_labels.push(DrawingLabel {
-                        position_mm: [offset[0], offset[1] + 8.0 * segments.len() as f64 + 2.0],
+                        position_mm: above,
                         text: format!("{}X", frames.len()),
                         stack: None,
                         height_mm: lettering.notes,
                     });
                 }
-                let plane = plane(view, attachment)?;
                 for (segment, d) in drawn.iter().enumerate() {
                     let name = match segment {
                         0 => format!("frame {}", first.id),
@@ -478,11 +572,15 @@ impl DrawingDefinition {
             plan.tolerances.extend(tolerances);
             if let Some(limits) = &first.size_limits {
                 let (lower_mm, upper_mm) = limits_mm(limits)?;
+                for frame in &frames {
+                    size_index.insert(&frame.id, plan.sizes.len());
+                }
                 plan.sizes.push(PlannedSize {
                     id: &first.id,
                     target,
                     lower_mm,
                     upper_mm,
+                    drawing: size_drawing,
                 });
             }
         }
@@ -510,6 +608,7 @@ impl DrawingDefinition {
                     .collect::<Result<_, _>>()?,
                 parts: Vec::new(),
                 omitted_parts: Vec::new(),
+                sizes: Vec::new(),
             };
             for part in &view.parts {
                 if graph.node(&part.instance).is_none() {
@@ -544,6 +643,21 @@ impl DrawingDefinition {
                         planned.annotations.push(id);
                     }
                     None => planned.omitted.push(id),
+                }
+            }
+            // A pattern's size shows once, however many members list it.
+            for id in &view.sizes {
+                match size_index.get(id.as_str()) {
+                    Some(&size) => {
+                        if !planned.sizes.contains(&size) {
+                            planned.sizes.push(size);
+                        }
+                    }
+                    None => {
+                        if !planned.omitted.contains(&id.as_str()) {
+                            planned.omitted.push(id);
+                        }
+                    }
                 }
             }
             plan.views.push(planned);

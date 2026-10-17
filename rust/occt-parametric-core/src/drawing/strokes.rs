@@ -1,6 +1,6 @@
 //! A single-stroke gothic letter set for annotations drawn as linework
-//! rather than font text, such as 3D PMI presentations: capitals, digits and
-//! the punctuation GD&T values use.
+//! rather than font text, such as 3D PMI presentations: capitals, digits,
+//! the diameter symbol and the punctuation GD&T values use.
 
 /// Glyph strokes on a grid four units wide and six tall, baseline at 0.
 type Glyph = &'static [&'static [(f64, f64)]];
@@ -230,6 +230,21 @@ fn glyph(c: char) -> Option<Glyph> {
             &[(0.0, 0.0), (4.0, 0.0)],
         ],
         '/' => &[&[(0.0, 0.0), (4.0, 6.0)]],
+        // The diameter symbol: a circle struck through.
+        'Ø' => &[
+            &[
+                (1.5, 1.0),
+                (0.5, 2.0),
+                (0.5, 4.0),
+                (1.5, 5.0),
+                (2.5, 5.0),
+                (3.5, 4.0),
+                (3.5, 2.0),
+                (2.5, 1.0),
+                (1.5, 1.0),
+            ],
+            &[(0.0, 0.0), (4.0, 6.0)],
+        ],
         '(' => &[&[(3.0, 6.0), (2.0, 5.0), (1.5, 3.0), (2.0, 1.0), (3.0, 0.0)]],
         ')' => &[&[(1.0, 6.0), (2.0, 5.0), (2.5, 3.0), (2.0, 1.0), (1.0, 0.0)]],
         ':' => &[

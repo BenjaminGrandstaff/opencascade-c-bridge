@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 80u
+#define OCCT_BRIDGE_ABI_VERSION 81u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -1493,12 +1493,14 @@ typedef struct occt_bridge_step_tolerance {
 #define OCCT_BRIDGE_STEP_SIZE_DIAMETER 0
 #define OCCT_BRIDGE_STEP_SIZE_WIDTH 1
 
-/* Limits 0 < lower_mm <= upper_mm, both finite. */
+/* Limits 0 < lower_mm <= upper_mm, both finite. Since ABI 81 a size may
+ * have a presentation (null for none), the size dimension drawn in 3D. */
 typedef struct occt_bridge_step_size {
     occt_bridge_step_pmi_faces_t target;
     int32_t kind;
     double lower_mm;
     double upper_mm;
+    const occt_bridge_step_presentation_t* presentation;
 } occt_bridge_step_size_t;
 
 /* Bits of what did not read back from the written file. */
@@ -1531,7 +1533,10 @@ typedef struct occt_bridge_step_clipping_plane {
  * clipping_plane_count is 0). Since ABI 80 a view may show only the parts
  * of the components indexed by parts (each at most once; may be null when
  * part_count is 0, which shows every part). Occurrences of one part share
- * its visibility. */
+ * its visibility. Since ABI 81 it also shows the size dimensions indexed by
+ * sizes (each with a presentation, at most once; may be null when
+ * size_count is 0), and out_sizes_lost, null or one entry per index, gets 1
+ * when that size's annotation was not read back in the view. */
 typedef struct occt_bridge_step_view {
     const char* name;
     double direction[3];
@@ -1546,6 +1551,9 @@ typedef struct occt_bridge_step_view {
     size_t clipping_plane_count;
     const size_t* parts;
     size_t part_count;
+    const size_t* sizes;
+    size_t size_count;
+    uint8_t* out_sizes_lost;
 } occt_bridge_step_view_t;
 
 /* Bits of what of a view did not read back: the whole view (no camera of its

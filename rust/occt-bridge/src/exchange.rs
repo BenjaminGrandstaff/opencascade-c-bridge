@@ -271,8 +271,14 @@ impl Session {
                 .map(|buffers| buffers.as_ref().map(PresentationBuffers::raw))
                 .collect::<Vec<_>>()
         };
+        let size_buffers = pmi
+            .sizes
+            .iter()
+            .map(|size| buffers(&size.presentation))
+            .collect::<Result<Vec<_>, _>>()?;
         let datum_presentations = raw_presentations(&datum_buffers);
         let tolerance_presentations = raw_presentations(&tolerance_buffers);
+        let size_presentations = raw_presentations(&size_buffers);
         let pointer = |raw: &Option<RawStepPresentation>| {
             raw.as_ref()
                 .map_or(std::ptr::null(), |raw| raw as *const RawStepPresentation)
@@ -332,7 +338,8 @@ impl Session {
         let sizes = pmi
             .sizes
             .iter()
-            .map(|size| RawStepSize {
+            .zip(&size_presentations)
+            .map(|(size, presentation)| RawStepSize {
                 target: targets(&size.target),
                 kind: match size.kind {
                     StepSizeKind::Diameter => 0,
@@ -340,6 +347,7 @@ impl Session {
                 },
                 lower_mm: size.lower_mm,
                 upper_mm: size.upper_mm,
+                presentation: pointer(presentation),
             })
             .collect::<Vec<_>>();
         let mut datum_losses = vec![0u32; datums.len()];
@@ -360,6 +368,11 @@ impl Session {
             .iter()
             .map(|view| vec![0u8; view.tolerances.len()])
             .collect::<Vec<_>>();
+        let mut view_sizes_lost = pmi
+            .views
+            .iter()
+            .map(|view| vec![0u8; view.sizes.len()])
+            .collect::<Vec<_>>();
         let view_planes = pmi
             .views
             .iter()
@@ -377,22 +390,31 @@ impl Session {
             .views
             .iter()
             .zip(view_names.iter().zip(&view_planes))
-            .zip(view_datums_lost.iter_mut().zip(&mut view_tolerances_lost))
+            .zip(
+                view_datums_lost
+                    .iter_mut()
+                    .zip(view_tolerances_lost.iter_mut().zip(&mut view_sizes_lost)),
+            )
             .map(
-                |((view, (name, planes)), (datums_lost, tolerances_lost))| RawStepView {
-                    name: name.as_ptr(),
-                    direction: [view.direction.x, view.direction.y, view.direction.z],
-                    up: [view.up.x, view.up.y, view.up.z],
-                    datums: view.datums.as_ptr(),
-                    datum_count: view.datums.len(),
-                    tolerances: view.tolerances.as_ptr(),
-                    tolerance_count: view.tolerances.len(),
-                    out_datums_lost: datums_lost.as_mut_ptr(),
-                    out_tolerances_lost: tolerances_lost.as_mut_ptr(),
-                    clipping_planes: planes.as_ptr(),
-                    clipping_plane_count: planes.len(),
-                    parts: view.parts.as_ptr(),
-                    part_count: view.parts.len(),
+                |((view, (name, planes)), (datums_lost, (tolerances_lost, sizes_lost)))| {
+                    RawStepView {
+                        name: name.as_ptr(),
+                        direction: [view.direction.x, view.direction.y, view.direction.z],
+                        up: [view.up.x, view.up.y, view.up.z],
+                        datums: view.datums.as_ptr(),
+                        datum_count: view.datums.len(),
+                        tolerances: view.tolerances.as_ptr(),
+                        tolerance_count: view.tolerances.len(),
+                        out_datums_lost: datums_lost.as_mut_ptr(),
+                        out_tolerances_lost: tolerances_lost.as_mut_ptr(),
+                        clipping_planes: planes.as_ptr(),
+                        clipping_plane_count: planes.len(),
+                        parts: view.parts.as_ptr(),
+                        part_count: view.parts.len(),
+                        sizes: view.sizes.as_ptr(),
+                        size_count: view.sizes.len(),
+                        out_sizes_lost: sizes_lost.as_mut_ptr(),
+                    }
                 },
             )
             .collect::<Vec<_>>();
@@ -500,14 +522,19 @@ impl Session {
         drop(views);
         let views = view_losses
             .into_iter()
-            .zip(view_datums_lost.into_iter().zip(view_tolerances_lost))
-            .map(|(bits, (datums, tolerances))| StepViewLoss {
+            .zip(
+                view_datums_lost
+                    .into_iter()
+                    .zip(view_tolerances_lost.into_iter().zip(view_sizes_lost)),
+            )
+            .map(|(bits, (datums, (tolerances, sizes)))| StepViewLoss {
                 view: bits & 1 != 0,
                 camera: bits & 2 != 0,
                 clipping: bits & 4 != 0,
                 parts: bits & 8 != 0,
                 datums: datums.into_iter().map(|lost| lost != 0).collect(),
                 tolerances: tolerances.into_iter().map(|lost| lost != 0).collect(),
+                sizes: sizes.into_iter().map(|lost| lost != 0).collect(),
             })
             .collect();
         Ok((

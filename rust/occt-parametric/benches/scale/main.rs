@@ -137,6 +137,13 @@ fn main() -> ExitCode {
     if std::env::args().any(|arg| arg == "--view-parts-only") {
         return report(&[pmi::view_parts_case(definition)]);
     }
+    if std::env::args().any(|arg| arg == "--pmi-only") {
+        return report(&[
+            pmi::pmi_case(definition, false),
+            pmi::pmi_case(definition, true),
+            pmi::view_parts_case(definition),
+        ]);
+    }
     if std::env::args().any(|arg| arg == "--gltf-only") {
         return report(&[
             mesh::gltf_case(definition),

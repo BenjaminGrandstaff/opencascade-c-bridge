@@ -8,16 +8,16 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 80 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 81 | Stable; exact version match required |
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 173 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 173 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 174 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 174 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 167 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 774 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 93 + viewer Node 456 + branch command 2 + model command 94, MCP Python 13, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 167 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 775 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 93 + viewer Node 456 + branch command 2 + model command 94, MCP Python 13, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,14 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases (196 with the parallel glTF and 1,000-part view cases) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Size dimensions drawn in 3D (schema 174, ABI 81). Annotation views list
+  the size dimensions they show; each is drawn above its frame or datum
+  feature symbol as one-line limits (`2X Ø9.9-10.1`, `59.9-60.1`), a
+  diameter or width as its faces give, written as the presentation of the
+  AP242 size dimension and verified on read-back with the view's callouts.
+  400 drawn sizes add about 0.15 s to the 400-hole plate's export. See
+  [annotation views](docs/DRAWINGS.md).
 
 - Per-view part visibility in annotation views (schema 173, ABI 80). A
   saved view may list the instance outputs it shows; each is written as a
@@ -3255,8 +3263,8 @@ scopes and inspected repo capabilities, not a full conformity audit.
    feature, dynamic profile and translation modifiers (schema 143), and
    measurement uncertainty simulated from the measurement itself.
 3. **3D manufacturing annotations and exchange** — [Y14.41](https://www.asme.org/codes-standards/find-codes-standards/y14-41-digital-product-definition-data-practices):
-   the listed gaps are closed; remaining refinements are size dimensions
-   drawn in 3D, and checking against Y14.41's
+   the listed gaps are closed; the remaining refinement is checking
+   against Y14.41's
    own rules, which no public source provided. Dataset identification,
    authority and the model-revision rule exchange with the PMI (schema 151,
    ABI 76). Drawing GD&T attached to persistent faces exports as verified semantic
@@ -3265,7 +3273,8 @@ scopes and inspected repo capabilities, not a full conformity audit.
    Annotation views export as verified saved views of 3D presentations
    (schema 145, ABI 71), including section and clipped views (schema 150,
    ABI 75), and projected zones now exchange too. Views list the parts
-   they show (schema 173, ABI 80).
+   they show (schema 173, ABI 80) and draw size dimensions in 3D (schema
+   174, ABI 81).
 4. **Standards-backed thread specifications** — [B1.1](https://www.asme.org/codes-standards/find-codes-standards/b1-1-unified-inch-screw-threads-un-unr-thread-form):
    Unified classes 1A–2B with limits of size, designation and bore checks,
    fit checks and inspection of measured diameters exist (schema 152).

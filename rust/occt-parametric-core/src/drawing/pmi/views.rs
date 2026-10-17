@@ -37,6 +37,11 @@ pub struct DrawingAnnotationView {
     /// reader; one that lists some shows those parts alone.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parts: Vec<InstanceOutputRef>,
+    /// Size dimensions shown (schema 174), by the ID of the datum feature or
+    /// feature control frame carrying the size limits, which the view must
+    /// also show. Each is drawn above its frame or datum feature symbol.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sizes: Vec<String>,
 }
 
 /// A cutting plane of an annotation view, as for section drawing views:
@@ -122,6 +127,19 @@ pub(crate) fn validate(definition: &DrawingDefinition) -> Result<(), ModelError>
         .iter()
         .map(|f| f.id.as_str())
         .collect();
+    let sized: HashSet<&str> = definition
+        .datum_features
+        .iter()
+        .filter(|f| f.size_limits.is_some())
+        .map(|f| f.id.as_str())
+        .chain(
+            definition
+                .feature_control_frames
+                .iter()
+                .filter(|f| f.size_limits.is_some())
+                .map(|f| f.id.as_str()),
+        )
+        .collect();
     let mut ids = HashSet::new();
     let mut names = HashSet::new();
     for view in &definition.annotation_views {
@@ -147,6 +165,27 @@ pub(crate) fn validate(definition: &DrawingDefinition) -> Result<(), ModelError>
         }
         for plane in &view.clipping_planes {
             plane.kept_side()?;
+        }
+        let mut sizes = HashSet::new();
+        for id in &view.sizes {
+            if !sized.contains(id.as_str()) {
+                return Err(ModelError::new(format!(
+                    "annotation view '{}' shows the size of '{id}', which has no size limits",
+                    view.id
+                )));
+            }
+            if !view.datum_features.contains(id) && !view.feature_control_frames.contains(id) {
+                return Err(ModelError::new(format!(
+                    "annotation view '{}' shows the size of '{id}' without showing '{id}'",
+                    view.id
+                )));
+            }
+            if !sizes.insert(id.as_str()) {
+                return Err(ModelError::new(format!(
+                    "annotation view '{}' shows the size of '{id}' twice",
+                    view.id
+                )));
+            }
         }
         let mut parts = HashSet::new();
         for part in &view.parts {
@@ -209,6 +248,7 @@ pub struct PmiPresentation {
 /// An annotation plane through an anchor, square to a view's direction:
 /// sheet millimetres `[x, y]` relative to the anchor map to
 /// `anchor + scale · (x · right + y · up)`.
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct AnnotationPlane {
     origin: Vec3,
     axes: AnnotationViewAxes,
@@ -289,6 +329,8 @@ pub struct PlannedView<'a> {
     pub parts: Vec<&'a InstanceOutputRef>,
     /// Listed parts that were not exported.
     pub omitted_parts: Vec<&'a InstanceOutputRef>,
+    /// Indexes into [`PmiPlan::sizes`] of the size dimensions it shows.
+    pub sizes: Vec<usize>,
 }
 
 /// What of a saved view did not read back.
@@ -318,6 +360,12 @@ pub struct PmiViewReport {
     /// Listed parts that were not exported, so the view does not show them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub omitted_parts: Vec<InstanceOutputRef>,
+    /// Size dimensions the view shows, by the ID carrying their limits.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sizes: Vec<String>,
+    /// Size dimensions the read view does not show.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lost_sizes: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lost: Option<PmiViewLoss>,
     /// Annotations the read view does not show.

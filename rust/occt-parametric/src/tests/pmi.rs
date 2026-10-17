@@ -395,6 +395,7 @@ fn annotation_view(
         feature_control_frames: frames.iter().map(|s| (*s).into()).collect(),
         clipping_planes: Vec::new(),
         parts: Vec::new(),
+        sizes: Vec::new(),
     }
 }
 
@@ -652,6 +653,93 @@ fn annotation_views_show_their_listed_parts() {
     assert_eq!(
         serde_json::from_str::<DrawingAnnotationView>(&json).unwrap(),
         page.annotation_views[1]
+    );
+}
+
+#[test]
+fn annotation_views_draw_size_dimensions_above_their_frames() {
+    let definition = drilled_plate();
+    let mut graph = InstanceGraph::new(&definition);
+    graph.add_base("part", HashMap::new(), "test").unwrap();
+    // The top view shows the bores' size over their composite position; the
+    // front view the width W and, through the other member, the bores again.
+    let mut page = viewed_page();
+    page.annotation_views[0].sizes = vec!["first".into()];
+    page.annotation_views[1].sizes = vec!["W".into(), "second".into()];
+    page.validate(&graph).unwrap();
+    let plan = page.pmi_plan(&graph, |_| true).unwrap();
+    let size = |id: &str| plan.sizes.iter().position(|s| s.id == id).unwrap();
+    assert_eq!(plan.views[0].sizes, [size("first")]);
+    assert_eq!(plan.views[1].sizes, [size("W"), size("first")]);
+    // `2X Ø9.9-10.1` above the frame takes the pattern's count, which the
+    // frame then leaves out; W reads `59.9-60.1`.
+    let strokes = |text: &str| {
+        occt_parametric_core::drawing::strokes::text(text, [0.0, 0.0], 3.5)
+            .unwrap()
+            .len()
+    };
+    let bores = plan.sizes[size("first")]
+        .presentation(true)
+        .unwrap()
+        .unwrap();
+    assert_eq!(bores.name, "size first");
+    assert_eq!(bores.polylines.len(), strokes("2X Ø9.9-10.1"));
+    let w = plan.sizes[size("W")].presentation(false).unwrap().unwrap();
+    assert_eq!(w.polylines.len(), strokes("59.9-60.1"));
+    assert_eq!(w.normal, Vec3::new(0.0, -1.0, 0.0));
+    let frame = |page: &DrawingDefinition| {
+        page.pmi_plan(&graph, |_| true)
+            .unwrap()
+            .tolerances
+            .iter()
+            .find(|t| t.id == "first")
+            .unwrap()
+            .presentation
+            .as_ref()
+            .unwrap()
+            .polylines
+            .len()
+    };
+    assert_eq!(frame(&viewed_page()) - frame(&page), strokes("2X"));
+
+    let session = Session::new().unwrap();
+    let generation = graph.regenerate_all(&session).unwrap();
+    let path = std::env::temp_dir().join(format!("occb-pmi-sizes-{}.step", std::process::id()));
+    let report = page
+        .export_step_pmi(
+            &graph,
+            &session,
+            &generation,
+            &path,
+            "plate",
+            &OutputSet::AllWithOutput("body".into()),
+        )
+        .unwrap();
+    assert!(report.verified(), "{report:#?}");
+    assert_eq!(report.views[0].sizes, ["first"]);
+    assert_eq!(report.views[1].sizes, ["W", "first"]);
+    assert!(report.views.iter().all(|v| v.lost_sizes.is_empty()));
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("DRAUGHTING_CALLOUT('size first'"));
+    assert!(text.contains("DRAUGHTING_CALLOUT('size W'"));
+    std::fs::remove_file(&path).unwrap();
+
+    let error = |page: DrawingDefinition| page.validate(&graph).unwrap_err().message;
+    let mut unlimited = page.clone();
+    unlimited.annotation_views[0].sizes = vec!["flat".into()];
+    assert!(error(unlimited).contains("which has no size limits"));
+    let mut unshown = page.clone();
+    unshown.annotation_views[0].sizes = vec!["W".into()];
+    assert!(error(unshown).contains("without showing 'W'"));
+    let mut twice = page.clone();
+    twice.annotation_views[1].sizes.push("W".into());
+    assert!(error(twice).contains("twice"));
+    let json = serde_json::to_string(&page.annotation_views[1]).unwrap();
+    assert!(json.contains("\"sizes\":[\"W\",\"second\"]"), "{json}");
+    assert!(
+        !serde_json::to_string(&viewed_page().annotation_views[1])
+            .unwrap()
+            .contains("sizes")
     );
 }
 

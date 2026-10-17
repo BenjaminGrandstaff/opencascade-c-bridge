@@ -1803,6 +1803,10 @@ direction and the annotations it shows, drawn in 3D on the model.
 - `parts` (schema 173, ABI 80): the instance outputs the view shows, such
   as `[{"instance": "plate", "output": "body"}]`; empty shows the whole
   export.
+- `sizes` (schema 174, ABI 81): size dimensions shown, by the ID of the
+  datum feature or feature control frame carrying the size limits. The view
+  must also show that annotation; listing one member of an n× pattern shows
+  the pattern's size.
 
 ```json
 {"id": "top", "name": "TOP GD&T",
@@ -1820,12 +1824,20 @@ first view that shows it. The plane passes through the annotation's anchor
 and faces that view's viewer. The leader, box, symbols and text use the
 sheet layout, with the attachment's `offset_mm` measured along the view's
 right and up and multiplied by its `scale`. Text is drawn in a built-in
-single-stroke gothic letter set (capitals, digits and GD&T punctuation) at
+single-stroke gothic letter set (capitals, digits, the diameter symbol and GD&T punctuation) at
 the drawing's lettering height, so presentations do not depend on fonts. An
 n× pattern draws its first member's frame with `nX` above it. A composite
 frame's top segment carries the outline, characteristic, leader and top
-row; each lower segment carries its own row. Size limits are not drawn on
-sheets, so they have no presentation.
+row; each lower segment carries its own row.
+
+A size dimension that a view lists is drawn in the plane of its frame or
+datum feature symbol, 2 mm above the frame (or above the symbol's box), as
+limit dimensioning on one line (Y14.5): the lower limit, a dash and the
+upper, in millimetres with the same decimals, such as `Ø9.9-10.1` or
+`59.9-60.1`. It reads as a diameter when its faces are cylindrical and as
+a width between two parallel planes otherwise. Over an n× pattern the size
+carries the count (`2X Ø9.9-10.1`) and the frame no longer draws it. Size
+limits are still not drawn on sheets.
 
 `export_step_pmi` writes each presentation as an AP242 tessellated
 annotation, linked to its datum or tolerance and lying in its annotation
@@ -1838,7 +1850,13 @@ the centre of the export and its presentations, framing them. On read-back:
 - OCCT's reader must make a view of each name with the same direction and
   up, or the view's report gives `lost: view` or `lost: camera`;
 - each view must show the annotations it lists, or they appear in its
-  `lost_annotations`.
+  `lost_annotations`, and the size dimensions it lists (reported in its
+  `sizes`), or they appear in its `lost_sizes`.
+
+A size dimension's presentation is written with OCCT's size dimension and
+must read back segment for segment, or the size's item reports
+`presentation` lost. Where a datum feature of size and its position control
+give one size dimension, it is drawn as the first of them a view shows.
 
 Listed annotations that were skipped appear in the view's `omitted`.
 `verified()` now also needs every view read back intact, and `complete()`
@@ -1863,6 +1881,8 @@ a part of an unknown instance is refused.
 
 A saved view showing 500 of 1,000 distinct parts writes and reads back in
 3.15 s, about 0.1 s more than the same export without the view's parts.
+Drawing the 400-hole plate's 400 size dimensions in its top view adds about
+0.15 s to the 1.9 s export and read-back.
 
 At scale, the 400-hole plate's three datums, flat top and 400 position
 controls (or one 400× control) are drawn in a top view showing everything
