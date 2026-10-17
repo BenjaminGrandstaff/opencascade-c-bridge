@@ -344,6 +344,22 @@ Editing previews the current final output when it depends on that feature;
 otherwise it previews the edited feature's result, so an unrelated branch does
 not hide the change.
 
+Choose **Drill a hole** and select **Drill solid** to append a native hole.
+Enter its entry position in family millimetres and an axis pointing into the
+material. Diameter and blind depth accept entered lengths or length parameters.
+Other extents are **Through all (both directions)**, **Up to next face**, and
+**Up to selected face**. In the studio, **Pick hole limiting face in canvas**
+selects a planar face of the drilled source; Escape cancels while retaining the
+draft. Changing the source clears its limiting selector. Picks and previews
+ignore stale replies after a form or model change.
+
+**Edit hole …** retains existing position/axis formulas, diameter/depth formulas,
+face selectors, drill points, counterbores (including relief), countersinks and
+thread specifications. Choosing entered values explicitly replaces the selected
+formula. New holes are plain with flat bottoms; recess and thread authoring are
+not yet exposed here. Preview checks every instance before Apply. Hole edits
+share model Undo/Redo and Save with the other solid features.
+
 **Preview solid** displays the native validated mesh in the 3D viewer, with
 solid count and volume for the selected instance in the form. Fit uses the
 preview's bounds. The accepted model, file, version and history remain unchanged.

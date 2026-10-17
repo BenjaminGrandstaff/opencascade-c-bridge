@@ -6205,3 +6205,71 @@ fn studio_primitive_gallery_regenerates_exact_curves_text_and_closed_control_spl
     assert_eq!(edit_definition(&mut studio, "profile", bad, true).0, 422);
     assert_eq!(get(&mut studio, "/api/state").1, stable);
 }
+
+#[test]
+fn studio_holes_preview_all_instances_and_apply_with_history_and_save() {
+    for extent in ["blind", "through_all", "up_to_next", "up_to_face"] {
+        let directory = Directory::new();
+        let document = edge_finish_document();
+        let model = PathBuf::from(directory.model(&document));
+        let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+        assert_eq!(studio.handle("GET", "/solid-holes.mjs", b"").status, 200);
+        let data = get(&mut studio, "/api/features").1;
+        let state = get(&mut studio, "/api/state").1;
+        let q = |v| json!({"literal":{"value":v,"dimension":"length","unit":"millimeter"}});
+        // Start at the bottom face so both thickness variants share the entry.
+        let hole = json!({"id":"drilled","operation":{"hole":{"input":"body","position":{"components":{"x":q(10.0),"y":q(10.0),"z":q(0.0)}},"axis":{"literal":{"x":{"value":0,"dimension":"scalar","unit":null},"y":{"value":0,"dimension":"scalar","unit":null},"z":{"value":1,"dimension":"scalar","unit":null}}},"diameter":q(4.0),"extent":if extent=="blind" {json!({"blind":{"depth":{"parameter":"finish-size"}}})}else if extent=="up_to_face" {json!({"up_to_face":{"face":{"at_extreme":{"axis":"z","extremum":"maximum","tolerance":q(1e-6)}}}})}else{json!(extent)},"bottom":"flat","finish":"plain"}}});
+        let mut edit = json!({"version":data["version"],"instance":"block","expected":data["features"],"action":"add","features":[hole],"output":"drilled","apply":false});
+        let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+        assert_eq!(response.status, 200);
+        let preview: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(preview["can_apply"], true, "{preview}");
+        for (id, height) in [("block", 10.0), ("thin", 5.0)] {
+            let bore_depth = if extent == "blind" { 1.0 } else { height };
+            let expected = 1000.0 * height - std::f64::consts::PI * 4.0 * bore_depth;
+            assert!(
+                (preview["geometry"][id]["volume_mm3"].as_f64().unwrap() - expected).abs() < 1e-5
+            );
+        }
+        assert!(preview["gltf"]["meshes"].is_array());
+        assert_eq!(get(&mut studio, "/api/state").1, state);
+        if extent == "blind" {
+            let mut invalid = edit.clone();
+            invalid["features"][0]["operation"]["hole"]["extent"]["blind"]["depth"] = q(6.0);
+            invalid["features"][0]["operation"]["hole"]["bottom"] = json!({"drill_point":{"angle_radians":{"literal":{"value":2.0,"dimension":"scalar","unit":null}}}});
+            let response = studio.handle("POST", "/api/features", invalid.to_string().as_bytes());
+            let rejected: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+            assert_eq!(rejected["can_apply"], false, "{rejected}");
+            assert!(rejected.get("gltf").is_none());
+            invalid["apply"] = json!(true);
+            assert_ne!(
+                studio
+                    .handle("POST", "/api/features", invalid.to_string().as_bytes())
+                    .status,
+                200
+            );
+            assert_eq!(get(&mut studio, "/api/state").1, state);
+        }
+        edit["apply"] = json!(true);
+        assert_eq!(
+            studio
+                .handle("POST", "/api/features", edit.to_string().as_bytes())
+                .status,
+            200
+        );
+        history(&mut studio, "undo");
+        assert_eq!(
+            get(&mut studio, "/api/features").1["features"],
+            data["features"]
+        );
+        history(&mut studio, "redo");
+        assert_eq!(studio.handle("POST", "/api/save", b"").status, 200);
+        let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+        let expected: FeatureDefinition =
+            serde_json::from_value(edit["features"][0].clone()).unwrap();
+        assert_eq!(
+            saved.family.features.iter().find(|f| f.id == "drilled"),
+            Some(&expected)
+        );
+    }
+}

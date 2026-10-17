@@ -138,8 +138,8 @@ view instead of a flat overlay:
   dashed guide, and record linked sketch patterns. A mirror of half an
   outline closes it through the axis, and patterned holes stay holes.
 - **Solid features.** **Build or finish a solid** builds from applied sketches
-  or finishes selected solid edges, previews the native result in 3D, then applies one model
-  history step. Existing extrusions, revolutions, sweeps and lofts retain their parameter/formula drivers.
+  or drills holes or finishes selected solid edges, previews the native result in 3D, then applies one model
+  history step. Existing extrusions, revolutions, sweeps, lofts and holes retain their parameter/formula drivers.
   Close or changing values restores the accepted model; all variants must pass.
 - **Planes.** New plane builds a datum plane offset or angled from a base
   plane, on a picked face, midway between two picked faces, or through three
@@ -398,6 +398,22 @@ viewer can edit existing finishing features; canvas creation uses the studio.
 Editing previews the current final output when it depends on that feature;
 otherwise it previews the edited feature's result, so an unrelated branch does
 not hide the change.
+
+Choose **Drill a hole** and select **Drill solid** to append a native hole.
+Enter its entry position in family millimetres and an axis pointing into the
+material. Diameter and blind depth accept entered lengths or length parameters.
+Other extents are **Through all (both directions)**, **Up to next face**, and
+**Up to selected face**. In the studio, **Pick hole limiting face in canvas**
+selects a planar face of the drilled source; Escape cancels while retaining the
+draft. Changing the source clears its limiting selector. Picks and previews
+ignore stale replies after a form or model change.
+
+**Edit hole …** retains existing position/axis formulas, diameter/depth formulas,
+face selectors, drill points, counterbores (including relief), countersinks and
+thread specifications. Choosing entered values explicitly replaces the selected
+formula. New holes are plain with flat bottoms; recess and thread authoring are
+not yet exposed here. Preview checks every instance before Apply. Hole edits
+share model Undo/Redo and Save with the other solid features.
 
 **Preview solid** displays candidate 3D geometry and per-instance solid count and
 volume while the accepted document, glTF, and file remain unchanged. Valid

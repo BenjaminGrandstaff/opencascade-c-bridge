@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 758 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 82 + viewer Node 419 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 758 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 83 + viewer Node 422 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,18 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases (195 with the parallel glTF case) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Studio hole authoring (schema 168, ABI 76 unchanged): create and edit native
+  holes with family-coordinate placement and axis, positive entered or
+  parameter-linked diameter/depth, blind, through-all, up-to-next and selected
+  face extents. Guarded canvas face picks retain semantic selectors and cancel
+  without discarding the form. Editing preserves placement and size formulas,
+  existing drill points, recesses, relief and threads. New holes are plain with
+  flat bottoms; recess/thread authoring remains future work. All 422 viewer Node
+  tests and 83 view-command tests pass, including analytic volumes across
+  thickness variants, drill-point breakout rejection, history and persistence.
+  Browser checks cover creation, face pick/cancel, native previews, edits,
+  Apply, Undo/Redo and Save. Clippy and sketch performance budgets pass.
 
 - Studio solid edge finishing (schema 168, ABI 76 unchanged): create and edit
   native fillets and chamfers with semantic canvas edge picks, multiple edge

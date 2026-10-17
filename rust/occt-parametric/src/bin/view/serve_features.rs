@@ -57,7 +57,8 @@ impl Studio {
                 return Err("Feature IDs must be distinct.".into());
             }
             match &feature.operation {
-                FeatureOperation::Fillet { .. }
+                FeatureOperation::Hole { .. }
+                | FeatureOperation::Fillet { .. }
                 | FeatureOperation::Chamfer { .. }
                 | FeatureOperation::Extrude { .. }
                 | FeatureOperation::ProfileLoft { .. }
@@ -67,7 +68,7 @@ impl Studio {
                 | FeatureOperation::Cut { .. } => (),
                 _ => {
                     return Err(
-                        "Solid controls support extrusions, revolutions, sweeps, profile lofts, fillets, chamfers, unions and cuts."
+                        "Solid controls support extrusions, revolutions, sweeps, profile lofts, fillets, chamfers, holes, unions and cuts."
                             .into(),
                     );
                 }

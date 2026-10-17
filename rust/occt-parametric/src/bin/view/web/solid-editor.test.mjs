@@ -240,3 +240,36 @@ test('editing an unused solid previews that feature; downstream outputs retain t
  assert.equal(solidEditOutput({features,dependencies,output:'finished'},{id:'rounded'}),'finished');
  assert.equal(solidEditOutput({features,dependencies,output:'profile'},{id:'body'}),'body');
 });
+
+test('hole form creates a drilling operation and preserves finish, thread and placement formulas on edit',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const saved={id:'tapped',operation:{hole:{input:'body',position:{parameter:'entry'},axis:{parameter:'axis'},diameter:{parameter:'bore'},extent:{blind:{depth:{add:[{parameter:'depth'},depth(1)]}}},bottom:{drill_point:{angle_radians:{parameter:'tip'}}},finish:{counterbore:{diameter:depth(8),depth:depth(2),relief:depth(6)}},thread:{designation:'retained-metadata'}}}};
+ const host=new Element('div'),calls=[];
+ createSolidEditor({host,instance:()=> 'part',preview:async()=>{},applied:async()=>{},restore:async()=>{},request:async(path,options)=>{if(!options)return {version:1,features:[...base,saved],output:'body',parameters:[]};calls.push(JSON.parse(options.body));return {can_apply:true};}});
+ await button(host,'Sketch to solid').onclick();control(host,'Solid feature').value='hole';control(host,'Solid feature').onchange();
+ assert.equal(control(host,'Sketch / planar profile'),undefined);assert.equal(control(host,'Solid operation'),undefined);
+ control(host,'Result feature name').value='drilled';control(host,'Result feature name').oninput();
+ for(const [label,value] of [['Hole position X (mm)','10'],['Hole position Y (mm)','10'],['Hole position Z (mm)','10']]){control(host,label).value=value;control(host,label).oninput();}
+ await button(host,'Preview solid').onclick();assert.equal(calls.length,1);assert.equal(calls[0].features.length,1);assert.equal(calls[0].features[0].operation.hole.input,'body');
+ assert.equal(calls[0].features[0].operation.hole.extent.blind.depth.literal.value,5);
+ control(host,'Hole extent').value='through_all';control(host,'Hole extent').onchange();assert.equal(control(host,'Hole depth (mm)'),undefined);
+ await button(host,'Preview solid').onclick();assert.equal(calls[1].features[0].operation.hole.extent,'through_all');
+ await button(host,'Edit hole tapped').onclick();await button(host,'Preview solid').onclick();assert.deepEqual(calls[2].features,[saved]);
+ control(host,'Hole diameter source').value='literal';control(host,'Hole diameter source').onchange();control(host,'Hole diameter (mm)').value='4';control(host,'Hole diameter (mm)').oninput();
+ await button(host,'Preview solid').onclick();assert.deepEqual(calls[3].features[0].operation.hole,{...saved.operation.hole,diameter:depth(4)});
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});
+
+test('hole face picks retain semantic selectors and ignore replies after a field edit',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const host=new Element('div'),calls=[];let resolve;
+ createSolidEditor({host,instance:()=> 'part',preview:async()=>{},applied:async()=>{},restore:async()=>{},pickLimitingFace:()=>new Promise(r=>resolve=r),request:async(path,options)=>{if(!options)return {version:1,features:base,output:'body',parameters:[]};calls.push(JSON.parse(options.body));return {can_apply:true};}});
+ await button(host,'Sketch to solid').onclick();control(host,'Solid feature').value='hole';control(host,'Solid feature').onchange();control(host,'Result feature name').value='hole';control(host,'Result feature name').oninput();control(host,'Hole extent').value='up_to_face';control(host,'Hole extent').onchange();
+ let pending=button(host,'Pick hole limiting face in canvas').onclick();control(host,'Hole position X (mm)').value='10';control(host,'Hole position X (mm)').oninput();resolve({target:'body',face:{stale:true}});await pending;
+ await button(host,'Preview solid').onclick();assert.equal(calls.length,0);
+ pending=button(host,'Pick hole limiting face in canvas').onclick();const face={at_extreme:{axis:'z',extremum:'minimum',tolerance:depth(1e-6)}};resolve({target:'body',face});await pending;
+ await button(host,'Preview solid').onclick();assert.deepEqual(calls[0].features[0].operation.hole.extent,{up_to_face:{face}});
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});
