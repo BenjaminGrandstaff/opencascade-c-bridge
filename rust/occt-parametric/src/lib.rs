@@ -53,7 +53,10 @@ pub use drawing::{DrawingDefinitionInspection, DrawingDefinitionRendering, Drawi
 pub use features::PartInstanceHoles;
 pub use features::PartInstanceProjection;
 pub use features::PartInstanceSupport;
-pub use features::{ResolvedLoftEndTangent, ResolvedLoftProfileSeam};
+pub use features::{
+    LoftProfileCheck, LoftProfileIssue, LoftProfileReport, ResolvedLoftEndTangent,
+    ResolvedLoftProfileSeam, diagnose_loft_profiles,
+};
 pub use graph::InstanceGraphPatternEdits;
 pub use graph::InstanceGraphRegeneration;
 pub(crate) use graph::InstanceGraphRegenerationInternal;

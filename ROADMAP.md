@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 167 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 769 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 92 + viewer Node 455 + branch command 2 + model command 93, MCP Python 12, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 167 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 773 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 93 + viewer Node 456 + branch command 2 + model command 94, MCP Python 13, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,20 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases (195 with the parallel glTF case) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Read-only loft profile diagnosis (schema 172 / ABI 79 unchanged): the editor's
+  **Check loft profiles** and AI inspection's `loft_feature` share native exact
+  alignment, source/aligned edge counts, start coordinates, station/hole IDs and
+  stable issue codes. Source dependencies build in isolation even when a loft
+  fails; invalid anchors, split formulas, track/mode settings and end directions
+  remain identifiable without constructing the solid. Reports are bounded to
+  8,192 profiles before source generation; AI results are paged and stale editor
+  responses are discarded. Passing profile checks never replaces final solid,
+  containment, fold-back or all-instance requirement validation. Kernel 773,
+  model 94, viewer 93, Node 456 and MCP 13 tests pass, with browser correction,
+  Preview/Apply, history and Save checks. The 1,000 isolated failed-loft diagnosis
+  gate takes 0.70 seconds / 10-second budget with zero retained handles. See
+  [profile diagnosis](docs/LOFTS.md#read-only-profile-diagnosis).
 
 - Loft canvas boundary splits (schema 172 / ABI 79 unchanged): **Pick … split
   in canvas** snaps new points onto exact native trimmed curves, including

@@ -399,3 +399,21 @@ test('canvas splits append fixed coordinates, preserve formulas and ignore cance
  await button(host,'Use outer station 2 split 2 as start').onclick();await button(host,'Preview solid').onclick();assert.deepEqual(calls.at(-1).features[0].operation.profile_loft.correspondence.upper.start_point,c.split_points[1]);
  }finally{delete globalThis.document;delete globalThis.Option;}
 });
+
+test('loft diagnosis sends the current formulas, displays edge counts and clears stale reports without applying',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const saved={id:'transition',operation:{profile_loft:{profiles:['profile','upper'],holes:[],ruled:false,start_constraint:{normal_to_profile:true,magnitude:depth(20)},correspondence:{upper:{start_point:{parameter:'anchor'},split_points:[{parameter:'cut'}]}}}}};
+ const host=new Element('div'),calls=[];let resolve;
+ createSolidEditor({host,instance:()=> 'part',preview:async()=>{},applied:async()=>{throw Error('Must not apply');},restore:async()=>{},request:async(path,options)=>{if(!options)return {version:1,features:[...base,{id:'upper',operation:{sketch_wire:{sketch:{}}}},saved],output:'transition',parameters:[]};const body=JSON.parse(options.body);calls.push({path,body});return new Promise(r=>resolve=r);}});
+ await button(host,'Sketch to solid').onclick();await button(host,'Edit loft transition').onclick();
+ const reply=()=>({...calls.at(-1).body,report:{checks_passed:false,solid_checked:false,issues:[],profiles:[{profile:'profile',station:0,hole:null,source_edges:1,aligned_edges:1,reverse:false,issues:[{code:'edge_count_mismatch',message:'Add exact splits.'}]}]}});
+ let pending=button(host,'Check loft profiles').onclick();assert.equal(calls.at(-1).path,'/api/loft-profile-report');assert.deepEqual(calls.at(-1).body.operation,saved.operation);resolve(reply());await pending;
+ let diagnosis=all(host).find(e=>e['data-loft-profile-report']==='');assert(all(diagnosis).some(e=>e.textContent?.includes('1 source → 1 aligned edges')));assert(all(diagnosis).some(e=>e.textContent?.includes('Add exact splits.')));assert.equal(calls.at(-1).body.apply,undefined);
+ control(host,'Outer station 2 traversal').value='reverse';control(host,'Outer station 2 traversal').onchange();assert.equal(diagnosis.children.length,0);
+ pending=button(host,'Check loft profiles').onclick();const stale=reply();control(host,'Outer station 2 traversal').value='forward';control(host,'Outer station 2 traversal').onchange();resolve(stale);await pending;assert.equal(diagnosis.children.length,0);
+ pending=button(host,'Check loft profiles').onclick();const wrong=reply();wrong.instance='other';resolve(wrong);await pending;assert.equal(diagnosis.children.length,0);
+ pending=button(host,'Check loft profiles').onclick();const wrongDraft=reply();wrongDraft.operation={profile_loft:{...saved.operation.profile_loft,ruled:true}};resolve(wrongDraft);await pending;assert.equal(diagnosis.children.length,0);
+ pending=button(host,'Check loft profiles').onclick();const late=reply();await button(host,'Close solid draft').onclick();resolve(late);await pending;assert.equal(diagnosis.children.length,0);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});

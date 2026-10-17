@@ -432,3 +432,59 @@ split snapshot. The recorded run takes 0.76 ms per hover and 1.8 ms per overlay
 redraw against 16/100 ms budgets, and asserts one snapshot request with no hover
 requests. Browser verification covers duplicate rejection/retry, retained
 formulas and end strengths, valid Preview, Apply, undo/redo, Save and reload.
+
+## Read-only profile diagnosis
+
+**Check loft profiles** inspects the current editor draft without constructing
+its solid. Each outer/hole station reports its profile ID, source and aligned
+edge counts, exact start in family millimetres, reversal and alignment errors.
+The native partition/alignment routines and end-condition resolver are shared
+with construction. Different counts within a constrained track identify every
+affected profile and suggest exact splits or revised profiles. Unknown alignment
+IDs, duplicate station IDs, invalid track lengths, incompatible loft modes and
+invalid end directions/strengths receive stable issue codes.
+
+Existing split/start expressions are evaluated for the selected instance.
+Only profile dependencies are regenerated, so a failing loft or unrelated
+downstream geometry does not prevent inspecting its usable sources. Source
+regeneration failures still return errors. Inspection retains no scratch shape
+handles and never edits the document, accepted mesh, history or disk. Reports
+are limited to 8,192 boundaries; the limit is checked before source generation.
+Each native aligned boundary remains limited to 128 edges.
+
+A passing report means the listed profile checks passed for this instance.
+It does **not** certify edge pairing, twist freedom, longitudinal fold-back,
+hole containment, final solid validity or family-wide requirements.
+`solid_checked` is always false. Preview and Apply retain all existing native
+solid and all-instance validation. Fields, new checks, model changes and Close
+invalidate pending editor reports.
+
+For AI use, pass `instance` and `loft_feature` to `occt_inspect_model` or
+`occt_inspect_build`. These options are mutually exclusive with `output` and
+`sketch_feature`; selectors still require `output`. The `loft` response has
+paged `profiles` and `issues`, `checks_passed`, `constrained`, and
+`solid_checked: false`. Normal inspection `offset`/`limit` apply to both pages.
+For a previously accepted `partitioned-profile-loft` build, call
+`occt_inspect_build` with:
+
+```json
+{
+  "build_id": "BUILD_ID_RETURNED_BY_OCCT_BUILD",
+  "instance": "block",
+  "loft_feature": "body",
+  "limit": 100
+}
+```
+
+The studio endpoint `/api/loft-profile-report` accepts the current `version`,
+`instance`, and draft `operation: {"profile_loft": ...}` and echoes them with a
+`report`. The Rust entry points are `diagnose_loft_profiles` for isolated source
+regeneration and `GeneratedResult::loft_profile_report` for existing source
+geometry with its resolved parameters. Schema 172 / ABI 79 are unchanged.
+
+The `loft_profile_diagnosis` scale gate checks 1,000 isolated diagnoses of a
+loft with incompatible edge counts, including source regeneration, stable
+per-profile issue codes and zero retained handles. The recorded run is 0.70
+seconds against a 10-second budget. Browser checks cover mismatched counts,
+invalid anchor isolation, stale report clearing, canvas correction, preserved
+end strengths, Preview/Apply, undo/redo and Save.

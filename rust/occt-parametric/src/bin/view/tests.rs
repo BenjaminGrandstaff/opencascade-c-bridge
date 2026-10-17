@@ -7153,3 +7153,63 @@ fn loft_canvas_splits_snap_curve_interiors_and_reject_existing_vertices_without_
         assert_eq!(fs::read_to_string(&model).unwrap(), file);
     }
 }
+
+#[test]
+fn loft_profile_diagnosis_reads_drafts_without_accepting_them_or_mutating_geometry() {
+    use serde_json::Value;
+    let request: Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/partitioned-profile-loft.request.json"
+    ))
+    .unwrap();
+    let document = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    let directory = Directory::new();
+    let model = PathBuf::from(directory.model(&document));
+    let file = fs::read_to_string(&model).unwrap();
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let state = get(&mut studio, "/api/state").1;
+    let gltf = studio.handle("GET", "/api/model.gltf", b"").body;
+    let mut query = json!({"version":state["version"],"instance":"block","operation":document.family.features[0].operation});
+    let call = |studio: &mut serve::Studio, q: &Value| {
+        let response = studio.handle("POST", "/api/loft-profile-report", q.to_string().as_bytes());
+        assert_eq!(
+            response.status,
+            200,
+            "{}",
+            String::from_utf8_lossy(&response.body)
+        );
+        serde_json::from_slice::<Value>(&response.body).unwrap()
+    };
+    let report = call(&mut studio, &query);
+    assert_eq!(report["report"]["checks_passed"], true);
+    assert_eq!(report["report"]["solid_checked"], false);
+    assert_eq!(report["operation"], query["operation"]);
+    query["operation"]["profile_loft"]["correspondence"] = json!({});
+    let report = call(&mut studio, &query);
+    assert_eq!(report["report"]["checks_passed"], false);
+    assert_eq!(report["report"]["profiles"][0]["aligned_edges"], 1);
+    assert_eq!(report["report"]["profiles"][1]["aligned_edges"], 4);
+    for mode in ["version", "instance", "kind"] {
+        let mut bad = query.clone();
+        match mode {
+            "version" => bad["version"] = json!(99999),
+            "instance" => bad["instance"] = json!("absent"),
+            _ => {
+                bad["operation"] =
+                    serde_json::to_value(&document.family.features[1].operation).unwrap()
+            }
+        };
+        assert_ne!(
+            studio
+                .handle(
+                    "POST",
+                    "/api/loft-profile-report",
+                    bad.to_string().as_bytes()
+                )
+                .status,
+            200
+        );
+    }
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, gltf);
+    assert_eq!(fs::read_to_string(model).unwrap(), file);
+}

@@ -122,6 +122,9 @@ plus optional native face/edge measurements and semantic selector queries.
 Use `occt-model --inspect REQUEST.json NEW_REPORT.json` directly or the MCP
 `occt_inspect_model`/`occt_inspect_build` tools. Geometry queries use family-local
 feature-authoring coordinates; assembly placement is reported separately.
+Use `instance` plus `loft_feature` for isolated exact profile/correspondence
+diagnosis, including a failing loft. This reports paged source/aligned edge
+counts and alignment issues without constructing or certifying the solid.
 
 [Guarded model edits](MCP.md#guarded-edits-and-revision-history) add/replace/remove
 features by family and stable ID, add new parameters/requirements/references,

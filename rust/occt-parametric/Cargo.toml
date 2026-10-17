@@ -121,3 +121,7 @@ harness = false
 [[bench]]
 name = "circular_part_patterns"
 harness = false
+
+[[bench]]
+name = "loft_profile_diagnosis"
+harness = false

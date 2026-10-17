@@ -1057,3 +1057,11 @@ existing formulas. Existing corners/splits and ambiguous hits are rejected.
 Picked points use fixed family coordinates; Preview must validate every instance
 before Apply. Escape cancels, and field/model changes discard pending picks.
 See [canvas boundary splits](LOFTS.md#pick-new-boundary-splits-in-the-studio).
+
+
+**Check loft profiles** reports source/aligned edge counts and exact alignment
+problems for the current draft and selected instance. Reports clear when fields
+change. The check builds source dependencies only, preserving the accepted solid;
+it is useful while correcting a loft that cannot yet Preview. Passing profile
+checks still requires a successful solid Preview before Apply. See
+[loft profile diagnosis](LOFTS.md#read-only-profile-diagnosis).

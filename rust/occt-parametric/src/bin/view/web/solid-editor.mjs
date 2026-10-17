@@ -100,7 +100,8 @@ export function createSolidEditor({host,request,instance,preview,applied,restore
   let limitTarget='',limitFace='z:maximum',savedFace=null,limitDirectionSource='literal';
   let finishTarget='',finishEdges=[],finishSize=2,finishSource='literal',savedSize=null;
   let formTurn=0,pickedLimit=null,holeControls=null,loftEnds=null,loftCorrespondence=null;
-  const invalidate=()=>{formTurn++;cancelLimitingFacePick();invalidatePreview();};
+  const diagnosis=document.createElement('div');diagnosis.setAttribute('data-loft-profile-report','');
+  const invalidate=()=>{diagnosis.replaceChildren();formTurn++;cancelLimitingFacePick();invalidatePreview();};
   const section=document.createElement('section');section.className='linked-edit solid-editor';
   const launch=document.createElement('button');launch.textContent='Sketch to solid';
   const content=document.createElement('div'),status=document.createElement('p');status.setAttribute('role','status');section.append(launch,content,status);host.prepend(section);
@@ -225,6 +226,25 @@ export function createSolidEditor({host,request,instance,preview,applied,restore
       const addHole=button('Add loft hole track',()=>{if(loft.holes.length>=100)throw Error('A loft supports at most 100 hole tracks.');change({...loft,holes:[...loft.holes,loft.profiles.map(()=> '')]});});addHole.disabled=loft.holes.length>=100;content.append(addHole);
       for(const h of loft.holes.keys())content.append(button(`Remove loft hole track ${h+1}`,()=>change({...loft,holes:loft.holes.filter((_,i)=>i!==h)})));
       loftEnds.render({select,number,content,parameters:data.parameters,render});
+      content.append(button('Check loft profiles',async()=>{
+        invalidate();const turn=formTurn,selectedInstance=instance();
+        const operation={profile_loft:loftDefinition(data.features,{...loft,...loftEnds.definition(),...loftCorrespondence.definition(loft)})};
+        message('Checking exact source profiles and correspondence…');
+        try{
+          const response=await request('/api/loft-profile-report',{method:'POST',body:JSON.stringify({version:data.version,instance:selectedInstance,operation})});
+          if(turn!==formTurn||!data||kind!=='profile_loft'||selectedInstance!==instance())return;
+          const canonical=value=>JSON.stringify(value,(_,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b))):v);
+          const report=response.report;
+          if(response.version!==data.version||response.instance!==selectedInstance||canonical(response.operation)!==canonical(operation)||typeof report?.checks_passed!=='boolean'||report.solid_checked!==false||!Array.isArray(report.profiles)||report.profiles.length>8192||!Array.isArray(report.issues))throw Error('The loft profile report does not match this draft.');
+          const note=document.createElement('p');note.textContent=report.checks_passed?'Profile checks pass. Preview still checks correspondence, twist, hole containment and the resulting solid.':'Profile checks found problems. Correct the listed profiles, then Preview the solid.';diagnosis.append(note);
+          for(const item of report.issues){const row=document.createElement('p');row.textContent=item.message;diagnosis.append(row);}
+          for(const p of report.profiles){
+            const row=document.createElement('p');row.textContent=`${p.hole===null?'Outer':`Hole ${p.hole+1}`} station ${p.station+1} · ${p.profile}: ${p.source_edges??'?'} source → ${p.aligned_edges??'?'} aligned edges${p.reverse?' · reversed':''}. ${p.issues.map(i=>i.message).join(' ')}`;diagnosis.append(row);
+          }
+          message('Profile diagnosis complete. Apply still performs full validation.');
+        }catch(error){if(turn===formTurn&&data)message(error.message);}
+      }),diagnosis);
+
     }
     if(isEdgeFinish(kind)){
       select('Finish solid',[['','Choose solid'],...data.features.filter(f=>solidTarget(f)&&f.id!==editing?.id).map(f=>[f.id,f.id])],finishTarget,value=>{if(finishTarget!==value)finishEdges=[];finishTarget=value;render();});

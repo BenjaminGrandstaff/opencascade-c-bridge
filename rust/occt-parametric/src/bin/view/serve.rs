@@ -786,6 +786,10 @@ impl Studio {
                 "text/javascript",
                 include_str!("web/profile-controls.mjs"),
             ),
+            ("POST", "/api/loft-profile-report") => match self.loft_profile_report(body) {
+                Ok(data) => Response::json(200, &data),
+                Err(error) => Response::error(422, &error),
+            },
             ("POST", "/api/loft-profile-pick") => match self.loft_profile_pick(body) {
                 Ok(data) => Response::json(200, &data),
                 Err(error) => Response::error(422, &error),

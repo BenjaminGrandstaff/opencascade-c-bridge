@@ -78,7 +78,7 @@ class Server:
                  inputSchema=object_schema({'name': dict(type='string', enum=list(SCHEMAS))}, ['name']), annotations=read),
             dict(name='occt_get_example', description='Read a complete editable example request; dimensions are demonstration assumptions.',
                  inputSchema=object_schema({'name': dict(type='string', enum=list(EXAMPLES))}, ['name']), annotations=read),
-            dict(name='occt_inspect_model', description='Read paged model/instance parameters, feature inputs, datums, references and requirements. Use sketch_feature with an instance for isolated sketch solver/geometry diagnosis and guarded repair candidates. Optional output regeneration measures faces/edges and tests semantic selectors. Does not publish or edit a build.',
+            dict(name='occt_inspect_model', description='Read paged model/instance parameters, feature inputs, datums, references and requirements. Use sketch_feature with an instance for isolated sketch solver/geometry diagnosis and guarded repair candidates. Use loft_feature with an instance for isolated exact boundary, partition, start and ordered edge-count diagnostics, even when the loft itself fails. Optional output regeneration measures faces/edges and tests semantic selectors. Does not publish or edit a build.',
                  inputSchema=self.schemas['inspection'], annotations=read),
             dict(name='occt_inspect_build', description='Inspect an accepted build by ID without resending its model. Use instance/output and optional semantic selectors for geometry queries; snapshot indices are not persistent identities.',
                  inputSchema=self.build_inspection_schema, annotations=read),
@@ -261,7 +261,7 @@ class Server:
             return dict(protocolVersion=params['protocolVersion'] if params['protocolVersion'] in PROTOCOLS else PROTOCOLS[0],
                         capabilities=dict(tools=dict(listChanged=False), resources=dict(listChanged=False)),
                         serverInfo=dict(name='occt-model', version='0.1.0'),
-                        instructions='Read a schema/example, preserve requirements and explicit assumptions, then build. Inspect sketch_feature for solver/repair evidence, preview guarded proposals with occt_preview_edit_build, then publish intended changes with occt_edit_build. Read model.json to continue from the accepted model. Preview SVGs are sampled; inspect requirement evidence.')
+                        instructions='Read a schema/example, preserve requirements and explicit assumptions, then build. Inspect sketch_feature for solver/repair evidence or loft_feature for isolated correspondence diagnostics, preview guarded proposals with occt_preview_edit_build, then publish intended changes with occt_edit_build. Read model.json to continue from the accepted model. Preview SVGs are sampled; inspect requirement evidence.')
         if self.state != 'ready':
             raise RpcError(-32600, 'initialize and send notifications/initialized first')
         if method == 'tools/list':

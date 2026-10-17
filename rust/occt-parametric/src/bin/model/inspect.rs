@@ -18,6 +18,8 @@ pub struct Inspection {
     #[serde(default)]
     sketch_feature: Option<String>,
     #[serde(default)]
+    loft_feature: Option<String>,
+    #[serde(default)]
     face_selector: Option<FaceSelector>,
     #[serde(default)]
     edge_selector: Option<EdgeSelector>,
@@ -77,15 +79,19 @@ fn inspect(request: Inspection) -> Result<Value, Failure> {
             "expected occb-model-inspection-v1 and a limit in 1..1000",
         ));
     }
-    if ((request.output.is_some() || request.sketch_feature.is_some())
-        && request.instance.is_none())
-        || (request.output.is_some() && request.sketch_feature.is_some())
+    let geometry_modes = [
+        request.output.is_some(),
+        request.sketch_feature.is_some(),
+        request.loft_feature.is_some(),
+    ];
+    if (geometry_modes.iter().any(|v| *v) && request.instance.is_none())
+        || geometry_modes.iter().filter(|v| **v).count() > 1
         || ((request.face_selector.is_some() || request.edge_selector.is_some())
             && request.output.is_none())
     {
         return Err(failure(
             "request",
-            "output inspection requires an instance; selectors require an output",
+            "Choose one of output, sketch_feature or loft_feature with an instance; selectors require an output",
         ));
     }
     let document = &request.model;
@@ -147,6 +153,26 @@ fn inspect(request: Inspection) -> Result<Value, Failure> {
         );
         result["inventory_scope"] = json!(
             "isolated sketch and its geometry dependencies; downstream requirements are not certified"
+        );
+    }
+    if let Some(feature) = &request.loft_feature {
+        let operation = &part
+            .definition
+            .features
+            .iter()
+            .find(|f| f.id == *feature)
+            .ok_or_else(|| failure("selection", format!("unknown loft feature '{feature}'")))?
+            .operation;
+        let session = Session::new().map_err(|e| failure("kernel", e))?;
+        let report = diagnose_loft_profiles(part, &session, operation)
+            .map_err(|e| model_failure("loft_profiles", e))?;
+        result["loft"] = json!({"feature":feature,"checks_passed":report.checks_passed,"solid_checked":false,
+            "constrained":report.constrained,"coordinate_system":"family-local mm",
+            "profiles":page(&report.profiles,request.offset,request.limit),"issues":page(&report.issues,request.offset,request.limit)});
+        result["geometry_generated"] =
+            json!(!report.issues.iter().any(|i| i.code == "inspection_budget"));
+        result["inventory_scope"] = json!(
+            "isolated loft source profiles; solid validity, hole containment and downstream requirements are not certified"
         );
     }
     if let (Some(output), Some(session), Some(generation)) =

@@ -188,3 +188,31 @@ impl Studio {
         Ok(data)
     }
 }
+
+impl Studio {
+    pub(super) fn loft_profile_report(&self, body: &[u8]) -> Result<Value, String> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Query {
+            version: u64,
+            instance: String,
+            operation: occt_parametric::FeatureOperation,
+        }
+        let query: Query =
+            serde_json::from_slice(body).map_err(|e| format!("invalid loft diagnosis: {e}"))?;
+        if query.version != self.version {
+            return Err("Model changed. Check the loft profiles again.".into());
+        }
+        if !primary_instances(&self.document)?.contains(&query.instance) {
+            return Err("Unknown editable instance.".into());
+        }
+        let graph = self.document.instance_graph().map_err(|e| e.to_string())?;
+        let part = graph.resolve(&query.instance).map_err(|e| e.to_string())?;
+        let session = Session::new().map_err(|e| e.to_string())?;
+        let report = occt_parametric::diagnose_loft_profiles(&part, &session, &query.operation)
+            .map_err(|e| e.to_string())?;
+        Ok(
+            json!({"version":self.version,"instance":query.instance,"operation":query.operation,"report":report}),
+        )
+    }
+}

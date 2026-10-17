@@ -190,3 +190,38 @@ fn inspection_limits_missing_references_and_report_overwrite_rejected() {
     );
     assert_eq!(fs::read(dir.0.join("report.json")).unwrap(), before);
 }
+
+#[test]
+fn loft_inspection_reports_bad_correspondence_in_isolation_with_paging() {
+    let dir = Directory::new();
+    let mut model = view_example("partitioned-profile-loft")["model"].clone();
+    model["family"]["features"][0]["operation"]["profile_loft"]["correspondence"] = json!({});
+    let request = json!({"schema":"occb-model-inspection-v1","model":model,"instance":"block","loft_feature":"body","limit":1});
+    let report = inspect_request(&dir, request.clone(), "loft-bad.json").unwrap();
+    assert_eq!(report["loft"]["checks_passed"], false);
+    assert_eq!(report["loft"]["solid_checked"], false);
+    assert_eq!(report["loft"]["profiles"]["total"], 2);
+    assert_eq!(report["loft"]["profiles"]["next_offset"], 1);
+    assert_eq!(report["loft"]["profiles"]["items"][0]["source_edges"], 1);
+    assert_eq!(
+        report["loft"]["profiles"]["items"][0]["issues"][0]["code"],
+        "edge_count_mismatch"
+    );
+    let mut next = request.clone();
+    next["offset"] = json!(1);
+    let r = inspect_request(&dir, next, "loft-next.json").unwrap();
+    assert_eq!(r["loft"]["profiles"]["items"][0]["profile"], "upper");
+    for mode in ["instance", "sketch", "output", "selector", "wrong-kind"] {
+        let mut invalid = request.clone();
+        match mode {
+            "instance" => {
+                invalid.as_object_mut().unwrap().remove("instance");
+            }
+            "sketch" => invalid["sketch_feature"] = json!("lower"),
+            "output" => invalid["output"] = json!("body"),
+            "selector" => invalid["edge_selector"] = json!("all"),
+            _ => invalid["loft_feature"] = json!("lower"),
+        }
+        assert!(inspect_request(&dir, invalid, &format!("invalid-{mode}.json")).is_err());
+    }
+}

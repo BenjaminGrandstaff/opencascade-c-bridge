@@ -38,6 +38,24 @@ class McpTests(unittest.TestCase):
         self.assertEqual(len(self.client.call('tools/list')['result']['tools']), 8)
         self.assertEqual(self.client.call('initialize')['error']['code'], -32600)
 
+    def test_loft_diagnosis_inspection_schema_and_failed_loft_sources(self):
+        example = self.client.tool('occt_get_example', dict(name='partitioned-profile-loft'))['structuredContent']
+        example['model']['family']['features'][0]['operation']['profile_loft']['correspondence'] = {}
+        request = dict(schema='occb-model-inspection-v1', model=example['model'], instance='block', loft_feature='body', limit=1)
+        schema = self.client.tool('occt_get_schema', dict(name='inspection'))['structuredContent']
+        jsonschema.validate(request, schema)
+        result = self.client.tool('occt_inspect_model', request)
+        self.assertFalse(result['isError'])
+        report = result['structuredContent']['loft']
+        self.assertFalse(report['checks_passed'])
+        self.assertFalse(report['solid_checked'])
+        self.assertEqual(report['profiles']['total'], 2)
+        self.assertEqual(report['profiles']['items'][0]['issues'][0]['code'], 'edge_count_mismatch')
+        request['offset'] = 1
+        next_page = self.client.tool('occt_inspect_model', request)['structuredContent']['loft']['profiles']
+        self.assertEqual(next_page['items'][0]['profile'], 'upper')
+        self.assertEqual(next_page['items'][0]['aligned_edges'], 4)
+
     def test_partitioned_loft_discovery_schema_and_native_visualization(self):
         schema = self.client.tool('occt_get_schema', dict(name='view'))['structuredContent']
         for name in ['constrained-loft', 'normal-profile-loft', 'aligned-profile-loft', 'partitioned-profile-loft']:
