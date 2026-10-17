@@ -6,6 +6,7 @@ import { newSketchDefinition } from './sketch-create.mjs';
 import { infer } from './sketch-studio-infer.mjs';
 import { pathData } from './sketch-studio-overlay.mjs';
 import { CLICKS, ICONS, TOOLS, commitShape, typedClick } from './sketch-studio-tools.mjs';
+import { continueOutline } from './sketch-studio-delete.mjs';
 
 /** Snap radius in screen pixels. */
 const SNAP_PIXELS = 8;
@@ -289,7 +290,7 @@ export function installDrawing(studio, document) {
         ...options,profile,auto,scene: studio.sceneOf(d.feature) ?? {},
       });
       const ghost = tool === 'point' ? [] : [primitiveGhost(tool, clicks.slice(0, -1), clicks.at(-1), {...options,clockwise:options.flip})];
-      change(result.definition, ghost);
+      change(continueOutline(d.definition, result.definition), ghost);
       const added = result.constraints.map((c) => Object.keys(c)[0].replaceAll('_', ' '));
       studio.say(`${TOOLS.find((t) => t.id === tool).label} drawn${added.length ? `, with ${added.join(', ')}` : ''}. Previewing…`);
       gesture = result.chain ? { tool, clicks: [{ ...result.chain, rules: [] }] } : null;

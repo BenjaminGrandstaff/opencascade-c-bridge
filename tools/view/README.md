@@ -117,7 +117,10 @@ view instead of a flat overlay:
 - **Constraining.** With Select (`V`), click or Shift-click geometry; a bar
   offers the constraints it can take and Enter applies the first. Dimension
   (`D`) measures what you click and asks for a value or parameter. Free
-  geometry is blue, conflicting geometry red. Drag free points.
+  geometry is blue, conflicting geometry red. Drag free points. Delete or
+  Backspace removes the selection and what depends on it (constraints,
+  unused endpoints, loop members); redrawing a deleted outline edge closes
+  the outline again.
 - **Planes.** New plane builds a datum plane offset or angled from a base
   plane, on a picked face, midway between two picked faces, or through three
   picked or typed points, with a live preview. Its values become parameters

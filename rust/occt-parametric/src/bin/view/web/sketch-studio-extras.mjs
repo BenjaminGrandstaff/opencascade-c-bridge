@@ -14,6 +14,7 @@ export const SHORTCUTS = [
   ['X', 'Flip an arc the longer way round'],
   ['Alt', 'Hold while drawing to add no automatic constraints'],
   ['Shift', 'Click to add to the selection; drag to pan'],
+  ['Delete / Backspace', 'Delete the selection and what depends on it'],
   ['Ctrl+Z / Ctrl+Shift+Z', 'Undo and redo in the draft, or the model when no draft is open'],
   ['?', 'Show or hide this help'],
 ];

@@ -301,6 +301,36 @@ on it, Offset from it starts a new plane based on it, and Delete removes it
 when no sketch uses it. A plane that fails (its face is gone) is listed in
 red with the reason, and so is each sketch on it.
 
+## Deleting
+
+With Select, Delete or Backspace removes the selection, and the inspector
+shows a Delete selection button with what it will remove ("Removes 1 point
+and 2 lines"). The deletion goes into the draft like any edit: it previews
+at once, Undo restores it, and Apply keeps it. It follows the classic
+editor's authored reference graph (`sketch-dependencies.mjs`):
+
+- Curves, shapes and texts built on a deleted point go with it.
+- Points left unused by remaining geometry go with the curve, shape or text
+  that used them; shared endpoints stay.
+- Constraints, reference dimensions, and curve, profile and region edits
+  that name anything deleted go too, with whatever used their results
+  (a split's pieces, for example). Parameters, text and selectors that only
+  share a name are not references.
+- Profile, hole and region loops and pattern entity lists drop the deleted
+  members; an emptied hole, region or pattern goes, and so does a pattern
+  whose axis, direction or center is deleted.
+- A generated name stands for its record: selecting a rectangle's side
+  deletes the rectangle, a pattern copy deletes the pattern, and a
+  projection's endpoint deletes the projection. The status line says so.
+
+A loop that loses one run of curves is turned to start after the gap, and
+lines, arcs or splines drawn afterwards that meet its free ends join it,
+turned round if they run the other way (an arc also flips its sense). So
+deleting an edge of an outline and drawing its replacement closes the
+outline again; until then the preview says the profile is not a continuous
+boundary and Apply is refused. Deletion is linear in the sketch's size: the
+Node tests delete from a 10,000-line chain in well under a second.
+
 ## Parity with the classic editor
 
 | Capability | Studio | Notes |
@@ -315,7 +345,7 @@ red with the reason, and so is each sketch on it.
 | Edit a point's coordinates and fixed flag | Yes | Inspector |
 | 36 typed constraints and dimensions with parameters | Yes | Selection bar, inspector, Dimension tool |
 | Remove constraints | Yes | Inspector |
-| Delete geometry | No | Not in either editor's canvas; the classic JSON fields can |
+| Delete geometry | Studio only | Delete key or inspector, with dependents; see [Deleting](#deleting) |
 | Crossing points, spline samples, weighted point links | Partly | Forms in the Advanced drawer; canvas picking needs the classic viewer |
 | Patterns, point links, projections, curve and region edits, profiles, dependencies | Yes | Advanced drawer hosts the classic panels |
 | Sketch to solid | Yes | Advanced drawer |

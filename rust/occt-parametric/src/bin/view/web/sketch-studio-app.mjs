@@ -11,6 +11,7 @@ import { installConstraints } from './sketch-studio-constrain.mjs';
 import { layoutLabels, sketchLabels } from './sketch-studio-labels.mjs';
 import { installExtras } from './sketch-studio-extras.mjs';
 import { installPlanes } from './sketch-studio-plane-panel.mjs';
+import { installDelete } from './sketch-studio-delete.mjs';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const format = (value) => Number(Number(value).toPrecision(6)).toString();
@@ -620,6 +621,7 @@ export function startStudio(document) {
   };
   studio.drawing = installDrawing(studio, document);
   installConstraints(studio, document);
+  installDelete(studio, document);
   installExtras(studio, document);
   installPlanes(studio, document);
   load()
