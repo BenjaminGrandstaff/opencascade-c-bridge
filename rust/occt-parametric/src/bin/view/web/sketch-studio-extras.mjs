@@ -6,7 +6,7 @@ import { createSolidEditor } from './solid-editor.mjs';
 import { TOOLS } from './sketch-studio-tools.mjs';
 
 export const SHORTCUTS = [
-  ...TOOLS.map((tool) => [tool.key, tool.label]),
+  ...TOOLS.filter((tool) => tool.key).map((tool) => [tool.key, tool.label]),
   ['N', 'Look square at the active plane'],
   ['F', 'Fit the model in view'],
   ['Enter', 'Finish a spline, commit a typed value, or apply the first suggested constraint'],

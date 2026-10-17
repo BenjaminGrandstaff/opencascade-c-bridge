@@ -436,7 +436,7 @@ heads, as a catalog dimension and a counterbore option.
 drawn on its plane in the 3D view as a layer; a side palette of icon tools
 draws every sketch shape with snapping that adds the obvious constraints;
 selections offer the constraints they can take, and Delete removes them with
-what depends on them; Fillet, Chamfer, Extend, Trim, Split and Offset edit the outline by clicking; labels are laid out without overlaps; and New plane builds parametric datum planes from base planes,
+what depends on them; Fillet, Chamfer, Extend, Trim, Split and Offset edit the outline by clicking; Mirror, Linear and Circular pattern it; labels are laid out without overlaps; and New plane builds parametric datum planes from base planes,
 picked faces or points, to sketch on. See
 [Sketch studio](docs/SKETCH_STUDIO.md).
 

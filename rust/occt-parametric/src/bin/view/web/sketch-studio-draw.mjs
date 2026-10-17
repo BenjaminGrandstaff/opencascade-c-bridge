@@ -580,7 +580,7 @@ export function installDrawing(studio, document) {
       studio.redraw();
       return true;
     }
-    const tool = TOOLS.find((t) => t.key.toLowerCase() === event.key.toLowerCase());
+    const tool = TOOLS.find((t) => t.key && t.key.toLowerCase() === event.key.toLowerCase());
     if (tool) {
       studio.setTool(tool.id);
       return true;
@@ -591,23 +591,25 @@ export function installDrawing(studio, document) {
   // ── Toolbar ──────────────────────────────────────────────────────────
   studio.renderToolbar = () => {
     // A side palette: each tool as its shape's icon over its name, in
-    // Edit (select, dimension), Draw and Modify groups.
+    // Edit (select, dimension), Draw, Modify and Pattern groups.
     const button = (tool) => {
       const icon = html('span', { 'aria-hidden': 'true' });
       icon.innerHTML = `<svg viewBox="0 0 24 24">${ICONS[tool.id]}</svg>`;
       return html('button', {
         'aria-pressed': studio.tool === tool.id ? 'true' : 'false',
-        title: `${tool.label} (${tool.key}) — ${tool.hint}`,
+        title: `${tool.label}${tool.key ? ` (${tool.key})` : ''} — ${tool.hint}`,
         onclick: () => studio.setTool(tool.id),
-      }, icon, tool.label, html('kbd', {}, tool.key));
+      }, icon, tool.label, tool.key ? html('kbd', {}, tool.key) : '');
     };
     const edit = TOOLS.filter((tool) => !CLICKS[tool.id] && !tool.group);
     const draw = TOOLS.filter((tool) => CLICKS[tool.id]);
     const modify = TOOLS.filter((tool) => tool.group === 'modify');
+    const pattern = TOOLS.filter((tool) => tool.group === 'pattern');
     studio.fill(document.getElementById('tools'),
       html('h2', {}, 'Edit'), html('div', { class: 'palette' }, edit.map(button)),
       html('h2', {}, 'Draw'), html('div', { class: 'palette' }, draw.map(button)),
-      html('h2', {}, 'Modify'), html('div', { class: 'palette' }, modify.map(button)));
+      html('h2', {}, 'Modify'), html('div', { class: 'palette' }, modify.map(button)),
+      html('h2', {}, 'Pattern'), html('div', { class: 'palette' }, pattern.map(button)));
     const extra = [];
     if (studio.tool === 'polygon') {
       extra.push(html('label', {}, 'Sides',

@@ -26,6 +26,14 @@ tracks status and order.
 
 ## Done
 
+- Pattern tools in the sketch studio (no schema or ABI change). Mirror,
+  Linear and Circular take selected or clicked source curves, then the
+  mirror line, direction line or center point with a dashed guide, and a
+  count with spacing or step angle; they record linked sketch patterns
+  validated like the classic panel. A mirror shares source points on its
+  axis and closes a half outline through it; hole loops copied whole get
+  copied holes. Palette tools may now have no shortcut key. See
+  [Pattern tools](docs/SKETCH_STUDIO.md#pattern-tools).
 - Offset in the sketch studio (no schema or ABI change). Offset (`Z`)
   records the whole-profile `offset` operation from a typed signed
   distance or parameter with round or sharp corners, drawing an
@@ -54,6 +62,7 @@ tracks status and order.
   frame; a scale case regenerates 10,000 curves with 1,000 extensions on a
   tilted plane in 0.13 s (0.10 s on XY). See
   [Modify tools](docs/SKETCH_STUDIO.md#modify-tools).
+
 
 
 - Studio accepted-source links (schema 165, ABI 76 unchanged): project native

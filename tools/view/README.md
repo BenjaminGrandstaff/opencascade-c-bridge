@@ -130,6 +130,10 @@ view instead of a flat overlay:
   two; both edit the geometry, holding new ends on the crossing curves.
   Offset (`Z`) grows or shrinks the whole outline by a typed distance or
   parameter with round or sharp corners, drawing a guide as you type.
+- **Pattern.** Mirror, Linear and Circular take the selected or clicked
+  curves, then the mirror line, direction line or center point, with a
+  dashed guide, and record linked sketch patterns. A mirror of half an
+  outline closes it through the axis, and patterned holes stay holes.
 - **Planes.** New plane builds a datum plane offset or angled from a base
   plane, on a picked face, midway between two picked faces, or through three
   picked or typed points, with a live preview. Its values become parameters

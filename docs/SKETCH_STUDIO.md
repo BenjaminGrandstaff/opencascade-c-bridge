@@ -608,6 +608,10 @@ model's own edits, so the source geometry and its constraints stay and the
 outline is derived from them; Trim and Split edit the geometry (below).
 Once a sketch has such edits, the edited outline draws solid and the curves
 it was derived from draw dashed behind it.
+For the full set of options (parameter-fraction trims, trims between named
+points, region seeds and discovered cells), use **Edit curves and regions**
+([Editing curves and regions](#editing-curves-and-regions)); it edits the
+same saved operations, so either can change what the other recorded.
 
 - **Fillet** (I) and **Chamfer** (H): hover rings the corners of the outer
   profile (points where two of its curves meet); click one and type a
@@ -661,6 +665,40 @@ new Delete also removes edits that name deleted geometry. Finding the
 first crossing is O(curve segments) for a line and O(segments × 128) for an
 arc, under 200 ms on 10,000 curves in the Node tests.
 
+## Pattern tools
+
+Mirror, Linear and Circular in the palette's Pattern group record the
+model's linked sketch patterns (see
+[Sketch patterns](SKETCHES.md#sketch-patterns-and-holes-schema-112--abi-60)):
+copies follow their sources, which keep their constraints and dimensions.
+They have no shortcut keys; every letter is taken by a drawing or modify
+tool.
+
+1. **Sources.** Curves selected with Select become the sources when the
+   tool starts; otherwise click curves to add or remove them (they draw
+   highlighted), then press Enter. Switching between the three tools keeps
+   the sources.
+2. **Reference.** Click the mirror line, the line giving the direction
+   (start to end), or the center point. While you hover, a dashed guide
+   shows where the copies would be. Escape goes back a step.
+3. **Values.** Mirror records on the click. Linear asks for a count
+   (including the source) and a spacing, suggested from the sources'
+   extent along the direction; Circular asks for a count and a step angle
+   in degrees, or none for a full turn. Numbers or parameter names; the
+   guide follows typed numbers.
+
+Patterns are named `Mirror1`, `Linear1`, `Circular1` and so on, and copies
+`Linear1:2:C1` as in the model. A mirror shares, instead of copying, the
+source points lying on its axis. When the sources are the whole open
+profile and its two ends lie on the axis, the mirrored copies join the
+profile in reverse, closing it: draw or trim half an outline up to a
+center line, mirror it, and the face builds. A hole whose curves are all
+sources gets a copied hole for every instance, so a patterned bore stays a
+bore. Recipes are checked by the classic panel's validator, and editing
+or removing an existing pattern stays in Advanced → patterns (Delete
+removes a pattern with its copies too). Building the pattern and guide for
+1,000 hole sources takes about 10 ms (500 ms budget in the Node tests).
+
 ## Parity with the classic editor
 
 | Capability | Studio | Notes |
@@ -680,6 +718,7 @@ arc, under 200 ms on 10,000 curves in the Node tests.
 | Delete geometry | Studio only | Delete key or inspector, with dependents; see [Deleting](#deleting) |
 | Crossing points and spline samples | Yes | Named points panel, native candidates, on-canvas markers and draft history |
 | Weighted point links | Yes | Named points panel, canvas sources, literal/parameter weights and preserved formulas |
+| Mirror, linear and circular patterns by clicking | Studio only | Pattern tools; see [Pattern tools](#pattern-tools) |
 | Curve and region operations | Yes | Studio panel with canvas picking, native Preview and draft Undo/Redo |
 | Linked mirror, linear and circular patterns | Yes | Studio panel with canvas sources/references, native Preview and draft Undo/Redo |
 | Source projection and support reattachment | Yes | Studio source overlay, native edge/face picks and draft history |
