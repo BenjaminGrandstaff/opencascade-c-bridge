@@ -340,3 +340,105 @@ fn constrained_polygon_lofts_preserve_ordered_sections_and_single_end_constraint
         .unwrap();
     assert!(session.is_valid(&one).unwrap());
 }
+
+#[test]
+fn exact_profile_alignment_repairs_polygon_start_and_reverse_without_input_mutation() {
+    let s = Session::new().unwrap();
+    {
+        let a = s
+            .create_polyline_wire(
+                &[
+                    Vec3::new(-1., -1., 0.),
+                    Vec3::new(1., -1., 0.),
+                    Vec3::new(1., 1., 0.),
+                    Vec3::new(-1., 1., 0.),
+                ],
+                true,
+            )
+            .unwrap();
+        // Same section, authored from another corner with opposite traversal.
+        let b = s
+            .create_polyline_wire(
+                &[
+                    Vec3::new(1., 1., 10.),
+                    Vec3::new(1., -1., 10.),
+                    Vec3::new(-1., -1., 10.),
+                    Vec3::new(-1., 1., 10.),
+                ],
+                true,
+            )
+            .unwrap();
+        let before = s.exact_bounds(&b).unwrap();
+        let aligned = s
+            .align_profile_wire(&b, Some(Vec3::new(-1., -1., 10.)), true)
+            .unwrap();
+        let t = Vec3::new(0., 0., 10.);
+        let loft = s
+            .create_constrained_loft(&[&a, &aligned], Some(t), Some(t))
+            .unwrap();
+        assert!((s.volume(&loft).unwrap() - 40.).abs() < 1e-7);
+        assert_eq!(s.exact_bounds(&b).unwrap(), before);
+        assert!(
+            s.align_profile_wire(&b, Some(Vec3::new(0., -1., 10.)), false)
+                .is_err()
+        );
+        assert!(
+            s.align_profile_wire(&b, Some(Vec3::new(9., 9., 10.)), false)
+                .is_err()
+        );
+        let edge = s.subshape(&b, ShapeType::Edge, 0).unwrap();
+        let loft = s.compose_history(&loft, &aligned).unwrap();
+        assert!(
+            s.history_count(&loft, &edge, HistoryRelation::Generated)
+                .unwrap()
+                > 0
+        );
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn exact_periodic_seams_preserve_curves_volume_and_original_edge_history() {
+    let s = Session::new().unwrap();
+    {
+        let a = s
+            .create_circle_wire(Vec3::new(0., 0., 0.), Vec3::new(0., 0., 1.), 2.)
+            .unwrap();
+        let b = s
+            .create_circle_wire(Vec3::new(0., 0., 10.), Vec3::new(0., 0., 1.), 2.)
+            .unwrap();
+        let ea = s.subshape(&a, ShapeType::Edge, 0).unwrap();
+        for reverse in [false, true] {
+            let aa = s
+                .align_profile_wire(&a, Some(Vec3::new(0., 2., 0.)), reverse)
+                .unwrap();
+            let bb = s
+                .align_profile_wire(&b, Some(Vec3::new(0., 2., 10.)), reverse)
+                .unwrap();
+            assert_eq!(s.subshape_count(&aa, ShapeType::Edge).unwrap(), 1);
+            let f = s.create_face_from_wire(&aa).unwrap();
+            assert!((s.surface_area(&f).unwrap() - 4. * std::f64::consts::PI).abs() < 1e-7);
+            let t = Vec3::new(0., 0., 10.);
+            let solid = s
+                .create_constrained_loft(&[&aa, &bb], Some(t), Some(t))
+                .unwrap();
+            assert!((s.volume(&solid).unwrap() - 40. * std::f64::consts::PI).abs() < 1e-6);
+            let solid = s.compose_history(&solid, &aa).unwrap();
+            assert!(
+                s.history_count(&solid, &ea, HistoryRelation::Generated)
+                    .unwrap()
+                    > 0
+            );
+        }
+        assert!(
+            s.align_profile_wire(&a, Some(Vec3::new(0., 3., 0.)), false)
+                .is_err()
+        );
+        assert!(
+            s.align_profile_wire(&a, Some(Vec3::new(f64::NAN, 2., 0.)), false)
+                .is_err()
+        );
+        assert_eq!(s.subshape_count(&a, ShapeType::Edge).unwrap(), 1);
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}

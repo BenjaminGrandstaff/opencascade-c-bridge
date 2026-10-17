@@ -665,6 +665,29 @@ impl Session {
         Ok(self.shape(result))
     }
 
+    /// Reorder/reverse a closed planar boundary, preserving exact curves and ancestry.
+    pub fn align_profile_wire<'a>(
+        &'a self,
+        input: &Shape<'_>,
+        start: Option<Vec3>,
+        reverse: bool,
+    ) -> Result<Shape<'a>, BridgeError> {
+        self.validate_shape(input)?;
+        let start = start.map(RawVec3::from);
+        let mut result = 0;
+        // SAFETY: input is session-owned; the optional point and output live through the call.
+        self.check(unsafe {
+            occt_bridge_align_profile_wire(
+                self.raw.as_ptr(),
+                input.id,
+                start.as_ref().map_or(std::ptr::null(), |p| p),
+                reverse.into(),
+                &mut result,
+            )
+        })?;
+        Ok(self.shape(result))
+    }
+
     /// Exact rational cubic Hermite loft; derivatives use millimetres per station interval.
     pub fn create_constrained_loft<'a>(
         &'a self,

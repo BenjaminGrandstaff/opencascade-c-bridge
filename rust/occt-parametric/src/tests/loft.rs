@@ -641,3 +641,152 @@ fn normal_loft_constraints_follow_parameter_driven_profile_plane_edits() {
         family
     );
 }
+
+#[test]
+fn profile_correspondence_tracks_parameters_keeps_history_and_rejects_stale_anchors() {
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tools/model/aligned-profile-loft.request.json"
+    ))
+    .unwrap();
+    let mut family = ModelDocument::from_json(&request["model"].to_string())
+        .unwrap()
+        .family;
+    let s = Session::new().unwrap();
+    {
+        let original = part(&family).regenerate(&s).unwrap();
+        let edge = s
+            .subshape(original.shape("lower").unwrap(), ShapeType::Edge, 0)
+            .unwrap();
+        assert!(
+            s.history_count(
+                original.shape("body").unwrap(),
+                &edge,
+                HistoryRelation::Generated
+            )
+            .unwrap()
+                > 0
+        );
+        let mut changed = part(&family);
+        changed.overrides.insert(
+            "lower_radius".into(),
+            ParameterValue::Scalar(Quantity::length(10., LengthUnit::Millimeter)),
+        );
+        changed.overrides.insert(
+            "height".into(),
+            ParameterValue::Scalar(Quantity::length(30., LengthUnit::Millimeter)),
+        );
+        let result = changed.regenerate_incremental(&s, &original).unwrap();
+        assert!(result.regeneration.rebuilt.contains(&"body".into()));
+        assert!(s.is_valid(result.shape("body").unwrap()).unwrap());
+        let tangents = result
+            .loft_end_tangents(
+                &s,
+                &family.features[0].operation,
+                &changed.resolved_parameters().unwrap(),
+            )
+            .unwrap();
+        assert_eq!(tangents.len(), 2);
+        assert!(tangents.iter().all(|t| (t.derivative.z - 30.).abs() < 1e-7));
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+    let saved = family.clone();
+    for invalid in ["stale", "off-boundary", "free", "ruled"] {
+        family = saved.clone();
+        let FeatureOperation::ProfileLoft {
+            correspondence,
+            start_constraint,
+            end_constraint,
+            ruled,
+            ..
+        } = &mut family.features[0].operation
+        else {
+            panic!()
+        };
+        match invalid {
+            "stale" => {
+                correspondence.insert("absent".into(), LoftProfileAlignment::default());
+            }
+            "off-boundary" => {
+                correspondence.get_mut("lower").unwrap().start_point = Some(point(0., 9., 0.))
+            }
+            "free" => {
+                *start_constraint = None;
+                *end_constraint = None;
+            }
+            _ => *ruled = true,
+        }
+        assert!(part(&family).regenerate(&s).is_err(), "{invalid}");
+        assert_eq!(s.shape_count().unwrap(), 0);
+    }
+    let encoded = serde_json::to_string(&saved).unwrap();
+    assert_eq!(
+        serde_json::from_str::<FamilyDefinition>(&encoded).unwrap(),
+        saved
+    );
+}
+
+#[test]
+fn independent_correspondence_parameter_invalidates_loft_without_rebuilding_profiles() {
+    let mut family = native_profile_family();
+    let mut anchor = length_parameter("anchor", 8.);
+    anchor.minimum = None;
+    family.parameters.push(anchor);
+    let FeatureOperation::ProfileLoft {
+        correspondence,
+        ruled,
+        start_constraint,
+        ..
+    } = &mut family.features[0].operation
+    else {
+        panic!()
+    };
+    *ruled = false;
+    *start_constraint = Some(Box::new(LoftEndConstraint {
+        direction: None,
+        normal_to_profile: true,
+        magnitude: ScalarExpr::Parameter("height".into()),
+    }));
+    correspondence.insert(
+        "lower".into(),
+        LoftProfileAlignment {
+            start_point: Some(VectorExpr::Components {
+                x: ScalarExpr::Literal(Quantity::length(0., LengthUnit::Millimeter)),
+                y: ScalarExpr::Parameter("anchor".into()),
+                z: ScalarExpr::Literal(Quantity::length(0., LengthUnit::Millimeter)),
+            }),
+            reverse: false,
+        },
+    );
+    correspondence.insert(
+        "upper".into(),
+        LoftProfileAlignment {
+            start_point: Some(VectorExpr::Components {
+                x: ScalarExpr::Literal(Quantity::length(0., LengthUnit::Millimeter)),
+                y: ScalarExpr::Multiply(
+                    Box::new(ScalarExpr::Parameter("anchor".into())),
+                    Box::new(ScalarExpr::Literal(Quantity::scalar(0.5))),
+                ),
+                z: ScalarExpr::Parameter("height".into()),
+            }),
+            reverse: false,
+        },
+    );
+    let s = Session::new().unwrap();
+    let first = part(&family).regenerate(&s).unwrap();
+    let mut changed = part(&family);
+    // A different point on the same circle must rebuild the loft even though the sources do not change.
+    changed.overrides.insert(
+        "anchor".into(),
+        ParameterValue::Scalar(Quantity::length(-8., LengthUnit::Millimeter)),
+    );
+    let result = changed.regenerate_incremental(&s, &first).unwrap();
+    assert_eq!(result.regeneration.rebuilt, ["body"]);
+    assert!(result.regeneration.reused.contains(&"lower".into()));
+    assert!(result.regeneration.reused.contains(&"upper".into()));
+    assert!(
+        (s.volume(result.shape("body").unwrap()).unwrap()
+            - s.volume(first.shape("body").unwrap()).unwrap())
+        .abs()
+            < 1e-5
+    );
+}

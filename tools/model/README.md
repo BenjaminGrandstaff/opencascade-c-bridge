@@ -147,3 +147,10 @@ directions and parameter-linked strengths (schema 169); see [constrained lofts](
 
 `normal-profile-loft.request.json` uses profile-derived end normals and
 parameter-linked strengths (schema 170, ABI 77 unchanged).
+
+`aligned-profile-loft.request.json` uses schema 171 / ABI 78 to align both circular
+seams with parameter-driven `profile_loft.correspondence` anchors. The map is keyed
+by source profile ID and supports optional `start_point` length vectors and
+`reverse` flags. Manual correspondence requires a smooth end-constrained loft;
+unknown IDs or anchors off regenerated boundaries are errors. See
+[the supported anchor geometry](../../docs/LOFTS.md#profile-correspondence-schema-171-abi-78).

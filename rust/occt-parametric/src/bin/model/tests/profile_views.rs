@@ -3014,6 +3014,7 @@ fn loft_viewer_exposes_resolved_native_end_derivatives_and_true_control_handle_l
     for (example, mode) in [
         ("constrained-loft", "direction"),
         ("normal-profile-loft", "normal_to_profile"),
+        ("aligned-profile-loft", "normal_to_profile"),
     ] {
         let request = view_example(example);
         view_request(&dir, request, example).unwrap();

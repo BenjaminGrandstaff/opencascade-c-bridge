@@ -19,8 +19,14 @@ pub fn collect_operation_parameters<'a>(
         FeatureOperation::ProfileLoft {
             start_constraint,
             end_constraint,
+            correspondence,
             ..
         } => {
+            for alignment in correspondence.values() {
+                if let Some(point) = &alignment.start_point {
+                    collect_vector_parameters(point, names);
+                }
+            }
             for constraint in start_constraint.iter().chain(end_constraint.iter()) {
                 if let Some(direction) = &constraint.direction {
                     collect_vector_parameters(direction, names);

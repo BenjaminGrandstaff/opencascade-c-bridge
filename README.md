@@ -749,6 +749,9 @@ end conditions without changing ABI 48.
 [Constrained lofts](docs/LOFTS.md#end-constraints-schema-169-abi-77) add start/end
 tangent directions and parameter-linked strengths (schema 169, ABI 77), with
 native derivative checks, exact section curves, and studio controls.
+[Profile correspondence](docs/LOFTS.md#profile-correspondence-schema-171-abi-78)
+adds exact per-profile start anchors and traversal reversal for constrained smooth
+lofts, including hole tracks (schema 171, ABI 78).
 
 [Saved-profile lofts](docs/LOFTS.md) build solid transitions directly from sketch
 faces and closed wires, including native circles, ellipses, arcs and splines.

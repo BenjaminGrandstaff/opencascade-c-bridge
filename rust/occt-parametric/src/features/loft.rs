@@ -241,6 +241,30 @@ pub(crate) fn execute<'session>(
     })
 }
 
+type Correspondence = HashMap<String, (Option<Vec3>, bool)>;
+
+pub(crate) fn resolve_correspondence(
+    values: &std::collections::BTreeMap<String, LoftProfileAlignment>,
+    parameters: &HashMap<String, ParameterValue>,
+) -> Result<Correspondence, ModelError> {
+    values
+        .iter()
+        .map(|(id, value)| {
+            Ok((
+                id.clone(),
+                (
+                    value
+                        .start_point
+                        .as_ref()
+                        .map(|point| vector(point, parameters, Dimension::Length))
+                        .transpose()?,
+                    value.reverse,
+                ),
+            ))
+        })
+        .collect()
+}
+
 /// Linear profile/topology indexing; native curve compatibility and surface
 /// interpolation cost depends on edge correspondence, sections and degree.
 #[allow(clippy::too_many_arguments)]
@@ -250,10 +274,26 @@ pub(crate) fn execute_profiles_constrained<'a>(
     holes: &[Vec<String>],
     ruled: bool,
     shapes: &HashMap<String, Shape<'a>>,
+    correspondence: &Correspondence,
     start: Option<Vec3>,
     end: Option<Vec3>,
 ) -> Result<Shape<'a>, ModelError> {
     let constrained = start.is_some() || end.is_some();
+    if !correspondence.is_empty() && (!constrained || ruled) {
+        return Err(ModelError::new(
+            "manual loft correspondence requires a smooth loft with an end constraint",
+        ));
+    }
+    if correspondence.keys().any(|id| {
+        !profiles
+            .iter()
+            .chain(holes.iter().flatten())
+            .any(|p| p == id)
+    }) {
+        return Err(ModelError::new(
+            "loft correspondence references a profile outside its station tracks",
+        ));
+    }
     if constrained && ruled {
         return Err(ModelError::new(
             "loft end constraints require smooth surfaces; ruled lofts cannot enforce end derivatives",
@@ -265,7 +305,15 @@ pub(crate) fn execute_profiles_constrained<'a>(
         ));
     }
     if holes.is_empty() {
-        return execute_simple_profiles_constrained(session, profiles, ruled, shapes, start, end);
+        return execute_simple_profiles_constrained(
+            session,
+            profiles,
+            ruled,
+            shapes,
+            correspondence,
+            start,
+            end,
+        );
     }
     if !(2..=MAXIMUM_SECTIONS).contains(&profiles.len())
         || holes.len() > 100
@@ -293,12 +341,28 @@ pub(crate) fn execute_profiles_constrained<'a>(
         let _ = super::regions::execute(session, outer, &inner, shapes)
             .map_err(|e| e.context(&format!("loft section {index}")))?;
     }
-    let outer = execute_simple_profiles_constrained(session, profiles, ruled, shapes, start, end)?;
+    let outer = execute_simple_profiles_constrained(
+        session,
+        profiles,
+        ruled,
+        shapes,
+        correspondence,
+        start,
+        end,
+    )?;
     let mut inners = Vec::new();
     for (index, track) in holes.iter().enumerate() {
         inners.push(
-            execute_simple_profiles_constrained(session, track, ruled, shapes, start, end)
-                .map_err(|e| e.context(&format!("loft hole track {index}")))?,
+            execute_simple_profiles_constrained(
+                session,
+                track,
+                ruled,
+                shapes,
+                correspondence,
+                start,
+                end,
+            )
+            .map_err(|e| e.context(&format!("loft hole track {index}")))?,
         );
     }
     super::hollow::subtract(session, &outer, &inners)
@@ -311,14 +375,24 @@ fn execute_simple_profiles<'a>(
     ruled: bool,
     shapes: &HashMap<String, Shape<'a>>,
 ) -> Result<Shape<'a>, ModelError> {
-    execute_simple_profiles_constrained(session, profiles, ruled, shapes, None, None)
+    execute_simple_profiles_constrained(
+        session,
+        profiles,
+        ruled,
+        shapes,
+        &HashMap::new(),
+        None,
+        None,
+    )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn execute_simple_profiles_constrained<'a>(
     session: &'a Session,
     profiles: &[String],
     ruled: bool,
     shapes: &HashMap<String, Shape<'a>>,
+    correspondence: &Correspondence,
     start: Option<Vec3>,
     end: Option<Vec3>,
 ) -> Result<Shape<'a>, ModelError> {
@@ -364,11 +438,33 @@ fn execute_simple_profiles_constrained<'a>(
             profile
         });
     }
-    let result = if start.is_some() || end.is_some() {
+    let mut aligned = Vec::new();
+    for (id, wire) in profiles.iter().zip(&wires) {
+        if let Some(&(anchor, reverse)) = correspondence.get(id) {
+            aligned.push(Some(
+                session
+                    .align_profile_wire(wire, anchor, reverse)
+                    .map_err(|e| {
+                        ModelError::from(e).context(&format!("loft profile {id} alignment"))
+                    })?,
+            ));
+        } else {
+            aligned.push(None);
+        }
+    }
+    let wires = wires
+        .iter()
+        .zip(&aligned)
+        .map(|(wire, aligned)| aligned.as_ref().unwrap_or(wire))
+        .collect::<Vec<_>>();
+    let mut result = if start.is_some() || end.is_some() {
         session.create_constrained_loft(&wires, start, end)?
     } else {
         session.create_loft_from_wires(&wires, true, ruled)?
     };
+    for aligned in aligned.iter().flatten() {
+        result = session.compose_history(&result, aligned)?;
+    }
     let volume = session.volume(&result)?;
     if session.shape_type(&result)? != ShapeType::Solid
         || !session.is_valid(&result)?

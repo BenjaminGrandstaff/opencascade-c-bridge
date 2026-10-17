@@ -174,6 +174,18 @@ pub struct LoftEndConstraint {
     pub magnitude: ScalarExpr,
 }
 
+/// Explicit boundary correspondence for one saved loft profile (schema 171).
+/// Start points are family-space lengths. Multi-edge profiles require a vertex;
+/// one full periodic edge also supports an exact continuous seam anchor.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LoftProfileAlignment {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_point: Option<VectorExpr>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub reverse: bool,
+}
+
 /// An interior sample of a smooth radius law. Position is dimensionless and
 /// strictly between 0 and 1; radius is a positive length.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -280,6 +292,9 @@ pub enum FeatureOperation {
         start_constraint: Option<Box<LoftEndConstraint>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         end_constraint: Option<Box<LoftEndConstraint>>,
+        /// Profile IDs mapped to exact seam/traversal overrides. Requires end constraints.
+        #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+        correspondence: std::collections::BTreeMap<String, LoftProfileAlignment>,
     },
     Cylinder {
         origin: VectorExpr,

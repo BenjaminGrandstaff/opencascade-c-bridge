@@ -624,3 +624,10 @@ Chrome through canvas curve selection, equal-length creation, annotated dimensio
 editing, coordinate editing, pocket-cut preview/apply/revert, existing extrusion
 editing, and constrained dragging/drawing, with no
 page errors.
+
+For constrained smooth lofts, the station editor also exposes start anchors and
+traversal reversal for outer and hole profiles (schema 171 / ABI 78). Anchors use
+family-space millimetres or retained formulas. Multi-edge profiles require an
+existing vertex; full periodic single-edge profiles support exact continuous
+seam placement. Preview, Apply, history and Save preserve profile-ID alignment.
+See [loft correspondence](../../docs/LOFTS.md#profile-correspondence-schema-171-abi-78).

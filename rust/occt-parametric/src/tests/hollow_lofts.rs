@@ -207,6 +207,7 @@ fn constrained_hollow_lofts_interpolate_both_tracks_without_losing_wall_history(
         ruled,
         start_constraint,
         end_constraint,
+        correspondence,
         ..
     } = &mut doc.family.features[0].operation
     else {
@@ -220,6 +221,25 @@ fn constrained_hollow_lofts_interpolate_both_tracks_without_losing_wall_history(
     });
     *start_constraint = Some(constraint.clone());
     *end_constraint = Some(constraint);
+    // Move both outer and inner periodic seams, with independently reversed hole traversal.
+    for (id, radius, z, reverse) in [
+        ("lower", "lower_radius", 0., false),
+        ("upper", "upper_radius", 20., false),
+        ("lower-bore", "lower_bore_radius", 0., true),
+        ("upper-bore", "upper_bore_radius", 20., true),
+    ] {
+        correspondence.insert(
+            id.into(),
+            LoftProfileAlignment {
+                reverse,
+                start_point: Some(VectorExpr::Components {
+                    x: ScalarExpr::Literal(Quantity::length(0., LengthUnit::Millimeter)),
+                    y: ScalarExpr::Parameter(radius.into()),
+                    z: ScalarExpr::Literal(Quantity::length(z, LengthUnit::Millimeter)),
+                }),
+            },
+        );
+    }
     let generated = part(&doc).regenerate(&session).unwrap();
     let body = generated.shape("body").unwrap();
     let expected = 20. * std::f64::consts::PI * (64. - 32. + 16. * 13. / 35.) * 0.75;

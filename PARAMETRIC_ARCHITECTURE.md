@@ -2125,3 +2125,14 @@ the solid preview, and existing session/version guards reject stale replies.
 Inspection retains no native handles and is included in the 1,000-loft scale
 gates. This adds metadata and a Rust inspection query without changing schema
 170 or ABI 77.
+
+Schema 171 / ABI 78 add explicit profile correspondence to end-constrained
+smooth lofts. A profile-ID map holds optional family-space length-vector anchors
+and traversal reversal. Exact copied native wires rotate to existing vertices;
+full periodic single-edge curves can relocate their seam without approximation.
+Alignment history is composed into loft and bore results so selectors still
+refer to original sketch edges. Anchor parameters participate in incremental
+invalidation. Unknown profile IDs, nonmatching anchors, and free/ruled usage fail
+rather than silently falling back. The station editor keeps settings by profile
+ID, preserves formulas, prunes removed sources, and uses the existing all-variant
+preview/apply/history/save transaction.

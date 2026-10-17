@@ -252,3 +252,53 @@ explicit and profile-normal directions, does not alter source geometry, and
 retains no native handles. The profile-loft scale benchmarks now include these
 inspection queries for every regeneration, with handle-count checks. No model
 schema or C ABI change is needed (schema 170, ABI 77).
+
+## Profile correspondence (schema 171, ABI 78)
+
+Constrained smooth lofts can override the start and traversal of individual
+outer or hole profiles. The `correspondence` map uses saved profile feature IDs,
+so moving a station keeps its settings attached to that profile:
+
+```json
+"correspondence": {
+  "upper": {
+    "start_point": {
+      "components": {
+        "x": {"literal":{"value":0,"dimension":"length","unit":"millimeter"}},
+        "y": {"parameter":"upper_radius"},
+        "z": {"parameter":"height"}
+      }
+    },
+    "reverse": true
+  }
+}
+```
+
+Both fields are optional. With no anchor, reversal retains the original seam.
+The anchor is a family-space length vector, supporting parameter expressions.
+For a boundary with multiple edges it must match a unique existing vertex within
+1e-6 mm. For a single full periodic edge, such as a circle or ellipse, any point
+on that curve can move the seam exactly within the same tolerance. This does
+not split edges or approximate curves. Arbitrary starts on nonperiodic closed
+splines and interior points of multi-edge boundaries are rejected.
+
+At least one start/end constraint is required; free or ruled lofts reject manual
+correspondence because their automatic compatibility step could undo the saved
+ordering. Matching edge counts and all existing derivative, fold-back and valid
+solid checks still apply. Alignment copies source geometry, composes original
+edge ancestry through lofting and hole subtraction, and never edits the sketches.
+Unknown profile IDs and anchors that no longer match the regenerated boundary
+fail instead of falling back to another seam.
+
+In **Edit loft**, each outer/hole station has **traversal** and **start anchor**
+controls. Choose an entered point or retain the existing formula. Entered XYZ
+coordinates use family millimetres; use **Show loft station** to inspect a source.
+Removing a station or hole track removes its alignment entries; moving stations
+retains their profile IDs. Preview checks every family variant before Apply, and
+saved correspondence participates in undo, redo and Save. Anchor picking and
+seam markers on the canvas are not yet implemented.
+
+[The aligned-profile example](../tools/model/aligned-profile-loft.request.json)
+uses radius/height parameters for both circular seams. The scale benchmark checks
+1,000 regenerations, exact volume, original source edge counts, tangent queries
+and released handles against the existing 10-second budget.

@@ -1025,3 +1025,12 @@ scale case checks that.
   Alt to suppress them and each one removable afterwards.
 - Should the studio become the default sketch editor after phase 5, or
   stay an alternative?
+
+Loft correspondence controls (schema 171, ABI 78) are available for every outer
+and hole station in **Edit loft**. Set traversal to **Reversed**, or choose
+**Entered start point** and enter family-space XYZ millimetres. Multi-edge
+boundaries require an existing corner; a full single-edge circle or ellipse can
+use any exact boundary point. Existing anchor formulas remain preserved until
+explicitly replaced. Manual correspondence requires a smooth loft with at least
+one end constraint. Preview rejects stale anchors in any instance. See
+[profile correspondence](LOFTS.md#profile-correspondence-schema-171-abi-78).

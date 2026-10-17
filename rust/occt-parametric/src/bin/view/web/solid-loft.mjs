@@ -1,3 +1,4 @@
+import {validateLoftCorrespondence} from './solid-loft-correspondence.mjs';
 import {validateLoftConstraint} from './solid-loft-constraints.mjs';
 // Ordered loft stations and hole tracks share the same station ordering.
 export function loftDefinition(features,definition) {
@@ -11,7 +12,8 @@ export function loftDefinition(features,definition) {
   const constraints={};
   for(const key of ['start_constraint','end_constraint'])if(definition[key])constraints[key]=validateLoftConstraint(definition[key]);
   if(Object.keys(constraints).length&&(ruled||profiles.length>64))throw Error('Loft end constraints require smooth surfaces and at most 64 stations.');
-  return {profiles:[...profiles],holes:holes.map(track=>[...track]),ruled,...constraints};
+  const correspondence=validateLoftCorrespondence(definition.correspondence,ids,!ruled&&Object.keys(constraints).length>0);
+  return {...(Object.keys(correspondence).length?{correspondence}:{}),profiles:[...profiles],holes:holes.map(track=>[...track]),ruled,...constraints};
 }
 export function editLoftStations(definition,action,index=0) {
   const result=structuredClone(definition),tracks=[result.profiles,...(result.holes??[])],count=result.profiles.length;
@@ -28,6 +30,10 @@ export function editLoftStations(definition,action,index=0) {
       if(destination<0||destination>=count)throw Error('That loft station cannot move further.');
       for(const track of tracks)[track[index],track[destination]]=[track[destination],track[index]];
     }else throw Error('Choose a loft station action.');
+  }
+  if(result.correspondence){
+    const ids=tracks.flat();result.correspondence=Object.fromEntries(Object.entries(result.correspondence).filter(([id])=>ids.includes(id)));
+    if(!Object.keys(result.correspondence).length)delete result.correspondence;
   }
   return result;
 }

@@ -166,6 +166,7 @@ pub(crate) fn execute_feature<'session>(
             ruled,
             start_constraint,
             end_constraint,
+            correspondence,
         } => {
             return loft::execute_profiles_constrained(
                 session,
@@ -173,6 +174,7 @@ pub(crate) fn execute_feature<'session>(
                 holes,
                 *ruled,
                 shapes,
+                &loft::resolve_correspondence(correspondence, parameters)?,
                 loft::end_derivative(
                     session,
                     profiles,

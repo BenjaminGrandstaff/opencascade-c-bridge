@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 77u
+#define OCCT_BRIDGE_ABI_VERSION 78u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -658,6 +658,15 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_loft_from_wires(
     int ruled,
     occt_bridge_shape_id_t* out_shape
 );
+
+/* ABI 78: choose a start anchor and/or reverse an immutable closed planar
+ * wire (1-128 edges). Anchor must match a unique boundary vertex within 1e-6
+ * mm, or lie on a single full periodic edge, whose seam is shifted exactly.
+ * A null anchor retains the traversal's default start. Reverse is 0/1.
+ * Records modified wire/edge ancestry; source topology is unchanged. */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_align_profile_wire(
+    occt_bridge_session_t*, occt_bridge_shape_id_t,
+    const occt_bridge_vec3_t* start_point, int reverse, occt_bridge_shape_id_t*);
 
 /* ABI 77: cubic Hermite solid loft through 2-64 matching ordered profile
  * wires (<=128 edges, <=100000 section poles). At least one derivative pointer

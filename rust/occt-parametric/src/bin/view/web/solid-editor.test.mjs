@@ -331,3 +331,27 @@ test('normal-to-profile loft controls preserve saved strength formulas and expli
  choose('Start loft condition','normal');await button(host,'Preview solid').onclick();assert.deepEqual(calls.at(-1).features,[saved]);choose('Start loft condition','tangent');assert.equal(control(host,'Start loft direction X').value,0.2);choose('Start loft condition','free');await button(host,'Preview solid').onclick();assert.equal(calls.at(-1).features[0].operation.profile_loft.start_constraint,undefined);
  }finally{delete globalThis.document;delete globalThis.Option;}
 });
+
+test('loft correspondence follows profile identities through station ordering and removal',()=>{
+ const ids=['a','b','c','ha','hb','hc'],features=ids.map(id=>({id})),definition={profiles:['a','b','c'],holes:[['ha','hb','hc']],ruled:false,start_constraint:{normal_to_profile:true,magnitude:depth(10)},correspondence:{b:{reverse:true},hb:{start_point:{parameter:'anchor'}},c:{reverse:true}}};
+ assert.deepEqual(loftDefinition(features,definition),definition);
+ const moved=editLoftStations(definition,'earlier',2);assert.deepEqual(moved.correspondence,definition.correspondence);
+ const removed=editLoftStations(definition,'remove',1);assert.deepEqual(removed.correspondence,{c:{reverse:true}});
+ assert.deepEqual(definition.correspondence.b,{reverse:true});
+ for(const bad of [{...definition,ruled:true},{...definition,start_constraint:undefined},{...definition,correspondence:{absent:{reverse:true}}},{...definition,correspondence:{b:{reverse:'yes'}}},{...definition,correspondence:{b:{raw_edge_index:0}}}])assert.throws(()=>loftDefinition(features,bad));
+});
+
+test('loft correspondence editor preserves formulas, edits anchors and keeps hole settings on reorder',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const names=['profile','middle','upper','ha','hb','hc'],profiles=names.map(id=>({id,operation:{sketch_wire:{sketch:{}}}}));
+ const saved={id:'transition',operation:{profile_loft:{profiles:['profile','middle','upper'],holes:[['ha','hb','hc']],ruled:false,start_constraint:{normal_to_profile:true,magnitude:depth(20)},correspondence:{middle:{start_point:{parameter:'anchor'}},hb:{reverse:true}}}}};
+ const host=new Element('div'),calls=[];createSolidEditor({host,instance:()=> 'part',preview:async()=>{},applied:async()=>{},restore:async()=>{},request:async(path,options)=>{if(!options)return {version:1,features:[...profiles,saved],output:'transition',parameters:[]};calls.push(JSON.parse(options.body));return {can_apply:true};}});
+ await button(host,'Sketch to solid').onclick();await button(host,'Edit loft transition').onclick();await button(host,'Preview solid').onclick();assert.deepEqual(calls.at(-1).features,[saved]);
+ await button(host,'Move station 2 later').onclick();await button(host,'Preview solid').onclick();let op=calls.at(-1).features[0].operation.profile_loft;assert.deepEqual(op.profiles,['profile','upper','middle']);assert.deepEqual(op.correspondence,saved.operation.profile_loft.correspondence);assert.equal(control(host,'Hole 1 station 3 traversal').value,'reverse');
+ const choose=(label,value)=>{control(host,label).value=value;control(host,label).onchange();};
+ choose('Outer station 3 start anchor','literal');for(const [key,value] of [['X',0],['Y',4],['Z',10]]){control(host,`Outer station 3 start ${key} (mm)`).value=String(value);control(host,`Outer station 3 start ${key} (mm)`).oninput();}
+ await button(host,'Preview solid').onclick();op=calls.at(-1).features[0].operation.profile_loft;assert.deepEqual(op.correspondence.middle.start_point.components,{x:depth(0),y:depth(4),z:depth(10)});
+ await button(host,'Remove loft station 3').onclick();await button(host,'Preview solid').onclick();op=calls.at(-1).features[0].operation.profile_loft;assert.equal(op.correspondence,undefined);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});

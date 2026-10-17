@@ -8,16 +8,16 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 77 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 78 | Stable; exact version match required |
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 170 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 170 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 171 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 171 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 163 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 763 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 88 + viewer Node 435 + branch command 2 + model command 93, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 165 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 765 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 89 + viewer Node 437 + branch command 2 + model command 93, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,18 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases (195 with the parallel glTF case) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Loft profile correspondence (schema 171, ABI 78): exact start anchors and
+  traversal reversal for outer and hole station profiles. Saved settings use
+  profile IDs and parameter-aware length vectors; station reordering retains
+  them and removal prunes them. Native alignment copies geometry, retains exact
+  periodic curves, and composes original edge ancestry through lofts and bores.
+  Unknown/stale anchors and free/ruled usage fail. The editor preserves formulas,
+  validates every variant before Apply, and supports history and Save. The new
+  aligned-profile example and 1,000-regeneration benchmark cover this path
+  (3.11 seconds against the existing 10-second budget).
+  Existing vertex starts and full single-edge periodic seams are supported;
+  canvas anchor picking, seam markers and edge splitting remain future work.
 
 - Loft end visualization (schema 170, ABI 77 unchanged): native annotations
   expose resolved end directions, full strengths and true one-third-strength

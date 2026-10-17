@@ -6716,5 +6716,95 @@ fn normal_loft_constraints_validate_both_station_directions_and_save_without_fix
         saved.family.features.iter().find(|f| f.id == "body"),
         Some(&expected)
     );
-    assert_eq!(saved.schema_version, 170);
+    assert_eq!(saved.schema_version, CURRENT_SCHEMA_VERSION);
+}
+
+#[test]
+fn loft_correspondence_checks_every_variant_and_survives_history_and_save() {
+    let directory = Directory::new();
+    let request: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tools/model/profile-loft.request.json"
+    ))
+    .unwrap();
+    let mut doc = ModelDocument::from_json(&request["model"].to_string()).unwrap();
+    doc.family.parameters.push(ParameterDefinition {
+        id: "anchor".into(),
+        parameter_type: ParameterType::Scalar(Dimension::Length),
+        default: ParameterValue::Scalar(Quantity::length(8., LengthUnit::Millimeter)),
+        minimum: None,
+        maximum: None,
+    });
+    doc.instances.push(InstanceNode::Clone {
+        id: "bad-anchor".into(),
+        source: "block".into(),
+        overrides: HashMap::from([(
+            "anchor".into(),
+            ParameterValue::Scalar(Quantity::length(9., LengthUnit::Millimeter)),
+        )]),
+        placement: Default::default(),
+        frame: None,
+        provenance: "test".into(),
+    });
+    let model = PathBuf::from(directory.model(&doc));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    assert_eq!(
+        studio
+            .handle("GET", "/solid-loft-correspondence.mjs", b"")
+            .status,
+        200
+    );
+    let data = get(&mut studio, "/api/features").1;
+    let state = get(&mut studio, "/api/state").1;
+    let mut feature = data["features"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["id"] == "body")
+        .unwrap()
+        .clone();
+    let q = |v| json!({"literal":{"value":v,"dimension":"length","unit":"millimeter"}});
+    let op = &mut feature["operation"]["profile_loft"];
+    op["ruled"] = json!(false);
+    op["start_constraint"] = json!({"normal_to_profile":true,"magnitude":{"parameter":"height"}});
+    op["end_constraint"] = op["start_constraint"].clone();
+    op["correspondence"] = json!({"lower":{"start_point":{"components":{"x":q(0.),"y":{"parameter":"anchor"},"z":q(0.)}}},"upper":{"start_point":{"components":{"x":q(0.),"y":{"parameter":"upper_radius"},"z":{"parameter":"height"}}}}});
+    let mut edit = json!({"version":data["version"],"instance":"block","expected":data["features"],"action":"replace","features":[feature],"output":"body","apply":false});
+    let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+    let rejected: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(rejected["can_apply"], false, "{rejected}");
+    assert!(rejected.get("gltf").is_none());
+    edit["apply"] = json!(true);
+    assert_ne!(
+        studio
+            .handle("POST", "/api/features", edit.to_string().as_bytes())
+            .status,
+        200
+    );
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    edit["features"][0]["operation"]["profile_loft"]["correspondence"]["lower"]["start_point"]["components"]
+        ["y"] = json!({"parameter":"lower_radius"});
+    edit["apply"] = json!(false);
+    let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+    let preview: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(preview["can_apply"], true, "{preview}");
+    for id in ["block", "bad-anchor"] {
+        assert!(preview["geometry"][id]["volume_mm3"].as_f64().unwrap() > 0.);
+    }
+    edit["apply"] = json!(true);
+    assert_eq!(
+        studio
+            .handle("POST", "/api/features", edit.to_string().as_bytes())
+            .status,
+        200
+    );
+    history(&mut studio, "undo");
+    history(&mut studio, "redo");
+    assert_eq!(studio.handle("POST", "/api/save", b"").status, 200);
+    let saved = ModelDocument::from_json(&fs::read_to_string(&model).unwrap()).unwrap();
+    let expected: FeatureDefinition = serde_json::from_value(edit["features"][0].clone()).unwrap();
+    assert_eq!(saved.schema_version, CURRENT_SCHEMA_VERSION);
+    assert_eq!(
+        saved.family.features.iter().find(|f| f.id == "body"),
+        Some(&expected)
+    );
 }

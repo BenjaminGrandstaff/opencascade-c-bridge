@@ -1,3 +1,4 @@
+import {createLoftCorrespondenceControls} from './solid-loft-correspondence.mjs';
 import {createLoftEndControls} from './solid-loft-constraints.mjs';
 import {createHoleControls} from './solid-holes.mjs';
 import {isEdgeFinish,edgeFinishDefinition} from './solid-finishes.mjs';
@@ -98,7 +99,7 @@ export function createSolidEditor({host,request,instance,preview,applied,restore
   let kind='extrude',origin=[0,0,0],angle=360,axisSource='literal',savedRevolve=null,path='',orientation='corrected_frenet',binormal=[0,0,1],savedOrientation=null,loft={profiles:[],holes:[],ruled:false},loftStarted=false;
   let limitTarget='',limitFace='z:maximum',savedFace=null,limitDirectionSource='literal';
   let finishTarget='',finishEdges=[],finishSize=2,finishSource='literal',savedSize=null;
-  let formTurn=0,pickedLimit=null,holeControls=null,loftEnds=null;
+  let formTurn=0,pickedLimit=null,holeControls=null,loftEnds=null,loftCorrespondence=null;
   const invalidate=()=>{formTurn++;cancelLimitingFacePick();invalidatePreview();};
   const section=document.createElement('section');section.className='linked-edit solid-editor';
   const launch=document.createElement('button');launch.textContent='Sketch to solid';
@@ -128,6 +129,7 @@ export function createSolidEditor({host,request,instance,preview,applied,restore
     binormal=readVector(savedOrientation?.binormal?.direction,'scalar')??[0,0,1];
     loft=feature?.operation.profile_loft?structuredClone(feature.operation.profile_loft):{profiles:[input,data.features.find(f=>profile(f)&&f.id!==input)?.id??''],holes:[],ruled:false};
     loftEnds=createLoftEndControls(loft);
+    loftCorrespondence=createLoftCorrespondenceControls(loft);
     loft.holes??=[];loftStarted=Boolean(feature?.operation.profile_loft);
     finishTarget=isEdgeFinish(kind)?sweep.input:target;finishEdges=isEdgeFinish(kind)?structuredClone(sweep.edges):[];savedSize=isEdgeFinish(kind)?sweep.radius??sweep.distance:null;finishSize=savedSize?(savedSize.literal?mm(savedSize.literal):NaN):2;finishSource=savedSize?.parameter?`parameter:${savedSize.parameter}`:savedSize?'preserve':'literal';
     holeControls=createHoleControls(feature?.operation.hole,target);
@@ -210,8 +212,12 @@ export function createSolidEditor({host,request,instance,preview,applied,restore
       const stationAction=(label,action,index,disabled)=>{const e=button(label,()=>change(editLoftStations(loft,action,index)));e.disabled=disabled;return e;};
       for(const [i,id] of loft.profiles.entries()){
         const heading=document.createElement('h4');heading.textContent=`Loft station ${i+1}`;content.append(heading);
-        select(`Outer profile at station ${i+1}`,choices,id,value=>loft.profiles[i]=value);
-        for(const [h,track] of loft.holes.entries())select(`Hole ${h+1} at station ${i+1}`,choices,track[i],value=>loft.holes[h][i]=value);
+        select(`Outer profile at station ${i+1}`,choices,id,value=>{loft.profiles[i]=value;render();});
+        loftCorrespondence.render(id,`Outer station ${i+1}`,{select,number,render});
+        for(const [h,track] of loft.holes.entries()){
+          select(`Hole ${h+1} at station ${i+1}`,choices,track[i],value=>{loft.holes[h][i]=value;render();});
+          loftCorrespondence.render(track[i],`Hole ${h+1} station ${i+1}`,{select,number,render});
+        }
         content.append(button(`Show loft station ${i+1}`,()=>showSketch(loft.profiles[i])),stationAction(`Move station ${i+1} earlier`,'earlier',i,i===0),stationAction(`Move station ${i+1} later`,'later',i,i===loft.profiles.length-1),stationAction(`Remove loft station ${i+1}`,'remove',i,loft.profiles.length<=2));
       }
       content.append(stationAction('Add loft station','add',0,loft.profiles.length>=1000));
@@ -268,7 +274,7 @@ export function createSolidEditor({host,request,instance,preview,applied,restore
       revolution=axisSource==='preserve'?{origin:structuredClone(savedRevolve.origin),axis:structuredClone(savedRevolve.axis),angle_radians:expression,extent}:revolutionDefinition(origin,axis,expression,extent);
     }
     const finish={edges:finishEdges,size:finishSource==='preserve'?savedSize:finishSource.startsWith('parameter:')?{parameter:finishSource.slice(10)}:quantity(finishSize)};
-    const changes=solidChanges(data.features,{mode,id,input:kind==='hole'?holeControls.state.input:isEdgeFinish(kind)?finishTarget:input,target,hole:kind==='hole'?holeControls.definition():null,finish,direction,extent:kind==='extrude'?extrusionExtent(extent,limitTarget,limitFace,savedFace):extent,editing,kind,revolution,path,loft:kind==='profile_loft'?{...loft,...loftEnds.definition()}:loft,orientation:kind==='sweep'?sweepOrientation(orientation,binormal,savedOrientation):undefined});
+    const changes=solidChanges(data.features,{mode,id,input:kind==='hole'?holeControls.state.input:isEdgeFinish(kind)?finishTarget:input,target,hole:kind==='hole'?holeControls.definition():null,finish,direction,extent:kind==='extrude'?extrusionExtent(extent,limitTarget,limitFace,savedFace):extent,editing,kind,revolution,path,loft:kind==='profile_loft'?{...loft,...loftEnds.definition(),...loftCorrespondence.definition(loft)}:loft,orientation:kind==='sweep'?sweepOrientation(orientation,binormal,savedOrientation):undefined});
     const output=editing?solidEditOutput(data,editing):id,selectedInstance=instance();busy=true;content.inert=true;launch.disabled=true;message('Regenerating solid and checking requirements…');
     try{
       const response=await request('/api/features',{method:'POST',body:JSON.stringify({version:data.version,instance:selectedInstance,expected:data.features,...changes,output,apply})});
