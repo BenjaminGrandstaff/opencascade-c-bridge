@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 754 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 77 + viewer Node 398 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 160 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 754 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 77 + viewer Node 402 + branch command 2 + model command 92, MCP Python 11, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,16 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Cleaner, lighter solid rendering (no schema or ABI change). glTF meshes
+  are indexed and welded per B-rep face with smooth normals and carry their
+  B-rep edges as a line primitive; the viewer loads binary glTF, draws dark
+  feature edges under camera-fixed key and fill lights, instances shared
+  meshes and merges single-use meshes into world-space batches. For 2,000
+  distinct parts: 74 to 27 MB downloaded, about 0.5 s to under 0.1 s to
+  load, 74 to about 12 MB of JavaScript heap, 54 to about 19 MB of GPU
+  vertex data, and about 1 ms to 0.14 ms a frame. See
+  [mesh handoff](docs/MESH_HANDOFF.md#gltf-rendering).
 
 - Short-wave filtering and waviness (schema 168; ABI 76 unchanged). Raw
   stylus traces (`"raw": true`) take the Gaussian λs filter, from the

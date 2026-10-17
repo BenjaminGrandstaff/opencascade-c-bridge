@@ -81,6 +81,8 @@ pub(super) struct Studio {
     base_output: Option<String>,
     document: ModelDocument,
     gltf: String,
+    /// `gltf` as binary glTF, built on first request for each `version`.
+    glb: Option<(u64, Vec<u8>)>,
     /// Requirement results of the generation `gltf` was drawn from.
     requirements: Value,
     /// Only the selected part is annotated; keep one bounded, versioned result.
@@ -109,6 +111,7 @@ impl Studio {
             history: history::History::new(&document)?,
             document,
             gltf,
+            glb: None,
             requirements,
             annotations: None,
             rejected_annotations: None,
@@ -787,6 +790,27 @@ impl Studio {
             },
             ("GET", "/api/state") => Response::json(200, &self.state()),
             ("GET", "/api/model.gltf") => Response::text(200, "model/gltf+json", &self.gltf),
+            ("GET", "/api/model.glb") => {
+                if self
+                    .glb
+                    .as_ref()
+                    .is_none_or(|(version, _)| *version != self.version)
+                {
+                    match occt_parametric::gltf_to_glb(&self.gltf) {
+                        Ok(bytes) => self.glb = Some((self.version, bytes)),
+                        Err(error) => return Response::json(500, &json!({"error": error.message})),
+                    }
+                }
+                Response {
+                    status: 200,
+                    content_type: "model/gltf-binary",
+                    body: self
+                        .glb
+                        .as_ref()
+                        .map(|(_, b)| b.clone())
+                        .unwrap_or_default(),
+                }
+            }
             ("GET", "/api/requirements") => {
                 let mut report = self.requirements.clone();
                 report["version"] = json!(self.version);

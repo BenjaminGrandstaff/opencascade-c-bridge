@@ -8,6 +8,7 @@ use std::path::Path;
 mod export;
 pub use export::InstanceGraphExport;
 pub use export::TaggedSurfaceMeshExport;
+pub use export::gltf_to_glb;
 pub trait MeshExportDefinitionMeshExport {
     fn generate<'definition>(
         &self,

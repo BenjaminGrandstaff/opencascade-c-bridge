@@ -250,8 +250,43 @@ fn gltf_uses_meters_y_up_shared_geometry_and_inherited_appearance() {
         serde_json::json!([0.105, 0.015, -0.01])
     );
     assert_eq!(gltf["extras"]["generatedVariants"], 1);
-    assert_eq!(gltf["accessors"][0]["count"], 36);
-    assert_eq!(gltf["buffers"][0]["byteLength"], 864);
+    // A box welded per face: 24 vertices, 36 triangle indices, and its 12
+    // edges as lines; 288 + 288 + 72 + 48 bytes.
+    let primitives = &gltf["meshes"][0]["primitives"];
+    assert_eq!(primitives[0]["mode"], 4);
+    assert_eq!(primitives[1]["mode"], 1);
+    let count = |accessor: &serde_json::Value| {
+        gltf["accessors"][accessor.as_u64().unwrap() as usize]["count"].clone()
+    };
+    assert_eq!(count(&primitives[0]["attributes"]["POSITION"]), 24);
+    assert_eq!(count(&primitives[0]["indices"]), 36);
+    assert_eq!(count(&primitives[1]["indices"]), 24);
+    assert_eq!(gltf["buffers"][0]["byteLength"], 696);
+    // Flat faces keep axis-aligned unit normals after welding.
+    let glb = gltf_to_glb(&text).unwrap();
+    assert_eq!(&glb[0..4], b"glTF");
+    assert_eq!(
+        u32::from_le_bytes(glb[8..12].try_into().unwrap()) as usize,
+        glb.len()
+    );
+    let json_length = u32::from_le_bytes(glb[12..16].try_into().unwrap()) as usize;
+    let bin = &glb[28 + json_length..];
+    let normals_view = &gltf["bufferViews"][gltf["accessors"]
+        [primitives[0]["attributes"]["NORMAL"].as_u64().unwrap() as usize]["bufferView"]
+        .as_u64()
+        .unwrap() as usize];
+    let start = normals_view["byteOffset"].as_u64().unwrap() as usize;
+    for normal in bin[start..start + 288].chunks(12) {
+        let n: Vec<f32> = normal
+            .chunks(4)
+            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+            .collect();
+        assert!(
+            n.iter().filter(|v| v.abs() > 0.999).count() == 1
+                && n.iter().filter(|v| v.abs() < 1e-6).count() == 2,
+            "{n:?}"
+        );
+    }
     assert_eq!(session.shape_count().unwrap(), 0);
     let before = ModelDocument::from_graph(&graph);
     let mut after = before.clone();

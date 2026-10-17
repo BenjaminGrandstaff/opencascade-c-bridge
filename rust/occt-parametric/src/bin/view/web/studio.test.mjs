@@ -39,7 +39,7 @@ const settle=async check=>{for(let i=0;i<40;i++){if(check())return;await new Pro
   const fetch=async(path,options={})=>{
     calls.push([path,options]);
     if(path==='/api/state')return response(state());
-    if(path==='/api/model.gltf')return response({nodes:[{name:'block'},{name:'copy'}],meshes:[]});
+    if(path==='/api/model.glb')return {...response(null),arrayBuffer:async()=>new ArrayBuffer(0)};
     if(path==='/api/requirements')return response({requirements:{},assembly:[],variants:{},instances:{}});
     if(path==='/api/instances')return response({instances:[{id:'block',overrides:[]},{id:'copy',overrides:[]}]});
     if(path.startsWith('/api/instance?'))return response({id:new URL(path,'http://local').searchParams.get('id'),parameters:[{id:'width',value:width,source:'own'},{id:'height',value:25}]});
@@ -62,7 +62,7 @@ const settle=async check=>{for(let i=0;i<40;i++){if(check())return;await new Pro
   };
   const renderer={draw(){},setSelection(){},setModel(){},setMarkers(){}};
   const context={document,fetch,console,URL,Option:class extends Element{constructor(label,value){super('option');this.textContent=label;this.value=value;}},ResizeObserver:class{observe(){}},setTimeout:()=>1,clearTimeout(){},requestAnimationFrame:()=>1,
-    createSketchCreator:()=>{},createSolidEditor:()=>{},createSketchEditor:()=>({selectGeometry(){},selectConstraint(){},clearSelection(){}}),createAnnotationController,editableControls,drawAssemblyAnnotations,createRenderer:()=>renderer,fitCamera:()=>({}),modelToGltf:v=>v,pan:()=>({}),parseGltf:g=>({...g,bounds:null}),pick:()=>-1,ray:()=>({}),
+    createSketchCreator:()=>{},createSolidEditor:()=>{},createSketchEditor:()=>({selectGeometry(){},selectConstraint(){},clearSelection(){}}),createAnnotationController,editableControls,drawAssemblyAnnotations,createRenderer:()=>renderer,fitCamera:()=>({}),modelToGltf:v=>v,pan:()=>({}),parseGltf:g=>({...g,bounds:null}),parseGlb:()=>({nodes:[{name:'block'},{name:'copy'}],meshes:[],bounds:null}),pick:()=>-1,ray:()=>({}),
     window:{createOcctAnnotatedViewer:(root,data,select)=>{onSelect=select;component={data,fit(){},update(next){this.data=next;if(selectedAnnotation){selectedScene=next.scenes[0];selectedAnnotation=selectedScene.annotations[0];root.getElementById('selection').replaceChildren();select(selectedAnnotation,selectedScene);}}};return component;}}};
   vm.createContext(context);
   const page=fs.readFileSync(new URL('./index.html',import.meta.url),'utf8').split('<script type="module">')[1].split('</script>')[0].replace(/^import .*;$/gm,'');

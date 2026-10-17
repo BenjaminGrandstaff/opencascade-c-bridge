@@ -1,6 +1,6 @@
 // The sketch studio page: sketches drawn on their planes in the 3D view, as
 // layers, over the same server API the classic sketch editor uses.
-import { createRenderer, fitCamera, pan, parseGltf, ray, viewProjection } from './viewer.mjs';
+import { createRenderer, fitCamera, pan, parseGlb, parseGltf, ray, viewProjection } from './viewer.mjs';
 import {
   basePlane, lookAt, pickFace, planeNormal, project, projectLocal, rayToLocal, toGltf,
 } from './sketch-studio-plane.mjs';
@@ -99,7 +99,7 @@ export function startStudio(document) {
     if (!instances.length) throw new Error('The model has no editable instance.');
     const instance = instances.some((i) => i.id === studio.instance) ? studio.instance : instances[0].id;
     const [gltf, annotations, sketches] = await Promise.all([
-      fetch('/api/model.gltf').then((r) => r.json()),
+      fetch('/api/model.glb').then((r) => r.arrayBuffer()),
       api(`/api/annotations?id=${encodeURIComponent(instance)}`),
       api('/api/sketches'),
     ]);
@@ -112,7 +112,7 @@ export function startStudio(document) {
     const first = studio.parsed === null;
     studio.version = state.version;
     studio.modelState = state;
-    studio.parsed = parseGltf(gltf);
+    studio.parsed = parseGlb(gltf);
     studio.solidPreview = null;
     renderer?.setModel(studio.parsed);
     studio.scenes = annotations.scenes ?? [];

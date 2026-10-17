@@ -134,6 +134,12 @@ fn main() -> ExitCode {
         return report(&[datum_planes::datum_plane_chain_case()]);
     }
     let definition: &'static FamilyDefinition = Box::leak(Box::new(block()));
+    if std::env::args().any(|arg| arg == "--gltf-only") {
+        return report(&[
+            mesh::gltf_case(definition),
+            mesh::gltf_output_case(definition),
+        ]);
+    }
     let mut outcomes = Vec::new();
     // First, so freed memory from other cases cannot hide growth.
     outcomes.push(placed_copy_memory());

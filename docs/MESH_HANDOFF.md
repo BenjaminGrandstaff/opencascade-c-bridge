@@ -113,8 +113,17 @@ components must be finite in [0, 1]. Clones inherit appearance through their
 material assignment. Unspecified appearances use a neutral default. Rendering performs no mass
 calculation. Alpha below one selects blending.
 
-The self-contained glTF 2.0 JSON uses embedded binary buffers, flat triangle
-normals, and meters. Model Z-up coordinates become glTF Y-up via `[x, z, -y]`.
+The self-contained glTF 2.0 JSON (compact, one embedded binary buffer) uses
+meters; model Z-up coordinates become glTF Y-up via `[x, z, -y]`. Each mesh
+is indexed (16-bit indices up to 65,535 vertices, else 32-bit): vertices are
+welded by exact float32 position within each B-rep face, with area-weighted
+normals, so curved faces shade smoothly while edges between faces stay
+sharp. A second, line primitive (material `edges`) holds the feature edges:
+triangle edges between two B-rep faces or on one triangle only, which are
+the B-rep edges and open boundaries; seams inside a face draw nothing. A
+bracket of 372 triangles goes from 1,116 vertices to 392, plus 196 edge
+segments. Buffer views are 4-byte aligned. `gltf_to_glb` converts the JSON
+to binary glTF (GLB) without base64, which the viewer loads.
 Each component rebases vertices near its center before converting them to float32;
 its world offset remains in the node translation. Overflow or collapsed float32
 triangles fail. Identical rebased geometry and appearances share meshes and
@@ -126,8 +135,10 @@ to its own, as a translation or, when rotated, a matrix. Face-tagged
 definitions are tessellated per instance so their tag names stay their own. Temporary
 geometry is released on success and failure.
 
-Khronos's glTF validator reports zero errors and warnings for a box, a drilled
-block, and a posed assembly with inherited appearance. A 1,000-part scene exports
+Khronos's glTF validator reported zero errors and warnings for a box, a drilled
+block, and a posed assembly with inherited appearance in the earlier,
+unindexed layout; the indexed layout with edge lines has not been run
+through it again. A 1,000-part scene exports
 in 0.009 seconds against a ten-second budget (1.393 seconds before shared
 tessellation), and the 10,000-part viewer export in 0.253 seconds, with one generated variant and one
 shared mesh. Mesh definitions and material appearances participate in semantic

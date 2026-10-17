@@ -377,7 +377,7 @@ the source profile and target as editable dependencies. No schema or ABI change
 is required.
 
 Choose **Assembly** to see every placed part and material color in the WebGL
-glTF view: click a part to select it, drag to orbit, Shift-drag or right-drag to
+view: click a part to select it, drag to orbit, Shift-drag or right-drag to
 pan, and wheel to zoom. The annotated views use **family-local coordinates**;
 Assembly shows placements and frames. The selected part (or the first editable
 part under Family defaults) now carries selectable dimension and check labels.
@@ -474,6 +474,21 @@ The page needs no external files. The server listens only on
 127.0.0.1, accepts only `127.0.0.1` or `localhost` Host headers, and accepts
 edits only with the `X-OCCT-View` header that the page sends, which other
 sites' pages cannot add; it is a local editing tool, not something to expose.
+
+**Rendering.** The page loads the model as binary glTF (`/api/model.glb`,
+built from the glTF once per model version) and draws smooth-shaded faces
+with dark feature edges, under two camera-fixed lights, a sky-to-ground
+ambient and a small highlight. Meshes shared by several parts are drawn
+with instancing (WebGL 2, or WebGL 1 with `ANGLE_instanced_arrays`); parts
+with their own mesh are merged at upload into world-space batches by color,
+so a frame costs one draw call per shared mesh plus one per batch, and
+selecting a part changes one uniform. Only positions and indices stay in
+JavaScript, for picking; normals (packed to 16-bit integers) and edges live
+on the GPU. With 2,000 distinct brackets (744,000 triangles) the download
+went from 74 MB to 27 MB, loading (fetch, parse, upload) from about 0.5 s
+to under 0.1 s, the JavaScript heap from 74 MB to about 12 MB, GPU vertex
+data from 54 MB to about 19 MB, and a frame from about 1 ms (one draw call
+per part) to 0.14 ms, measured in Chrome on this machine.
 
 Each edit costs one full regeneration and glTF export. On a 10,000-instance
 model, startup takes 0.8 s, listing instances about 26 ms, one instance's

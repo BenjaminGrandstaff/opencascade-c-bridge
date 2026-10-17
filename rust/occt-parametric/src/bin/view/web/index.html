@@ -129,7 +129,7 @@ import { createSketchCreator } from "./sketch-create.mjs";
 import { createSolidEditor } from "./solid-editor.mjs";
 import { createSketchEditor } from "./sketch-editor.mjs";
 import { createAnnotationController, editableControls } from "./annotations.mjs";
-import { createRenderer, fitCamera, modelToGltf, pan, parseGltf, pick, ray } from "./viewer.mjs";
+import { createRenderer, fitCamera, modelToGltf, pan, parseGlb, pick, ray } from "./viewer.mjs";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("view");
@@ -363,8 +363,7 @@ function highlight() {
 }
 
 async function loadModel(first) {
-  const gltf = await (await fetch("/api/model.gltf")).json();
-  parsed = parseGltf(gltf);
+  parsed = parseGlb(await (await fetch("/api/model.glb")).arrayBuffer());
   renderer?.setModel(parsed);
   if (first) camera = fitCamera(parsed.bounds, aspect());
   $("status").textContent =
