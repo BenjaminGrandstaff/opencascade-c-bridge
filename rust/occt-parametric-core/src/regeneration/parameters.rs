@@ -35,9 +35,24 @@ pub fn collect_operation_parameters<'a>(
             }
         }
         FeatureOperation::PlanarRegion { .. } => {}
-        FeatureOperation::Sweep { orientation, .. } => {
+        FeatureOperation::Sweep {
+            orientation,
+            twist,
+            scale,
+            sections,
+            ..
+        } => {
             if let SweepOrientation::Binormal { direction } = orientation {
                 collect_vector_parameters(direction, names);
+            }
+            if let Some(twist) = twist {
+                collect_scalar_parameters(&twist.angle_radians, names);
+            }
+            if let Some(scale) = scale {
+                collect_scalar_parameters(&scale.end, names);
+            }
+            for section in sections {
+                collect_scalar_parameters(&section.position, names);
             }
         }
         FeatureOperation::Cylinder {

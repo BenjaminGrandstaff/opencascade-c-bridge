@@ -19,6 +19,7 @@ mod refinement;
 mod session;
 mod types;
 
+pub use construction::{SweepGuide, SweepOptions};
 use ffi::*;
 pub use refinement::*;
 pub use session::*;

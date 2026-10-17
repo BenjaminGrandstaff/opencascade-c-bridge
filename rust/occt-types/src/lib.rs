@@ -564,6 +564,17 @@ pub enum SweepOrientation {
     Fixed,
 }
 
+/// How a sweep's twist or scale goes from its start to its end value along
+/// the path's length.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SweepLaw {
+    /// In proportion to the length swept.
+    #[default]
+    Linear,
+    /// 3t² − 2t³: level at both ends.
+    Smooth,
+}
+
 /// One piece of [`Session::create_curve_wire`]: like [`WireSegment`], plus
 /// B-splines interpolated through any number of points.
 #[derive(Clone, Debug, PartialEq)]

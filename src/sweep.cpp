@@ -23,6 +23,20 @@
 #include <gp_Ax2.hxx>
 #include <gp_Dir.hxx>
 
+#include <BRepAdaptor_CompCurve.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
+#include <BRepTools_WireExplorer.hxx>
+#include <GCPnts_AbscissaPoint.hxx>
+#include <GeomAPI_Interpolate.hxx>
+#include <GeomAPI_IntCS.hxx>
+#include <Geom_Plane.hxx>
+#include <Geom_TrimmedCurve.hxx>
+#include <Law_Interpol.hxx>
+#include <Law_Linear.hxx>
+#include <TColgp_Array1OfPnt2d.hxx>
+#include <Law_S.hxx>
+#include <TColgp_HArray1OfPnt.hxx>
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -151,6 +165,210 @@ void set_orientation(
         case OCCT_BRIDGE_SWEEP_FIXED: builder.SetMode(gp_Ax2()); break;
         default: builder.SetMode(Standard_False); break;
     }
+}
+
+// A point and unit tangent at a fraction of the spine's length.
+struct Station {
+    gp_Pnt point;
+    gp_Vec tangent;
+    double parameter;
+};
+
+Station station_at(const BRepAdaptor_CompCurve& curve, double from, double distance) {
+    const double u = std::abs(distance) <= Precision::Confusion()
+        ? from
+        : GCPnts_AbscissaPoint(curve, distance, from).Parameter();
+    gp_Pnt point;
+    gp_Vec tangent;
+    curve.D1(u, point, tangent);
+    return {point, tangent.Normalized(), u};
+}
+
+double law_value(int32_t law, double t) {
+    return law == OCCT_BRIDGE_SWEEP_LAW_SMOOTH ? t * t * (3.0 - 2.0 * t) : t;
+}
+
+// Whether consecutive path edges meet tangentially.
+bool tangent_continuous(const TopoDS_Wire& spine) {
+    gp_Vec previous;
+    bool first = true;
+    for (BRepTools_WireExplorer explorer(spine); explorer.More(); explorer.Next()) {
+        const BRepAdaptor_Curve curve(explorer.Current());
+        const bool reversed = explorer.Current().Orientation() == TopAbs_REVERSED;
+        gp_Pnt point;
+        gp_Vec start;
+        gp_Vec end;
+        curve.D1(reversed ? curve.LastParameter() : curve.FirstParameter(), point, start);
+        curve.D1(reversed ? curve.FirstParameter() : curve.LastParameter(), point, end);
+        if (reversed) {
+            start.Reverse();
+            end.Reverse();
+        }
+        if (start.Magnitude() <= Precision::Confusion() || end.Magnitude() <= Precision::Confusion()) {
+            return false;
+        }
+        if (!first && previous.Angle(start) > 1e-4) {
+            return false;
+        }
+        previous = end;
+        first = false;
+    }
+    return true;
+}
+
+// An auxiliary spine whose direction from the path turns twist_radians
+// about it relative to a rotation-minimizing frame (double reflection),
+// sampled densely enough for the twist and the path's edges. Each sample
+// lies in the plane normal to the path at its point, at distance `offset`.
+TopoDS_Wire twisted_spine(const TopoDS_Wire& spine, double twist, int32_t law, double offset) {
+    const BRepAdaptor_CompCurve curve(spine);
+    const double length = GCPnts_AbscissaPoint::Length(curve);
+    int edges = 0;
+    for (TopExp_Explorer explorer(spine, TopAbs_EDGE); explorer.More(); explorer.Next()) {
+        ++edges;
+    }
+    const double turns = std::abs(twist) / (2.0 * M_PI);
+    const int samples = std::clamp(
+        static_cast<int>(std::max(32.0 * edges, 64.0 * turns)), 64, 8192);
+    Handle(TColgp_HArray1OfPnt) points = new TColgp_HArray1OfPnt(1, samples + 1);
+    Station station = station_at(curve, curve.FirstParameter(), 0.0);
+    gp_Vec seed = std::abs(station.tangent.Z()) < 0.9 ? gp_Vec(0, 0, 1) : gp_Vec(1, 0, 0);
+    gp_Vec normal = (seed - station.tangent * seed.Dot(station.tangent)).Normalized();
+    for (int index = 0; index <= samples; ++index) {
+        if (index > 0) {
+            const Station next = station_at(curve, station.parameter, length / samples);
+            // Double reflection carries the normal with least rotation.
+            const gp_Vec v1(station.point, next.point);
+            const double c1 = v1.SquareMagnitude();
+            if (c1 > 1e-24) {
+                const gp_Vec reflected = normal - v1 * (2.0 / c1 * v1.Dot(normal));
+                const gp_Vec tangent = station.tangent - v1 * (2.0 / c1 * v1.Dot(station.tangent));
+                const gp_Vec v2 = next.tangent - tangent;
+                const double c2 = v2.SquareMagnitude();
+                normal = c2 > 1e-24 ? reflected - v2 * (2.0 / c2 * v2.Dot(reflected)) : reflected;
+            }
+            normal = (normal - next.tangent * normal.Dot(next.tangent)).Normalized();
+            station = next;
+        }
+        const double angle = twist * law_value(law, static_cast<double>(index) / samples);
+        const gp_Vec side = station.tangent.Crossed(normal);
+        const gp_Vec direction = normal * std::cos(angle) + side * std::sin(angle);
+        points->SetValue(index + 1, station.point.Translated(direction * offset));
+    }
+    GeomAPI_Interpolate interpolate(points, Standard_False, Precision::Confusion());
+    interpolate.Perform();
+    if (!interpolate.IsDone()) {
+        return {};
+    }
+    BRepBuilderAPI_MakeEdge edge(interpolate.Curve());
+    if (!edge.IsDone()) {
+        return {};
+    }
+    return BRepBuilderAPI_MakeWire(edge.Edge()).Wire();
+}
+
+// Where the plane normal to the path at a station meets the guide: the
+// nearest crossing, or false when the plane misses it.
+bool guide_point(const std::vector<Handle(Geom_Curve)>& guide, const Station& station, gp_Pnt& found) {
+    const Handle(Geom_Plane) plane = new Geom_Plane(station.point, gp_Dir(station.tangent));
+    double nearest = std::numeric_limits<double>::infinity();
+    for (const Handle(Geom_Curve)& curve : guide) {
+        GeomAPI_IntCS crossing(curve, plane);
+        for (int index = 1; crossing.IsDone() && index <= crossing.NbPoints(); ++index) {
+            const double distance = crossing.Point(index).Distance(station.point);
+            if (distance < nearest) {
+                nearest = distance;
+                found = crossing.Point(index);
+            }
+        }
+    }
+    return std::isfinite(nearest);
+}
+
+// The scale that keeps the profile touching a guide: its distance from the
+// path relative to the start, sampled at `samples` + 1 equal lengths and
+// interpolated. Empty when the guide leaves a normal plane or meets the
+// path.
+Handle(Law_Function) guide_scale(const TopoDS_Wire& spine, const TopoDS_Wire& guide_wire, int samples) {
+    std::vector<Handle(Geom_Curve)> guide;
+    for (TopExp_Explorer explorer(guide_wire, TopAbs_EDGE); explorer.More(); explorer.Next()) {
+        double first = 0.0;
+        double last = 0.0;
+        const Handle(Geom_Curve) curve = BRep_Tool::Curve(TopoDS::Edge(explorer.Current()), first, last);
+        if (!curve.IsNull()) {
+            guide.push_back(new Geom_TrimmedCurve(curve, first, last));
+        }
+    }
+    const BRepAdaptor_CompCurve curve(spine);
+    const double length = GCPnts_AbscissaPoint::Length(curve);
+    TColgp_Array1OfPnt2d values(1, samples + 1);
+    Station station = station_at(curve, curve.FirstParameter(), 0.0);
+    double start = 0.0;
+    for (int index = 0; index <= samples; ++index) {
+        if (index > 0) {
+            station = station_at(curve, station.parameter, length / samples);
+        }
+        gp_Pnt point;
+        if (!guide_point(guide, station, point)) {
+            return nullptr;
+        }
+        const double distance = point.Distance(station.point);
+        if (index == 0) {
+            start = distance;
+        }
+        if (!(start > Precision::Confusion()) || !(distance > Precision::Confusion())) {
+            return nullptr;
+        }
+        values.SetValue(index + 1, gp_Pnt2d(static_cast<double>(index) / samples, distance / start));
+    }
+    Handle(Law_Interpol) law = new Law_Interpol;
+    law->Set(values, Standard_False);
+    return law;
+}
+
+const char* options_error(const occt_bridge_sweep_options_t& options) {
+    if (const char* error = orientation_error(options.orientation, options.binormal)) {
+        return error;
+    }
+    if (!std::isfinite(options.twist_radians) || !std::isfinite(options.end_scale) || !(options.end_scale > 0.0)) {
+        return "sweep twist must be finite and end scale finite and positive";
+    }
+    for (const int32_t law : {options.twist_law, options.scale_law}) {
+        if (law != OCCT_BRIDGE_SWEEP_LAW_LINEAR && law != OCCT_BRIDGE_SWEEP_LAW_SMOOTH) {
+            return "unknown sweep law";
+        }
+    }
+    const bool twisted = options.twist_radians != 0.0;
+    const bool scaled = options.end_scale != 1.0;
+    const bool guided = options.guide != OCCT_BRIDGE_INVALID_SHAPE_ID;
+    if ((twisted || guided) && options.orientation != OCCT_BRIDGE_SWEEP_CORRECTED_FRENET) {
+        return "a twisted or guided sweep uses the corrected-Frenet orientation";
+    }
+    if (twisted && guided) {
+        return "a guided sweep takes its turning from the guide, not a twist";
+    }
+    if (scaled && guided && options.guide_scales != 0) {
+        return "a scaling guide sets the sweep's scale, so it takes no scale law";
+    }
+    if (options.section_count > 100 || (options.section_count != 0 && options.sections == nullptr)) {
+        return "a sweep has at most 100 intermediate sections";
+    }
+    if (options.section_count != 0 && (scaled || (guided && options.guide_scales != 0))) {
+        return "intermediate sections cannot be combined with a scale law or a scaling guide";
+    }
+    double previous = 0.0;
+    for (size_t index = 0; index < options.section_count; ++index) {
+        const double position = options.sections[index].position;
+        if (!std::isfinite(position) || position <= previous || position > 1.0) {
+            return "sweep section positions must increase within (0, 1]";
+        }
+        previous = position;
+    }
+    // OCCT extrapolates past the last section, so one ends the sweep.
+    if (options.section_count != 0 && previous != 1.0) {
+        return "the last sweep section must sit at the path's end (position 1)";
+    }
+    return nullptr;
 }
 
 }  // namespace
@@ -284,5 +502,192 @@ occt_bridge_status_t occt_bridge_create_helix_wire(
             }
         }
         return store_shape(session, wire.Wire(), out_shape);
+    });
+}
+
+// One pipe-shell build over the profile and its sections, with O(samples)
+// work for a twist's auxiliary spine (at most 8193 points). History maps
+// each profile's edges to the faces they generate.
+occt_bridge_status_t occt_bridge_sweep_advanced(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t profile,
+    occt_bridge_shape_id_t path,
+    const occt_bridge_sweep_options_t* options,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr || options == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape or options is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (const char* error = options_error(*options)) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, error);
+        }
+        const auto* path_shape = find_shape(session, path);
+        std::vector<const TopoDS_Shape*> profiles{find_shape(session, profile)};
+        for (size_t index = 0; index < options->section_count; ++index) {
+            profiles.push_back(find_shape(session, options->sections[index].profile));
+        }
+        const TopoDS_Shape* guide_shape = options->guide == OCCT_BRIDGE_INVALID_SHAPE_ID
+            ? nullptr
+            : find_shape(session, options->guide);
+        if (path_shape == nullptr || std::find(profiles.begin(), profiles.end(), nullptr) != profiles.end()
+            || (options->guide != OCCT_BRIDGE_INVALID_SHAPE_ID && guide_shape == nullptr)) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "sweep profile, section, path or guide was not found");
+        }
+        TopoDS_Wire spine;
+        if (const char* error = path_wire(*path_shape, spine)) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, error);
+        }
+        std::vector<TopoDS_Wire> sections(profiles.size());
+        bool solid = false;
+        for (size_t index = 0; index < profiles.size(); ++index) {
+            bool closed = false;
+            if (const char* error = profile_wire(*profiles[index], sections[index], closed)) {
+                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, error);
+            }
+            if (index > 0 && closed != solid) {
+                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "sweep sections must all be closed or all open");
+            }
+            solid = closed;
+        }
+        const BRepAdaptor_CompCurve curve(spine);
+        const double length = GCPnts_AbscissaPoint::Length(curve);
+        if (!(length > Precision::Confusion())) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "sweep path has no length");
+        }
+        // Folding: each profile's reach from its own path point, grown by
+        // the largest scale, against the path's tightest bend.
+        const double bend = smallest_bend_radius(spine);
+        const double grown = std::max(1.0, options->end_scale);
+        std::vector<Station> stations{station_at(curve, curve.FirstParameter(), 0.0)};
+        for (size_t index = 0; index < options->section_count; ++index) {
+            stations.push_back(station_at(curve, curve.FirstParameter(), options->sections[index].position * length));
+        }
+        for (size_t index = 0; index < sections.size(); ++index) {
+            const double reach = profile_reach(sections[index], stations[index].point) * grown;
+            if (reach >= bend) {
+                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY,
+                    "sweep profile reaches " + std::to_string(reach) + " from the path, but the path bends with radius "
+                        + std::to_string(bend) + "; the swept shape would intersect itself");
+            }
+        }
+        BRepOffsetAPI_MakePipeShell builder(spine);
+        builder.SetTransitionMode(BRepBuilderAPI_RightCorner);
+        Handle(Law_Function) scale;
+        if (options->twist_radians != 0.0) {
+            if (!tangent_continuous(spine)) {
+                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "a twisted sweep needs a path without sharp corners");
+            }
+            // The auxiliary spine stays well inside the path's bends, so the
+            // plane normal to the path meets it once, near its sample.
+            const double offset = std::min(0.25 * length, std::isfinite(bend) ? 0.5 * bend : 0.25 * length);
+            const TopoDS_Wire auxiliary = twisted_spine(spine, options->twist_radians, options->twist_law, offset);
+            if (auxiliary.IsNull()) {
+                return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "the sweep's twist could not be built");
+            }
+            builder.SetMode(auxiliary, Standard_False, BRepFill_NoContact);
+            // Twisted faces are approximated; 1e-5 (against OCCT's 1e-4)
+            // keeps several turns within 1e-5 of their exact volume for a
+            // third of what 1e-6 costs.
+            builder.SetTolerance(1e-5);
+        } else if (guide_shape != nullptr) {
+            TopoDS_Wire guide;
+            if (path_wire(*guide_shape, guide) != nullptr) {
+                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "sweep guide must be an edge or a wire");
+            }
+            // The guide is met by the plane normal to the path. A scaling
+            // guide also sets the scale about the path from its distance,
+            // since OCCT 7.9's own contact mode resizes about another point.
+            builder.SetMode(guide, Standard_False, BRepFill_NoContact);
+            if (options->guide_scales != 0) {
+                int edges = 0;
+                for (TopExp_Explorer explorer(spine, TopAbs_EDGE); explorer.More(); explorer.Next()) {
+                    ++edges;
+                }
+                scale = guide_scale(spine, guide, std::clamp(32 * edges, 64, 1024));
+                if (scale.IsNull()) {
+                    return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY,
+                        "a scaling sweep guide must cross every plane normal to the path, away from the path");
+                }
+            }
+        } else {
+            set_orientation(builder, options->orientation,
+                gp_Vec(options->binormal.x, options->binormal.y, options->binormal.z));
+        }
+        TopoDS_Vertex first;
+        TopoDS_Vertex last;
+        TopExp::Vertices(spine, first, last);
+        if (options->end_scale != 1.0) {
+            if (options->scale_law == OCCT_BRIDGE_SWEEP_LAW_SMOOTH) {
+                Handle(Law_S) smooth = new Law_S;
+                smooth->Set(0.0, 1.0, 1.0, options->end_scale);
+                scale = smooth;
+            } else {
+                Handle(Law_Linear) linear = new Law_Linear;
+                linear->Set(0.0, 1.0, 1.0, options->end_scale);
+                scale = linear;
+            }
+        }
+        if (!scale.IsNull()) {
+            builder.SetLaw(sections[0], scale, Standard_False, Standard_False);
+        } else if (sections.size() == 1) {
+            builder.Add(sections[0], Standard_False, Standard_False);
+        } else {
+            builder.Add(sections[0], first, Standard_False, Standard_False);
+            for (size_t index = 1; index < sections.size(); ++index) {
+                const TopoDS_Vertex at = options->sections[index - 1].position >= 1.0
+                    ? last
+                    : BRepBuilderAPI_MakeVertex(stations[index].point).Vertex();
+                builder.Add(sections[index], at, Standard_False, Standard_False);
+            }
+        }
+        builder.Build();
+        if (!builder.IsDone()) {
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "sweep construction failed");
+        }
+        if (solid && !builder.MakeSolid()) {
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "swept surface could not close into a solid");
+        }
+        const TopoDS_Shape shape = builder.Shape();
+        if (shape.IsNull() || !ShapeValidator(shape).IsValid()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY,
+                "sweep produced an invalid shape; the profile may self-intersect along the path");
+        }
+        return store_shape_with_history(session, shape, out_shape, builder, profiles);
+    });
+}
+
+occt_bridge_status_t occt_bridge_path_station(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t path,
+    double fraction,
+    occt_bridge_vec3_t* out_point,
+    occt_bridge_vec3_t* out_tangent) {
+    return guarded(session, [&] {
+        if (out_point == nullptr || out_tangent == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "path station outputs are null");
+        }
+        *out_point = {0.0, 0.0, 0.0};
+        *out_tangent = {0.0, 0.0, 0.0};
+        if (!std::isfinite(fraction) || fraction < 0.0 || fraction > 1.0) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "path fraction must be within [0, 1]");
+        }
+        const auto* path_shape = find_shape(session, path);
+        if (path_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "path was not found");
+        }
+        TopoDS_Wire spine;
+        if (const char* error = path_wire(*path_shape, spine)) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, error);
+        }
+        const BRepAdaptor_CompCurve curve(spine);
+        const double length = GCPnts_AbscissaPoint::Length(curve);
+        if (!(length > Precision::Confusion())) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "path has no length");
+        }
+        const Station station = station_at(curve, curve.FirstParameter(), fraction * length);
+        *out_point = {station.point.X(), station.point.Y(), station.point.Z()};
+        *out_tangent = {station.tangent.X(), station.tangent.Y(), station.tangent.Z()};
+        return succeed(session);
     });
 }

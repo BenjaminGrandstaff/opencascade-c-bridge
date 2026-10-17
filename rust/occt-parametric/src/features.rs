@@ -205,24 +205,71 @@ pub(crate) fn execute_feature<'session>(
             profile,
             path,
             orientation,
+            twist,
+            scale,
+            guide,
+            sections,
         } => {
+            let law = |law: SweepLaw| match law {
+                SweepLaw::Linear => occt_bridge::SweepLaw::Linear,
+                SweepLaw::Smooth => occt_bridge::SweepLaw::Smooth,
+            };
+            let sections = sections
+                .iter()
+                .map(|section| {
+                    Ok((
+                        shape(shapes, &section.profile)?,
+                        scalar(&section.position, parameters, Dimension::Scalar)?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, ModelError>>()?;
+            let guide = guide
+                .as_ref()
+                .map(|guide| {
+                    Ok::<_, ModelError>(occt_bridge::SweepGuide {
+                        path: shape(shapes, &guide.input)?,
+                        scales: guide.scales,
+                    })
+                })
+                .transpose()?;
+            let (twist_radians, twist_law) = match twist {
+                Some(twist) => (
+                    scalar(&twist.angle_radians, parameters, Dimension::Scalar)?,
+                    law(twist.law),
+                ),
+                None => (0.0, occt_bridge::SweepLaw::Linear),
+            };
+            let (end_scale, scale_law) = match scale {
+                Some(scale) => (
+                    scalar(&scale.end, parameters, Dimension::Scalar)?,
+                    law(scale.law),
+                ),
+                None => (1.0, occt_bridge::SweepLaw::Linear),
+            };
+            let orientation = match orientation {
+                SweepOrientation::CorrectedFrenet => occt_bridge::SweepOrientation::CorrectedFrenet,
+                SweepOrientation::Frenet => occt_bridge::SweepOrientation::Frenet,
+                SweepOrientation::Binormal { direction } => {
+                    occt_bridge::SweepOrientation::Binormal(vector(
+                        direction,
+                        parameters,
+                        Dimension::Scalar,
+                    )?)
+                }
+                SweepOrientation::Fixed => occt_bridge::SweepOrientation::Fixed,
+            };
             return sweeps::execute(
                 session,
                 shape(shapes, profile)?,
                 shape(shapes, path)?,
-                match orientation {
-                    SweepOrientation::CorrectedFrenet => {
-                        occt_bridge::SweepOrientation::CorrectedFrenet
-                    }
-                    SweepOrientation::Frenet => occt_bridge::SweepOrientation::Frenet,
-                    SweepOrientation::Binormal { direction } => {
-                        occt_bridge::SweepOrientation::Binormal(vector(
-                            direction,
-                            parameters,
-                            Dimension::Scalar,
-                        )?)
-                    }
-                    SweepOrientation::Fixed => occt_bridge::SweepOrientation::Fixed,
+                &occt_bridge::SweepOptions {
+                    orientation,
+                    twist_radians,
+                    twist_law,
+                    end_scale,
+                    scale_law,
+                    guide,
+                    sections: &sections,
                 },
             );
         }

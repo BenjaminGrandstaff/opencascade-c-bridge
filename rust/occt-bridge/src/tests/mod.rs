@@ -21,6 +21,7 @@ mod session;
 mod sketch_ops;
 mod surface_radius;
 mod sweep;
+mod sweep_advanced;
 mod text;
 mod variable_fillet;
 

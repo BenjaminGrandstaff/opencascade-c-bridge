@@ -94,6 +94,10 @@ fn sweep_family(orientation: SweepOrientation) -> FamilyDefinition {
                 profile: "profile".into(),
                 path: "path".into(),
                 orientation,
+                twist: None,
+                scale: None,
+                guide: None,
+                sections: Vec::new(),
             },
         },
         FeatureDefinition {
@@ -201,6 +205,10 @@ fn sweep_orientations_validate_and_persist() {
         profile: "a".into(),
         path: "b".into(),
         orientation: SweepOrientation::default(),
+        twist: None,
+        scale: None,
+        guide: None,
+        sections: Vec::new(),
     })
     .unwrap();
     let defaulted: FeatureOperation =

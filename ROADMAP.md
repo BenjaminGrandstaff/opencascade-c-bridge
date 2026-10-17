@@ -8,23 +8,37 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 81 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 82 | Stable; exact version match required |
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 174 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 174 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 175 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 175 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 167 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 775 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 93 + viewer Node 456 + branch command 2 + model command 94, MCP Python 13, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 173 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 778 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 93 + viewer Node 456 + branch command 2 + model command 94, MCP Python 13, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | Last full suite: 194 Rust cases (196 with the parallel glTF and 1,000-part view cases) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
+| Scale benchmarks | Last full suite: 194 Rust cases (197 with the parallel glTF, 1,000-part view and advanced sweep cases) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Advanced sweeps (schema 175, ABI 82). Sweeps now take these options:
+  - a twist about the path, linear or smooth;
+  - a scale law;
+  - a guide rail that turns the profile, and optionally resizes it about
+    the path;
+  - further sections blended along the path.
+
+  `path_plane` datums place profile and section sketches normal to the
+  path, so they follow its constraint and parameter edits. Holed profiles
+  twist and scale together. Exact-volume tests cover each option, and a
+  constrained duct is re-dimensioned through its route. 250 twisted,
+  sectioned ducts build or rebuild in about 3 s each way. See
+  [advanced sweeps](docs/ADVANCED_SWEEPS.md).
 
 - Size dimensions drawn in 3D (schema 174, ABI 81). Annotation views list
   the size dimensions they show; each is drawn above its frame or datum

@@ -111,6 +111,10 @@ fn spring(left_handed: bool) -> FamilyDefinition {
                 orientation: SweepOrientation::Binormal {
                     direction: VectorExpr::Literal(VectorQuantity::scalars(0.0, 0.0, 1.0)),
                 },
+                twist: None,
+                scale: None,
+                guide: None,
+                sections: Vec::new(),
             },
         },
     ];

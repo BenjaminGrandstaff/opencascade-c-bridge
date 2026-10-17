@@ -137,6 +137,9 @@ fn main() -> ExitCode {
     if std::env::args().any(|arg| arg == "--view-parts-only") {
         return report(&[pmi::view_parts_case(definition)]);
     }
+    if std::env::args().any(|arg| arg == "--sweeps-only") {
+        return report(&[sweep::sweep_case(), sweep::advanced_sweep_case()]);
+    }
     if std::env::args().any(|arg| arg == "--pmi-only") {
         return report(&[
             pmi::pmi_case(definition, false),
@@ -166,6 +169,7 @@ fn main() -> ExitCode {
     outcomes.push(spline_sample_queries_case());
     outcomes.push(large_spline_case());
     outcomes.push(sweep::sweep_case());
+    outcomes.push(sweep::advanced_sweep_case());
     outcomes.push(primitives::round_primitive_case(false));
     outcomes.push(primitives::round_primitive_case(true));
     outcomes.push(step_export::step_assembly_case(definition));

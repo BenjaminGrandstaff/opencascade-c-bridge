@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 174,
+    "schema_version": 175,
     "family": {
       "id": "circle-to-diamond-transition",
       "version": 1,

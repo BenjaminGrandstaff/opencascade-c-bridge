@@ -1,6 +1,7 @@
 use super::*;
 use std::collections::BTreeMap;
 
+mod advanced_sweeps;
 mod assembly_motion;
 mod balance;
 mod branch_search;

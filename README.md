@@ -776,6 +776,11 @@ bent tubes and multiple-bore parts, preserving wall ancestry and linked route
 controls. ABI 50 adds explicit history-preserving topology extraction; the
 current model schema is 133. Rebuild the native library and Rust executables together.
 
+[Advanced sweeps](docs/ADVANCED_SWEEPS.md) twist profiles about their paths,
+scale them along it, follow guide rails and blend through further sections.
+Profiles on `path_plane` datums follow constrained routes. Schema 175 adds
+these options and the datum; ABI 82 adds the native operation.
+
 [Hollow profile lofts](docs/LOFTS.md#explicit-hollow-tracks-schema-80) use explicit
 inner section tracks to make tapered ducts and multiple-bore transitions.
 Schema 80 adds optional `profile_loft.holes`, with native containment, crossing

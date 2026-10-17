@@ -264,13 +264,27 @@ pub enum FeatureOperation {
     },
     /// Sweeps the `profile` output (a wire, or a planar face including holes) along
     /// the `path` output (an edge or wire). Place the profile at the path's
-    /// start, usually across it. A face or closed wire makes a solid. Holed
-    /// faces sweep each boundary and subtract the contained inner volumes.
+    /// start, usually across it (a sketch on a `path_plane` datum at
+    /// position 0 stays there as the path changes). A face or closed wire
+    /// makes a solid. Holed faces sweep each boundary and subtract the
+    /// contained inner volumes. Since schema 175 the profile may twist about
+    /// the path, scale along it, follow a guide rail, or blend through
+    /// further sections (see [`SweepTwist`], [`SweepScale`], [`SweepGuide`]
+    /// and [`SweepSection`]).
     Sweep {
         profile: String,
         path: String,
         #[serde(default)]
         orientation: SweepOrientation,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        twist: Option<SweepTwist>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scale: Option<SweepScale>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        guide: Option<SweepGuide>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[schemars(length(max = 100))]
+        sections: Vec<SweepSection>,
     },
     /// A solid through two or more sections with equal point counts. `smooth`
     /// interpolates each section as one B-spline with a corner only at its
@@ -669,7 +683,17 @@ impl FeatureOperation {
             Self::PlanarRegion { outer, holes } => std::iter::once(outer.as_str())
                 .chain(holes.iter().map(String::as_str))
                 .collect(),
-            Self::Sweep { profile, path, .. } => vec![profile, path],
+            Self::Sweep {
+                profile,
+                path,
+                guide,
+                sections,
+                ..
+            } => [profile.as_str(), path.as_str()]
+                .into_iter()
+                .chain(guide.iter().map(|guide| guide.input.as_str()))
+                .chain(sections.iter().map(|section| section.profile.as_str()))
+                .collect(),
             Self::SheetMetalFlat { input, .. }
             | Self::Translate { input, .. }
             | Self::Rotate { input, .. }
@@ -735,6 +759,69 @@ impl FeatureOperation {
 pub struct FeatureDefinition {
     pub id: String,
     pub operation: FeatureOperation,
+}
+
+/// How a sweep's twist or scale goes from its start to its end value along
+/// the path's length.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SweepLaw {
+    /// In proportion to the length swept.
+    #[default]
+    Linear,
+    /// 3t² − 2t³ of the fraction swept: level at both ends.
+    Smooth,
+}
+
+/// A sweep's turn about its path (schema 175): `angle_radians` (finite,
+/// dimensionless) from the start to the end, relative to least-twist
+/// transport. Needs the corrected-Frenet orientation and a path without
+/// sharp corners.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SweepTwist {
+    pub angle_radians: ScalarExpr,
+    #[serde(default)]
+    pub law: SweepLaw,
+}
+
+/// A sweep's size along its path (schema 175): from 1 at the start to the
+/// positive dimensionless `end` factor at the end, about the path.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SweepScale {
+    pub end: ScalarExpr,
+    #[serde(default)]
+    pub law: SweepLaw,
+}
+
+/// A guide rail (schema 175): the edge or wire output `input`, beside the
+/// path and crossing every plane normal to it, which the profile turns to
+/// keep facing. With `scales`, the profile is also resized about the path
+/// in proportion to the rail's distance, so a profile touching the rail at
+/// the start keeps touching it. Needs the corrected-Frenet orientation, and
+/// excludes a twist (and, when scaling, a scale law).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SweepGuide {
+    pub input: String,
+    #[serde(default)]
+    pub scales: bool,
+}
+
+/// A further profile of a sweep (schema 175): output `profile`, placed
+/// across the path at `position`, a dimensionless fraction of the path's
+/// length (increasing along the list, the last at 1). The sweep blends
+/// smoothly from the profile through each section; a sketch on a
+/// `path_plane` datum at the same position keeps a section in place.
+/// Sections exclude a scale and a scaling guide, and holed profiles.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SweepSection {
+    pub profile: String,
+    pub position: ScalarExpr,
 }
 
 /// How a swept profile turns as it follows its path.

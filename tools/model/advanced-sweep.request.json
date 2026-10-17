@@ -1,0 +1,909 @@
+{
+  "schema": "occb-model-view-v1",
+  "model": {
+    "schema_version": 175,
+    "family": {
+      "id": "advanced-sweep",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "run",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 40,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 1,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": null
+        },
+        {
+          "id": "bend_radius",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 30,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 15,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": null
+        },
+        {
+          "id": "bend_angle",
+          "parameter_type": {
+            "scalar": "scalar"
+          },
+          "default": {
+            "scalar": {
+              "value": 1.5707963267948966,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "minimum": {
+            "value": 0.1,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "maximum": {
+            "value": 3.0,
+            "dimension": "scalar",
+            "unit": null
+          }
+        },
+        {
+          "id": "start_side",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 8,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 1,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": null
+        },
+        {
+          "id": "end_side",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 14,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 1,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": null
+        },
+        {
+          "id": "twist",
+          "parameter_type": {
+            "scalar": "scalar"
+          },
+          "default": {
+            "scalar": {
+              "value": 1.5707963267948966,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "minimum": {
+            "value": -12.6,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "maximum": {
+            "value": 12.6,
+            "dimension": "scalar",
+            "unit": null
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "Duct is one valid solid",
+          "rule": {
+            "shape_valid": {
+              "output": "duct"
+            }
+          },
+          "provenance": "Demonstration assumptions",
+          "traces": [
+            {
+              "feature": "duct"
+            }
+          ]
+        }
+      ],
+      "datums": [
+        {
+          "id": "inlet",
+          "kind": {
+            "path_plane": {
+              "input": "path",
+              "position": {
+                "literal": {
+                  "value": 0,
+                  "dimension": "scalar",
+                  "unit": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "outlet",
+          "kind": {
+            "path_plane": {
+              "input": "path",
+              "position": {
+                "literal": {
+                  "value": 1,
+                  "dimension": "scalar",
+                  "unit": null
+                }
+              }
+            }
+          }
+        }
+      ],
+      "features": [
+        {
+          "id": "path",
+          "operation": {
+            "sketch_open_wire": {
+              "sketch": {
+                "id": "route",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "a",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "b",
+                    "x": {
+                      "literal": {
+                        "value": 35,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 2,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "o",
+                    "x": {
+                      "literal": {
+                        "value": 38,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 28,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "e",
+                    "x": {
+                      "literal": {
+                        "value": 66,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 31,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  }
+                ],
+                "lines": [
+                  {
+                    "id": "run",
+                    "start": "a",
+                    "end": "b"
+                  }
+                ],
+                "arcs": [
+                  {
+                    "id": "bend",
+                    "center": "o",
+                    "start": "b",
+                    "end": "e",
+                    "clockwise": false
+                  }
+                ],
+                "circles": [],
+                "profile": [
+                  "run",
+                  "bend"
+                ],
+                "constraints": [
+                  {
+                    "horizontal": {
+                      "line": "run"
+                    }
+                  },
+                  {
+                    "curve_length": {
+                      "curve": "run",
+                      "value": {
+                        "parameter": "run"
+                      }
+                    }
+                  },
+                  {
+                    "tangent": {
+                      "first": "run",
+                      "second": "bend",
+                      "point": "b"
+                    }
+                  },
+                  {
+                    "radius": {
+                      "curve": "bend",
+                      "value": {
+                        "parameter": "bend_radius"
+                      }
+                    }
+                  },
+                  {
+                    "arc_angle": {
+                      "arc": "bend",
+                      "value": {
+                        "parameter": "bend_angle"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "inlet_section",
+          "operation": {
+            "sketch_face": {
+              "sketch": {
+                "id": "inlet_square",
+                "datum_plane": "inlet",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "c",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "p1",
+                    "x": {
+                      "literal": {
+                        "value": -4.0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": -4.0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "p2",
+                    "x": {
+                      "literal": {
+                        "value": 4.0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": -4.0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "p3",
+                    "x": {
+                      "literal": {
+                        "value": 4.0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 4.0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "p4",
+                    "x": {
+                      "literal": {
+                        "value": -4.0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 4.0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  }
+                ],
+                "lines": [
+                  {
+                    "id": "bottom",
+                    "start": "p1",
+                    "end": "p2"
+                  },
+                  {
+                    "id": "right",
+                    "start": "p2",
+                    "end": "p3"
+                  },
+                  {
+                    "id": "top",
+                    "start": "p3",
+                    "end": "p4"
+                  },
+                  {
+                    "id": "left",
+                    "start": "p4",
+                    "end": "p1"
+                  },
+                  {
+                    "id": "diagonal",
+                    "start": "p1",
+                    "end": "p3"
+                  }
+                ],
+                "profile": [
+                  "bottom",
+                  "right",
+                  "top",
+                  "left"
+                ],
+                "constraints": [
+                  {
+                    "horizontal": {
+                      "line": "bottom"
+                    }
+                  },
+                  {
+                    "vertical": {
+                      "line": "right"
+                    }
+                  },
+                  {
+                    "horizontal": {
+                      "line": "top"
+                    }
+                  },
+                  {
+                    "vertical": {
+                      "line": "left"
+                    }
+                  },
+                  {
+                    "curve_length": {
+                      "curve": "bottom",
+                      "value": {
+                        "parameter": "start_side"
+                      }
+                    }
+                  },
+                  {
+                    "curve_length": {
+                      "curve": "right",
+                      "value": {
+                        "parameter": "start_side"
+                      }
+                    }
+                  },
+                  {
+                    "midpoint": {
+                      "point": "c",
+                      "line": "diagonal"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "outlet_section",
+          "operation": {
+            "sketch_face": {
+              "sketch": {
+                "id": "outlet_square",
+                "datum_plane": "outlet",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "c",
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "p1",
+                    "x": {
+                      "literal": {
+                        "value": -7.0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": -7.0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "p2",
+                    "x": {
+                      "literal": {
+                        "value": 7.0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": -7.0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "p3",
+                    "x": {
+                      "literal": {
+                        "value": 7.0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 7.0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  },
+                  {
+                    "id": "p4",
+                    "x": {
+                      "literal": {
+                        "value": -7.0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 7.0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": false
+                  }
+                ],
+                "lines": [
+                  {
+                    "id": "bottom",
+                    "start": "p1",
+                    "end": "p2"
+                  },
+                  {
+                    "id": "right",
+                    "start": "p2",
+                    "end": "p3"
+                  },
+                  {
+                    "id": "top",
+                    "start": "p3",
+                    "end": "p4"
+                  },
+                  {
+                    "id": "left",
+                    "start": "p4",
+                    "end": "p1"
+                  },
+                  {
+                    "id": "diagonal",
+                    "start": "p1",
+                    "end": "p3"
+                  }
+                ],
+                "profile": [
+                  "bottom",
+                  "right",
+                  "top",
+                  "left"
+                ],
+                "constraints": [
+                  {
+                    "horizontal": {
+                      "line": "bottom"
+                    }
+                  },
+                  {
+                    "vertical": {
+                      "line": "right"
+                    }
+                  },
+                  {
+                    "horizontal": {
+                      "line": "top"
+                    }
+                  },
+                  {
+                    "vertical": {
+                      "line": "left"
+                    }
+                  },
+                  {
+                    "curve_length": {
+                      "curve": "bottom",
+                      "value": {
+                        "parameter": "end_side"
+                      }
+                    }
+                  },
+                  {
+                    "curve_length": {
+                      "curve": "right",
+                      "value": {
+                        "parameter": "end_side"
+                      }
+                    }
+                  },
+                  {
+                    "midpoint": {
+                      "point": "c",
+                      "line": "diagonal"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "duct",
+          "operation": {
+            "sweep": {
+              "profile": "inlet_section",
+              "path": "path",
+              "orientation": "corrected_frenet",
+              "twist": {
+                "angle_radians": {
+                  "parameter": "twist"
+                },
+                "law": "smooth"
+              },
+              "sections": [
+                {
+                  "profile": "outlet_section",
+                  "position": {
+                    "literal": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "duct",
+          "overrides": {},
+          "provenance": "dimensions are illustrative assumptions"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "duct",
+      "output": "duct"
+    }
+  ],
+  "sketches": true
+}

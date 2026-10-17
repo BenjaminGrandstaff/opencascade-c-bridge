@@ -304,6 +304,22 @@ static void wires_and_faces(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_sweep(session, rim, path, OCCT_BRIDGE_SWEEP_BINORMAL, zero, &out), ARG);
     EXPECT(occt_bridge_sweep(session, rim, path, OCCT_BRIDGE_SWEEP_BINORMAL, nan_x, &out), ARG);
     EXPECT(occt_bridge_sweep(session, unknown, path, OCCT_BRIDGE_SWEEP_FIXED, zero, &out), MISSING);
+    occt_bridge_sweep_options_t advanced = {OCCT_BRIDGE_SWEEP_CORRECTED_FRENET, {0, 0, 0}, 0, 0, 1, 0,
+        OCCT_BRIDGE_INVALID_SHAPE_ID, 0, NULL, 0};
+    EXPECT(occt_bridge_sweep_advanced(NULL, rim, path, &advanced, &out), ARG);
+    EXPECT(occt_bridge_sweep_advanced(session, rim, path, NULL, &out), ARG);
+    EXPECT(occt_bridge_sweep_advanced(session, rim, path, &advanced, NULL), ARG);
+    advanced.scale_law = 2;
+    EXPECT(occt_bridge_sweep_advanced(session, rim, path, &advanced, &out), ARG);
+    advanced.scale_law = OCCT_BRIDGE_SWEEP_LAW_SMOOTH;
+    advanced.twist_radians = NAN;
+    EXPECT(occt_bridge_sweep_advanced(session, rim, path, &advanced, &out), ARG);
+    advanced.twist_radians = 0;
+    advanced.section_count = 1;
+    EXPECT(occt_bridge_sweep_advanced(session, rim, path, &advanced, &out), ARG);
+    advanced.section_count = 0;
+    advanced.guide = unknown;
+    EXPECT(occt_bridge_sweep_advanced(session, rim, path, &advanced, &out), MISSING);
     EXPECT(occt_bridge_sweep(session, rim, unknown, OCCT_BRIDGE_SWEEP_FIXED, zero, &out), MISSING);
     EXPECT(occt_bridge_sweep(session, rim, path, OCCT_BRIDGE_SWEEP_BINORMAL, vec(0, 0, 1), &out), OK);
     segments[1].start = segments[1].end;

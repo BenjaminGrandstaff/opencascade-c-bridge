@@ -17,6 +17,7 @@ examples. Project-wide status lives in [the roadmap](../ROADMAP.md) and
 - [Symmetric sketch revolutions](REVOLUTIONS.md)
 - [Lofts from saved sketch profiles](LOFTS.md)
 - [Sweeping hollow sketch profiles](HOLLOW_SWEEPS.md)
+- [Advanced sweeps: twist, scale, guides, sections](ADVANCED_SWEEPS.md)
 - [Hole bottoms and drill points](HOLES.md)
 - [Hole-size catalog](HOLE_SIZE_CATALOG.md)
 - [Modeled threads](THREADS.md)

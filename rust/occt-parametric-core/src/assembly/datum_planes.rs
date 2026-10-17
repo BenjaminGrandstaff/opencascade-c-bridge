@@ -33,11 +33,21 @@ impl PlaneBase {
     }
 }
 
-/// Planar faces of generated feature outputs, for planes built on faces.
+/// Planar faces and paths of generated feature outputs, for planes built on
+/// faces or normal to paths.
 pub trait PlaneFaces {
     /// Centre and unit outward normal of the one planar face `face` selects
     /// on output `input`.
     fn planar_face(&self, input: &str, face: &FaceSelector) -> Result<(Vec3, Vec3), ModelError>;
+
+    /// The point and unit tangent at `fraction` of the length of path output
+    /// `input`.
+    fn path_station(&self, input: &str, fraction: f64) -> Result<(Vec3, Vec3), ModelError> {
+        let _ = fraction;
+        Err(ModelError::new(format!(
+            "plane is normal to the path '{input}' and needs the generated model"
+        )))
+    }
 }
 
 /// No geometry: planes on faces fail with a clear message.
@@ -57,6 +67,10 @@ pub struct StandInFaces;
 
 impl PlaneFaces for StandInFaces {
     fn planar_face(&self, _: &str, _: &FaceSelector) -> Result<(Vec3, Vec3), ModelError> {
+        Ok((Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 1.0)))
+    }
+
+    fn path_station(&self, _: &str, _: f64) -> Result<(Vec3, Vec3), ModelError> {
         Ok((Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 1.0)))
     }
 }
@@ -122,10 +136,12 @@ impl DatumKind {
         }
     }
 
-    /// The feature output and face selectors this plane reads, if any.
+    /// The feature output and face selectors this plane reads, if any (none
+    /// for a plane normal to a path, which reads the whole output).
     pub fn faces(&self) -> Option<(&str, Vec<&FaceSelector>)> {
         match self {
             Self::FacePlane { input, face, .. } => Some((input, vec![face.as_ref()])),
+            Self::PathPlane { input, .. } => Some((input, Vec::new())),
             Self::Midplane {
                 input,
                 first,
@@ -173,6 +189,7 @@ impl DatumKind {
                     collect_vector_parameters(point, names);
                 }
             }
+            Self::PathPlane { position, .. } => collect_scalar_parameters(position, names),
         }
     }
 
@@ -283,6 +300,16 @@ impl DatumKind {
                     ModelError::new("plane points must not be coincident or collinear")
                 })?;
                 plane(a, normal)?
+            }
+            Self::PathPlane { input, position } => {
+                let fraction = scalar(position, parameters, Dimension::Scalar)?;
+                if !(0.0..=1.0).contains(&fraction) {
+                    return Err(ModelError::new(
+                        "a path plane's position must be a fraction from 0 to 1",
+                    ));
+                }
+                let (point, tangent) = faces.path_station(input, fraction)?;
+                plane(point, unit(tangent)?)?
             }
         })
     }

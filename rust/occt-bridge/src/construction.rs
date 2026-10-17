@@ -3,6 +3,56 @@
 
 use super::*;
 
+/// A guide rail of [`SweepOptions`]: an edge or wire beside the path that
+/// the profile turns to keep facing; with `scales`, the profile is also
+/// resized about the path in proportion to the guide's distance from it.
+#[derive(Clone, Copy, Debug)]
+pub struct SweepGuide<'a, 's> {
+    pub path: &'a Shape<'s>,
+    pub scales: bool,
+}
+
+/// Options of [`Session::sweep_advanced`]. A twist or guide needs the
+/// corrected-Frenet orientation, and a twist a path without sharp corners;
+/// a twist and a guide exclude each other. `end_scale` (1 for none) scales
+/// the profile about the path to that factor at the end. `sections` are
+/// further profiles, each placed across the path at its fraction of the
+/// path's length (increasing, the last at 1), blended smoothly; they exclude
+/// a scale law and a scaling guide.
+#[derive(Clone, Copy, Debug)]
+pub struct SweepOptions<'a, 's> {
+    pub orientation: SweepOrientation,
+    pub twist_radians: f64,
+    pub twist_law: SweepLaw,
+    pub end_scale: f64,
+    pub scale_law: SweepLaw,
+    pub guide: Option<SweepGuide<'a, 's>>,
+    pub sections: &'a [(&'a Shape<'s>, f64)],
+}
+
+impl Default for SweepOptions<'_, '_> {
+    fn default() -> Self {
+        Self {
+            orientation: SweepOrientation::CorrectedFrenet,
+            twist_radians: 0.0,
+            twist_law: SweepLaw::Linear,
+            end_scale: 1.0,
+            scale_law: SweepLaw::Linear,
+            guide: None,
+            sections: &[],
+        }
+    }
+}
+
+fn orientation_mode(orientation: SweepOrientation) -> (i32, Vec3) {
+    match orientation {
+        SweepOrientation::CorrectedFrenet => (0, Vec3::new(0.0, 0.0, 0.0)),
+        SweepOrientation::Frenet => (1, Vec3::new(0.0, 0.0, 0.0)),
+        SweepOrientation::Binormal(direction) => (2, direction),
+        SweepOrientation::Fixed => (3, Vec3::new(0.0, 0.0, 0.0)),
+    }
+}
+
 impl Session {
     pub fn create_box(&self, origin: Vec3, size: Vec3) -> Result<Shape<'_>, BridgeError> {
         let mut shape = 0;
@@ -103,12 +153,7 @@ impl Session {
     ) -> Result<Shape<'_>, BridgeError> {
         self.validate_shape(profile)?;
         self.validate_shape(path)?;
-        let (mode, binormal) = match orientation {
-            SweepOrientation::CorrectedFrenet => (0, Vec3::new(0.0, 0.0, 0.0)),
-            SweepOrientation::Frenet => (1, Vec3::new(0.0, 0.0, 0.0)),
-            SweepOrientation::Binormal(direction) => (2, direction),
-            SweepOrientation::Fixed => (3, Vec3::new(0.0, 0.0, 0.0)),
-        };
+        let (mode, binormal) = orientation_mode(orientation);
         let mut shape = 0;
         // SAFETY: Validated shapes, a by-value vector, and a writable output.
         self.check(unsafe {
@@ -120,6 +165,57 @@ impl Session {
                 binormal.into(),
                 &mut shape,
             )
+        })?;
+        Ok(self.shape(shape))
+    }
+
+    /// Sweeps like [`Session::sweep`], with a twist about the path, a scale
+    /// law, a guide rail and intermediate sections (see [`SweepOptions`]).
+    /// One native pipe-shell build; a twist samples the path at most 8,193
+    /// times. Records the faces each profile's edges generate.
+    pub fn sweep_advanced(
+        &self,
+        profile: &Shape<'_>,
+        path: &Shape<'_>,
+        options: &SweepOptions<'_, '_>,
+    ) -> Result<Shape<'_>, BridgeError> {
+        self.validate_shape(profile)?;
+        self.validate_shape(path)?;
+        if let Some(guide) = &options.guide {
+            self.validate_shape(guide.path)?;
+        }
+        for (section, _) in options.sections {
+            self.validate_shape(section)?;
+        }
+        let (mode, binormal) = orientation_mode(options.orientation);
+        let law = |law: SweepLaw| match law {
+            SweepLaw::Linear => 0,
+            SweepLaw::Smooth => 1,
+        };
+        let sections = options
+            .sections
+            .iter()
+            .map(|(profile, position)| RawSweepSection {
+                profile: profile.id,
+                position: *position,
+            })
+            .collect::<Vec<_>>();
+        let raw = RawSweepOptions {
+            orientation: mode,
+            binormal: binormal.into(),
+            twist_radians: options.twist_radians,
+            twist_law: law(options.twist_law),
+            end_scale: options.end_scale,
+            scale_law: law(options.scale_law),
+            guide: options.guide.as_ref().map_or(0, |guide| guide.path.id),
+            guide_scales: options.guide.as_ref().is_some_and(|guide| guide.scales) as i32,
+            sections: sections.as_ptr(),
+            section_count: sections.len(),
+        };
+        let mut shape = 0;
+        // SAFETY: Validated shapes; `raw` and `sections` outlive the call.
+        self.check(unsafe {
+            occt_bridge_sweep_advanced(self.raw.as_ptr(), profile.id, path.id, &raw, &mut shape)
         })?;
         Ok(self.shape(shape))
     }
@@ -1189,6 +1285,28 @@ impl Session {
             occt_bridge_curve_point_at_fraction(self.raw.as_ptr(), shape.id, fraction, &mut out)
         })?;
         Ok(out.into())
+    }
+    /// The point and unit tangent at `fraction` (in [0, 1]) of a path edge's
+    /// or wire's length from its start: where a plane normal to the path
+    /// sits. O(path edges).
+    pub fn path_station(
+        &self,
+        path: &Shape<'_>,
+        fraction: f64,
+    ) -> Result<(Vec3, Vec3), BridgeError> {
+        self.validate_shape(path)?;
+        let (mut point, mut tangent) = (RawVec3::default(), RawVec3::default());
+        // SAFETY: Validated session/shape and writable output vectors.
+        self.check(unsafe {
+            occt_bridge_path_station(
+                self.raw.as_ptr(),
+                path.id,
+                fraction,
+                &mut point,
+                &mut tangent,
+            )
+        })?;
+        Ok((point.into(), tangent.into()))
     }
     /// Located native active endpoints and unnormalized first derivatives,
     /// following edge orientation. Requires one edge or a one-edge wire.

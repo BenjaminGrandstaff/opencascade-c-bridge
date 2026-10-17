@@ -19,6 +19,7 @@ Each kind is a `DatumKind` variant in the family's `datums` list.
 | `face_plane` | `input`, `face` (face selector), `distance` | The selected planar face, moved `distance` along its outward normal |
 | `midplane` | `input`, `first`, `second` (face selectors) | Halfway between two parallel planar faces, with the first face's normal |
 | `three_point_plane` | `first`, `second`, `third` (lengths) | Through the three points, normal (second − first) × (third − first) |
+| `path_plane` (schema 175) | `input` (an edge or wire output), `position` (fraction of its length) | Through that point of the path, normal along it; see [advanced sweeps](ADVANCED_SWEEPS.md#following-constrained-paths) |
 
 A `base` is `xy` (normal +Z), `xz` (normal −Y), `yz` (normal +X), or
 `{"datum": id}` for another plane datum of any kind, so planes chain. A

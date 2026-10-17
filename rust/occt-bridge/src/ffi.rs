@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 81;
+pub(crate) const ABI_VERSION: u32 = 82;
 
 #[repr(C)]
 #[derive(Default)]
@@ -201,6 +201,26 @@ pub(crate) struct RawStepView {
     pub(crate) sizes: *const usize,
     pub(crate) size_count: usize,
     pub(crate) out_sizes_lost: *mut u8,
+}
+
+#[repr(C)]
+pub(crate) struct RawSweepSection {
+    pub(crate) profile: RawShapeId,
+    pub(crate) position: f64,
+}
+
+#[repr(C)]
+pub(crate) struct RawSweepOptions {
+    pub(crate) orientation: i32,
+    pub(crate) binormal: RawVec3,
+    pub(crate) twist_radians: f64,
+    pub(crate) twist_law: i32,
+    pub(crate) end_scale: f64,
+    pub(crate) scale_law: i32,
+    pub(crate) guide: RawShapeId,
+    pub(crate) guide_scales: i32,
+    pub(crate) sections: *const RawSweepSection,
+    pub(crate) section_count: usize,
 }
 
 #[repr(C)]
@@ -415,6 +435,13 @@ unsafe extern "C" {
         shape: u64,
         fraction: f64,
         point: *mut RawVec3,
+    ) -> i32;
+    pub fn occt_bridge_path_station(
+        s: *mut c_void,
+        path: u64,
+        fraction: f64,
+        point: *mut RawVec3,
+        tangent: *mut RawVec3,
     ) -> i32;
     pub fn occt_bridge_curve_end_data(
         s: *mut c_void,
@@ -646,6 +673,13 @@ unsafe extern "C" {
         path: RawShapeId,
         orientation: i32,
         binormal: RawVec3,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_sweep_advanced(
+        session: *mut c_void,
+        profile: RawShapeId,
+        path: RawShapeId,
+        options: *const RawSweepOptions,
         out: *mut RawShapeId,
     ) -> RawStatus;
     pub(crate) fn occt_bridge_create_circle_wire(

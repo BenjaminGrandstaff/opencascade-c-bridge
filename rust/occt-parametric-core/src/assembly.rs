@@ -141,6 +141,14 @@ pub enum DatumKind {
         second: VectorExpr,
         third: VectorExpr,
     },
+    /// The plane normal to the path (an edge or wire output `input`) at
+    /// `position`, a fraction in [0, 1] of the path's length from its start,
+    /// facing along the path (schema 175). A profile sketch on it follows
+    /// the path as constraints or parameters move and turn the path.
+    PathPlane {
+        input: String,
+        position: ScalarExpr,
+    },
 }
 
 /// A datum in model coordinates: millimeters and unit directions.

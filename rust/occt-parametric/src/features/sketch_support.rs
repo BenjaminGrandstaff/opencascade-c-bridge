@@ -37,6 +37,13 @@ impl PlaneFaces for GeneratedFaces<'_, '_> {
             unit(self.session.face_normal(&faces[0])?)?,
         ))
     }
+
+    fn path_station(&self, input: &str, fraction: f64) -> Result<(Vec3, Vec3), ModelError> {
+        let path = shape(self.shapes, input)?;
+        self.session
+            .path_station(path, fraction)
+            .map_err(|e| ModelError::new(format!("path plane on '{input}': {e}")))
+    }
 }
 
 /// The plane a sketch is drawn on: its face support, or its datum plane

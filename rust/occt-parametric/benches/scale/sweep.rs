@@ -120,6 +120,10 @@ pub(crate) fn sweep_case() -> Outcome {
                         profile: "profile".into(),
                         path: "path".into(),
                         orientation: SweepOrientation::CorrectedFrenet,
+                        twist: None,
+                        scale: None,
+                        guide: None,
+                        sections: Vec::new(),
                     },
                 }));
             let mut part = PartInstance {
@@ -165,6 +169,104 @@ pub(crate) fn sweep_case() -> Outcome {
             }
             Ok(format!(
                 "{COUNT} sweeps rebuilt after a radius edit; Pappus volumes exact; path reused"
+            ))
+        },
+    )
+}
+
+/// 250 twisted ducts flaring between square sections on planes normal to
+/// one constrained route (the advanced-sweep example), built and then
+/// rebuilt after the route's run changes, which moves the outlet plane.
+/// Measured 5.9 s: about 11 ms per duct each time, of which the twist's
+/// auxiliary-spine pipe surface takes about 7 ms.
+pub(crate) fn advanced_sweep_case() -> Outcome {
+    const COUNT: usize = 250;
+    timed(
+        format!(
+            "{COUNT} twisted, sectioned duct sweeps on a constrained route: build and route edit"
+        ),
+        ms(10_000),
+        Expectation::Required,
+        || {
+            let request: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../../tools/model/advanced-sweep.request.json"
+            ))
+            .map_err(|error| failure(error.to_string()))?;
+            let mut document = ModelDocument::from_json(&request["model"].to_string())?;
+            let template = document
+                .family
+                .features
+                .iter()
+                .find(|feature| feature.id == "duct")
+                .cloned()
+                .ok_or_else(|| failure("duct missing".into()))?;
+            for index in 1..COUNT {
+                let mut duct = template.clone();
+                duct.id = format!("duct-{index}");
+                if let FeatureOperation::Sweep {
+                    twist: Some(twist), ..
+                } = &mut duct.operation
+                {
+                    // Quarter turns keep every duct's volume the same.
+                    twist.angle_radians = ScalarExpr::Literal(Quantity::scalar(
+                        std::f64::consts::FRAC_PI_2 * (index % 8) as f64,
+                    ));
+                }
+                document.family.features.push(duct);
+            }
+            let session = Session::new().map_err(|error| failure(error.to_string()))?;
+            let mut part = PartInstance {
+                id: "duct".into(),
+                definition: &document.family,
+                overrides: HashMap::new(),
+                provenance: "bench".into(),
+            };
+            let started = Instant::now();
+            let first = part.regenerate(&session)?;
+            let build = started.elapsed();
+            part.overrides.insert(
+                "run".into(),
+                ParameterValue::Scalar(Quantity::length(60.0, LengthUnit::Millimeter)),
+            );
+            let started = Instant::now();
+            let second = part.regenerate_incremental(&session, &first)?;
+            let edit = started.elapsed();
+            if second.regeneration.rebuilt.len() != COUNT + 3 {
+                return Err(failure(format!(
+                    "route edit rebuilt {:?}",
+                    second.regeneration.rebuilt.len()
+                )));
+            }
+            let pi = std::f64::consts::PI;
+            let expected = (60.0 + 30.0 * pi / 2.0) * (64.0 + 112.0 + 196.0) / 3.0;
+            for index in [0, COUNT / 2, COUNT - 1] {
+                let id = if index == 0 {
+                    "duct".to_owned()
+                } else {
+                    format!("duct-{index}")
+                };
+                let shape = second
+                    .shape(&id)
+                    .ok_or_else(|| failure("duct missing".into()))?;
+                let volume = session.volume(shape)?;
+                if (volume - expected).abs() > 1e-5 * expected || !session.is_valid(shape)? {
+                    return Err(failure(format!(
+                        "{id} volume {volume}, expected {expected}"
+                    )));
+                }
+            }
+            drop((first, second));
+            if session
+                .shape_count()
+                .map_err(|error| failure(error.to_string()))?
+                != 0
+            {
+                return Err(failure("sweep handles retained".into()));
+            }
+            Ok(format!(
+                "built in {:.2} s, rebuilt after the route edit in {:.2} s; volumes exact",
+                build.as_secs_f64(),
+                edit.as_secs_f64()
             ))
         },
     )
