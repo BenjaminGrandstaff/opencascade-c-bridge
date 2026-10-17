@@ -6,6 +6,7 @@ import { newSketchDefinition } from './sketch-create.mjs';
 import { infer } from './sketch-studio-infer.mjs';
 import { pathData } from './sketch-studio-overlay.mjs';
 import { CLICKS, ICONS, TOOLS, commitShape, typedClick } from './sketch-studio-tools.mjs';
+import {captureGeneratedPoints, bindGeneratedPoints, inheritGeneratedReferences} from './generated-points.mjs';
 import { continueOutline } from './sketch-studio-delete.mjs';
 
 /** Snap radius in screen pixels. */
@@ -113,6 +114,7 @@ export function installDrawing(studio, document) {
         error: null,
         previewing: false,
       };
+      if (baseline) inheritGeneratedReferences(baseline, studio.draft.definition);
     }
     return studio.draft;
   }
@@ -121,6 +123,7 @@ export function installDrawing(studio, document) {
     const d = studio.draft;
     if (studio.modelPending || !d) return false;
     draftRevision++;
+    inheritGeneratedReferences(d.definition, next);
     d.undo.push(d.definition);
     d.redo = [];
     d.definition = next;
@@ -165,6 +168,9 @@ export function installDrawing(studio, document) {
     try {
       const response = await send(false);
       if (!current()) return;
+      if (response.can_apply) {
+        bindGeneratedPoints(definition, captureGeneratedPoints(definition, response.generated_points ?? [], response.generated_curves ?? {}));
+      }
       const scene = response.annotations?.scenes?.find((s) => s.kind === 'sketch' && s.feature === d.feature);
       if (scene) studio.previewScenes[d.feature] = scene;
       d.pending = [];

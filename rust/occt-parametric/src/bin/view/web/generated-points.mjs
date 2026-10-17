@@ -17,7 +17,8 @@ function compatible(definition,snapshot){
 export function bindGeneratedPoints(definition,snapshot){
  bindings.delete(definition);if(!compatible(definition,snapshot))return false;bindings.set(definition,snapshot);return true;
 }
-export function generatedPointIds(definition){const snapshot=bindings.get(definition);return compatible(definition,snapshot)?snapshot.ids:[];}
+export function generatedReferenceBinding(definition){const snapshot=bindings.get(definition);return compatible(definition,snapshot)?snapshot:null;}
+export function generatedPointIds(definition){return generatedReferenceBinding(definition)?.ids??[];}
 
 export function generatedCurveIds(definition,groups){const snapshot=bindings.get(definition);return compatible(definition,snapshot)?groups.flatMap(group=>snapshot.curves[group]??[]):[];}
 

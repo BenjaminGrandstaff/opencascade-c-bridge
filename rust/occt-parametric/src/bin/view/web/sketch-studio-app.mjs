@@ -6,6 +6,7 @@ import {
 } from './sketch-studio-plane.mjs';
 import { PALETTE, layersFrom, nextFeatureName, planeLabel } from './sketch-studio-layers.mjs';
 import { localBounds, planeGrid, sketchPaths, sketchPoints } from './sketch-studio-overlay.mjs';
+import {captureGeneratedPoints, bindGeneratedPoints} from './generated-points.mjs';
 import { installDrawing } from './sketch-studio-draw.mjs';
 import { installConstraints } from './sketch-studio-constrain.mjs';
 import { layoutLabels, sketchLabels } from './sketch-studio-labels.mjs';
@@ -109,6 +110,9 @@ export function startStudio(document) {
     studio.planes = annotations.datum_planes ?? [];
     if (!studio.planes.some((plane) => plane.id === studio.selectedPlane)) studio.selectedPlane = null;
     studio.features = sketches.features ?? [];
+    for (const item of sketches.sketches ?? []) {
+      bindGeneratedPoints(item.definition, captureGeneratedPoints(item.definition, item.generated_points ?? [], item.generated_curves ?? {}));
+    }
     studio.definitions = Object.fromEntries((sketches.sketches ?? []).map((s) => [s.feature, s.definition]));
     studio.layers = layersFrom(studio.scenes, studio.definitions, studio.layers);
     if (!studio.layers.some((layer) => layer.feature === studio.active)) {

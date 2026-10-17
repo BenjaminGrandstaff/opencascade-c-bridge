@@ -3,6 +3,8 @@
 // what a dimension would measure. Constraint kinds and their roles come
 // from the classic editor's `constraintTools`.
 import { constraintTools, geometryIds } from './constraint-controls.mjs';
+import {generatedReferenceBinding} from './generated-points.mjs';
+import {geometryReferences} from './sketch-studio-geometry.mjs';
 import { pointPositions } from './sketch-studio-infer.mjs';
 import { projectLocal } from './sketch-studio-plane.mjs';
 import { simplify } from './sketch-studio-overlay.mjs';
@@ -89,22 +91,24 @@ const groupCache = new WeakMap();
 /** For each geometry group a constraint role can take, the ids in it. */
 function groups(definition) {
   let cached = groupCache.get(definition);
-  if (!cached) {
-    cached = new Map();
+  const binding = generatedReferenceBinding(definition);
+  if (!cached || cached.binding !== binding) {
+    cached = {binding, members: new Map()};
     for (const group of ['points', 'lines', 'curves', 'round', 'centered', 'arcs', 'splines', 'ellipses']) {
-      cached.set(group, new Set(geometryIds(definition, group)));
+      cached.members.set(group, new Set(geometryIds(definition, group)));
     }
     groupCache.set(definition, cached);
   }
-  return cached;
+  return cached.members;
 }
 
 /** Each curve's end points, for the shared point a tangency needs. */
-function endpoints(definition) {
+function endpoints(definition, scene) {
+  definition = geometryReferences(definition, scene);
   const ends = new Map();
   for (const line of definition.lines ?? []) ends.set(line.id, [line.start, line.end]);
   for (const arc of definition.arcs ?? []) ends.set(arc.id, [arc.start, arc.end]);
-  for (const spline of definition.splines ?? []) ends.set(spline.id, [spline.points[0], spline.points.at(-1)]);
+  for (const spline of definition.splines ?? []) ends.set(spline.id, spline.endpoints ? [spline.endpoints.start, spline.endpoints.end] : [spline.points[0], spline.points.at(-1)]);
   for (const circle of definition.circles ?? []) ends.set(circle.id, [circle.rim]);
   return ends;
 }
@@ -145,10 +149,10 @@ function assignments(fields, ids, members) {
  * end. Kinds that need a picking flow (crossing points, spline samples,
  * weighted links) are not offered here. O(kinds × selection!).
  */
-export function suggestions(definition, ids) {
+export function suggestions(definition, ids, scene = {}) {
   if (!ids.length || ids.length > 3 || new Set(ids).size !== ids.length) return [];
   const members = groups(definition);
-  const ends = endpoints(definition);
+  const ends = endpoints(definition, scene);
   const out = [];
   for (const [type, tool] of Object.entries(constraintTools)) {
     let fieldsList = assignments(tool.fields, ids, members);
@@ -187,9 +191,10 @@ export function suggestions(definition, ids) {
  */
 export function dimensionFor(definition, scene, ids) {
   const positions = pointPositions(definition, scene?.points);
-  const line = (id) => (definition.lines ?? []).find((l) => l.id === id);
-  const circle = (id) => (definition.circles ?? []).find((c) => c.id === id);
-  const arc = (id) => (definition.arcs ?? []).find((a) => a.id === id);
+  const geometry = geometryReferences(definition, scene);
+  const line = (id) => (geometry.lines ?? []).find((l) => l.id === id);
+  const circle = (id) => (geometry.circles ?? []).find((c) => c.id === id);
+  const arc = (id) => (geometry.arcs ?? []).find((a) => a.id === id);
   const isPoint = (id) => positions.has(id);
   const at = (id) => positions.get(id);
   const signedAngle = (l1, l2) => {
@@ -226,8 +231,9 @@ export function dimensionFor(definition, scene, ids) {
   if (pointLine) {
     const [point, l] = pointLine;
     const [a, b, x] = [at(l.start), at(l.end), at(point)];
+    if (!a || !b || !x) return null;
     const length = hypot(a, b);
-    if (!a || !b || !length) return null;
+    if (!length) return null;
     const signed = ((b[0] - a[0]) * (x[1] - a[1]) - (b[1] - a[1]) * (x[0] - a[0])) / length;
     return { type: 'point_line_distance', fields: { point, line: l.id }, value: signed, unit: 'mm', label: `Distance ${point} to ${l.id}` };
   }

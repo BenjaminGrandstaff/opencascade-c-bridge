@@ -170,7 +170,7 @@ export function installConstraints(studio, document) {
   // ── Constraint bar ───────────────────────────────────────────────────
   function renderBar() {
     const def = definition();
-    const options = def && studio.tool === 'select' ? suggestions(def, studio.selection) : [];
+    const options = def && studio.tool === 'select' ? suggestions(def, studio.selection, scene()) : [];
     if (!options.length) {
       bar.hidden = true;
       return;
@@ -309,7 +309,7 @@ export function installConstraints(studio, document) {
       }
     }
     if (event.key === 'Enter' && studio.tool === 'select' && studio.selection.length) {
-      const first = suggestions(definition() ?? {}, studio.selection)[0];
+      const first = suggestions(definition() ?? {}, studio.selection, scene())[0];
       if (first) applySuggestion(first);
       return true;
     }
@@ -364,7 +364,7 @@ export function installConstraints(studio, document) {
         html('span', {}, `${SYMBOLS[type] ?? ''} ${constraintTools[type]?.label ?? type} · ${parts}`),
         html('button', { title: 'Remove this constraint from the draft', onclick: () => removeConstraint(index) }, 'Remove'));
     });
-    const options = def ? suggestions(def, studio.selection) : [];
+    const options = def ? suggestions(def, studio.selection, scene()) : [];
     studio.fill(host,
       html('h2', {}, `Selection (${studio.selection.length})`),
       html('ul', { class: 'inspector-list' }, rows),

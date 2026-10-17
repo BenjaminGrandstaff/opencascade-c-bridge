@@ -2,6 +2,9 @@
 // Everything is in sketch-local millimetres; `tolerance` is the snap radius
 // in millimetres (a few pixels at the current zoom).
 
+import {geometryIds} from './constraint-controls.mjs';
+import {geometryReferences} from './sketch-studio-geometry.mjs';
+
 /** Lines within this angle of horizontal, vertical, parallel or perpendicular snap to it. */
 export const ANGLE_TOLERANCE = (3 * Math.PI) / 180;
 /** Lengths and radii within this fraction of a hovered one snap equal to it. */
@@ -19,8 +22,9 @@ const literal = (point) =>
  */
 export function pointPositions(definition, scenePoints = {}) {
   const positions = new Map();
+  const known = new Set(geometryIds(definition ?? {}, 'points'));
   for (const [id, xy] of Object.entries(scenePoints)) {
-    if (Array.isArray(xy) && Number.isFinite(xy[0]) && Number.isFinite(xy[1])) positions.set(id, [xy[0], xy[1]]);
+    if (known.has(id) && Array.isArray(xy) && Number.isFinite(xy[0]) && Number.isFinite(xy[1])) positions.set(id, [xy[0], xy[1]]);
   }
   for (const point of definition?.points ?? []) {
     if (!positions.has(point.id)) {
@@ -32,8 +36,8 @@ export function pointPositions(definition, scenePoints = {}) {
 }
 
 /** The draft's lines with their endpoint positions, skipping unresolved ones. */
-export function lineSegments(definition, positions) {
-  return (definition?.lines ?? []).flatMap((line) => {
+export function lineSegments(definition, positions, scene) {
+  return (geometryReferences(definition ?? {}, scene).lines ?? []).flatMap((line) => {
     const a = positions.get(line.start);
     const b = positions.get(line.end);
     return a && b && distance(a, b) > 1e-12 ? [{ id: line.id, start: line.start, end: line.end, a, b }] : [];
@@ -41,7 +45,8 @@ export function lineSegments(definition, positions) {
 }
 
 /** Circles and arcs with their centre and radius, skipping unresolved ones. */
-export function roundCurves(definition, positions) {
+export function roundCurves(definition, positions, scene) {
+  definition = geometryReferences(definition, scene);
   const out = [];
   for (const circle of definition?.circles ?? []) {
     const c = positions.get(circle.center);
@@ -69,10 +74,12 @@ const MAX_SEGMENT_CELLS = 256;
 class SpatialIndex {
   constructor(definition, scene) {
     this.positions = pointPositions(definition, scene.points);
-    this.lines = lineSegments(definition, this.positions);
-    this.rounds = roundCurves(definition, this.positions);
+    this.lines = lineSegments(definition, this.positions, scene);
+    this.rounds = roundCurves(definition, this.positions, scene);
     this.samples = [];
+    const known = new Set(geometryIds(definition, 'curves'));
     for (const entity of scene.entities ?? []) {
+      if (!known.has(entity.id)) continue;
       const points = entity.points ?? [];
       for (let i = 1; i < points.length; i += 1) this.samples.push({ curve: entity.id, a: points[i - 1], b: points[i] });
     }
@@ -308,7 +315,7 @@ export function tangentLineAt(definition, scene, startPoint, center) {
   const positions = pointPositions(definition, scene?.points);
   const start = positions.get(startPoint);
   if (!start) return null;
-  for (const line of lineSegments(definition, positions)) {
+  for (const line of lineSegments(definition, positions, scene)) {
     if (line.start !== startPoint && line.end !== startPoint) continue;
     const along = angleOf(line.a, line.b);
     const toCenter = angleOf(start, center);

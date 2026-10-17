@@ -1,3 +1,4 @@
+import {inheritGeneratedReferences} from './generated-points.mjs';
 // Drawing tools of the sketch studio: the toolbar's tools, how many clicks
 // each takes, and turning a finished gesture into draft geometry plus the
 // constraints inferred while drawing. Geometry itself comes from the
@@ -113,6 +114,7 @@ export function commitShape(definition, tool, clicks, { profile = false, sides =
     definition, tool, clicks.map(({ xy, point }) => ({ xy, point: point ?? null })),
     { fixed: false, profile, clockwise, closed, sides },
   );
+  inheritGeneratedReferences(definition, drawn);
   const ids = additional?.clickIds??clickIds(tool, definition, drawn, created, clicks);
   const boundary = created.filter((id) => !(drawn.points ?? []).some((p) => p.id === id));
   const shape = ['line', 'circle', 'arc'].includes(tool) ? boundary[0] : null;

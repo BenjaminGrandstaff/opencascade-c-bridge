@@ -88,3 +88,29 @@ assert.equal(historyStudio.draft.definition,snapshots.at(-1));assert.equal(histo
 const historyTime=performance.now()-start;history.discard(true);
 console.log(`Studio history: 10,000 Undo + 10,000 Redo on a 10,000-curve sketch ${historyTime.toFixed(1)} ms (budget 1,000 ms; presentation stubs)`);
 assert(historyTime<1000,'Studio snapshot navigation exceeded its scale budget.');
+
+// Native-verified pattern copies take the same indexed snapping path.
+const {captureGeneratedPoints, bindGeneratedPoints} = await import('../../rust/occt-parametric/src/bin/view/web/generated-points.mjs');
+const generated = {points: [], lines: [], patterns: [{linear: {id: 'row', count: N, entities: ['source'], direction: 'axis'}}]};
+const generatedPoints = {}, generatedLines = [], generatedNames = [];
+const generatedScene = {points: generatedPoints, entities: []};
+for (let i = 0; i < N; i++) {
+  const a = [(i % 100) * 3, Math.floor(i / 100) * 3], b = [a[0] + 2, a[1]];
+  const id = `row:${i}:source`, first = `${id}:start`, last = `${id}:end`;
+  generatedNames.push(first, last); generatedLines.push(id);
+  generatedPoints[first] = [...a, 0]; generatedPoints[last] = [...b, 0];
+  generatedScene.entities.push({id, point_ids: [first, last], points: Array.from({length: 33}, (_, k) => [a[0] + (b[0] - a[0]) * k / 32, a[1], 0])});
+}
+bindGeneratedPoints(generated, captureGeneratedPoints(generated, generatedNames, {lines: generatedLines}));
+start = performance.now();
+let generatedHit = infer({xy: [1, .01], tool: 'point', definition: generated, scene: generatedScene, tolerance: .1});
+const generatedBuild = performance.now() - start;
+assert(generatedHit.rules.some(r => r.kind === 'midpoint' && r.line === 'row:0:source'));
+start = performance.now();
+for (let i = 0; i < moves; i++) {
+  generatedHit = infer({xy: [1, .01], tool: 'point', definition: generated, scene: generatedScene, tolerance: .1});
+  assert(generatedHit.rules.some(r => r.line === 'row:0:source'));
+}
+const generatedMove = (performance.now() - start) / moves;
+console.log(`Studio generated references: 10,000 pattern lines, ${generatedBuild.toFixed(1)} ms index build, ${generatedMove.toFixed(2)} ms per move (budgets 500/16 ms)`);
+assert(generatedBuild < 500 && generatedMove < 16, 'Generated-reference snapping exceeded its scale budget.');

@@ -148,6 +148,33 @@ invalidates older Preview replies immediately, before the preview debounce
 expires. Older polling/reload results cannot replace the model loaded after a
 studio Apply, model Undo/Redo or Save.
 
+## Generated geometry references
+
+The studio retains the native API's verified generated point names and curve
+kinds when loading a sketch or receiving a current, successful Preview. This
+covers shape boundaries, pattern copies and projected geometry. Catalogues are
+inspection data; saved definitions contain only the references you use.
+
+Select a generated side or arc to get its supported constraints. The Dimension
+tool measures a generated line between its native defining endpoints, or an arc
+by its center and start point. Shared-endpoint tangency suggestions use those
+same roles, including explicit spline endpoints. Drawing can reuse a generated
+corner by name; generated lines also supply midpoint, parallel/equal-length and
+endpoint-tangency inference, while generated circles/arcs supply radius
+inference. Generated points retain their owning shape/pattern/projection and
+are not independently draggable or editable as authored coordinates.
+
+Compatible draft edits and Undo/Redo retain verified catalogues. Changing a
+generator or an existing source curve invalidates its catalogue until a new
+successful Preview. The suggestion list refreshes when Preview supplies new
+names. Unverified scene points, edited-curve display names and glyph outlines
+cannot create snapping constraints. Curve kinds come from native metadata and
+defining point roles from the solved scene, never from sampled shape guesses.
+
+The studio scale benchmark includes 10,000 generated pattern lines with 20,000
+named endpoints and 330,000 curve samples, with the same 500 ms index-build and
+16 ms subsequent-move budgets as authored geometry.
+
 ## Additional primitive tools
 
 The toolbar also authors these existing native definitions (schema 164 and ABI
