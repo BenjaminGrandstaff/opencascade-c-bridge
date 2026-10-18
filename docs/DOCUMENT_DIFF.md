@@ -136,3 +136,31 @@ bytes and Git's unmerged stages. Installation is explicit: the bridge repository
 does not modify another repository's Git settings automatically.
 
 Revision records and change impact are described in [Model history](MODEL_HISTORY.md).
+
+## Nonmutating merge reports and MCP
+
+To obtain a merged document or structured conflict report while preserving
+all three source files, use report mode with a new destination:
+
+```sh
+LD_LIBRARY_PATH="$PWD/build" \
+  rust/occt-parametric/target/release/occt-document-merge \
+  --report BASE.json CURRENT.json OTHER.json /tmp/new-merge-report
+```
+
+The destination contains `report.json` and, on success, `merged.model.json`.
+Exit 0 means a merged document was written; exit 2 retains the conflict report;
+exit 1 indicates an invalid request or execution error. Report mode leaves
+CURRENT unchanged on success as well as conflict. The Git driver invocation
+above retains its existing replacement behavior.
+
+MCP exposes the same report mode as `occt_merge_documents`. Its complete
+[merged-block example](../tools/model/merged-block.request.json) contains
+`schema`, `base`, `current` and `other` model snapshots. Discover the generated
+`document_merge` schema through `occt_get_schema` or run the executable with
+`--schema`. Results return scoped `occt://analysis/...` artifacts, with
+`isError: true` and the complete conflict report when edits conflict.
+
+A successful semantic merge verifies document structure, not regenerated
+geometry or all part requirements. Pass the merged model to `occt_build` for
+that verification. See the [MCP workflow](../tools/model/MCP.md#drawing-inspection-and-mechanism-workflow).

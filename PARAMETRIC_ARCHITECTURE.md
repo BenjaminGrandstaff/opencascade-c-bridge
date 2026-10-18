@@ -957,27 +957,45 @@ transient generation-state records are cleared. SVG previews use bounded
 sampling and are for visual review. Required failures currently expose their
 error context rather than a full rejected measurement table.
 [The local MCP adapter](tools/model/MCP.md) provides schema/example discovery,
-build calls, and accepted-artifact resources. Concurrent revision-aware shared
-sessions remain future integration.
+build calls, accepted-artifact resources and design-command analysis resources.
+Optional companion binaries supply drawing export, measurement inspection,
+motion/collision studies, mass/balance reports, linkage branch discovery and
+semantic document merge. Concurrent revision-aware shared sessions remain
+future integration.
 
-Command checks exercise the bracket edit/reject/repair loop and four published
-examples. A release 1,000-instance report with one shared geometry variant,
+Focused CLI checks exercise the bracket edit/reject/repair loop and the four
+original smoke examples. A release 1,000-instance report with one shared geometry variant,
 validity/analytic volume checks, requirement evidence and persistence completed
 in 0.245 s against a 10 s budget. Complexity is existing regeneration plus
 selected geometry inspection/export, report serialization, and preview HLR;
 preview serialization is bounded to one million vertices per selected output.
 
 Generated Draft 2020-12 authoring schemas use `schemars::JsonSchema` on the
-engine's serde-compatible types, covering all 28 feature operations and 122
-nested definitions in the request schema. The CLI exposes twelve schema targets;
-the Python standard-library MCP adapter caches them at startup and advertises
-the complete build request through `tools/list`. Worker processes isolate
-native output and geometry lifetimes from protocol traffic. Timed-out/cancelled
-workers terminate and release their unaccepted directories; accepted artifacts
-remain readable by scoped resource URI. Five wire/schema tests validate the
-examples and build/edit/reject/repair loop. Release scale checks take 0.080 s
-for 1,000 schema calls and 0.283 s for a 1,000-part report/model roundtrip
-(10 s budgets), integrated into `tools/bench/run.sh`.
+engine's serde-compatible types. The model CLI exposes authoring schema targets;
+companion design commands expose complete model/setup request schemas through
+`--schema`. The Python standard-library MCP adapter caches installed schemas at
+startup and advertises input contracts through `tools/list`. `occt://catalog`
+derives the current model version, operations, example kinds and capability
+counts from the loaded engine and server declarations. Every local request
+example is exposed automatically. Companion binaries with a different model
+schema version are rejected at startup.
+
+Worker processes isolate native output and geometry lifetimes from protocol
+traffic. Tool callers provide model/setup JSON, while the server controls
+executable paths and output destinations. Completed analyses publish scoped
+`occt://analysis/...` resources independently of accepted `occt://build/...`
+resources. Negative inspection, motion and merge results retain their full
+reports; timed-out/cancelled workers remove partial outputs. A merge or branch
+model must be built separately to verify geometry and requirements. MCP balance
+accepts an inline chord rather than a setup path to a wing project.
+
+Wire tests validate every catalog example against its generated request schema
+and current model version, exercise all design commands and negative reports,
+and check artifact access, optional installations and worker cleanup. The
+release-scale checks in `tools/bench/run.sh` cover schema discovery, model
+publication, large inventories, guarded edits and sketch/solid visualization.
+See [the command workflow](tools/model/MCP.md#drawing-inspection-and-mechanism-workflow)
+for request kinds, artifacts and acceptance limits.
 
 Read-only [model inspection](tools/model/MCP.md#inspect-existing-parts-before-editing)
 adds paged authoring inventory, inherited/derived parameter resolution, complete

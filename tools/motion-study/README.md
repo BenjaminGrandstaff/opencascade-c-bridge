@@ -146,3 +146,18 @@ examples report that geometry; they do not certify a buildable hinge. Both
 contact at neutral, with no unresolved pairs, during verification. Update
 origins, axes and output selections when station geometry or structure settings
 change. Hinge definitions are stored values, not parameter-driven expressions.
+
+## Use through MCP
+
+The [local MCP server](../model/MCP.md#launch-and-connect) exposes `occt_motion_study`
+when this executable is installed beside `occt-model` or in `--commands-dir`.
+Retrieve the complete [slider-clearance example](../model/slider-clearance.request.json)
+with `occt_get_example`, then pass it to the tool. Its request contains `schema`,
+`model` and `setup`; `occt_get_schema` exposes the `motion_study` schema.
+The executable also prints that complete MCP request schema with `--schema`;
+the positional CLI above continues to take separate model and setup files.
+
+Returns the sampled and continuous report, `assembly.model.json` and `study.json`. Collisions and unresolved continuous checks retain artifacts with `isError: true`.
+Reports and named files are readable through returned `occt://analysis/...`
+resources. Model inputs and accepted builds remain unchanged. See the
+[shared workflow and resource limits](../model/MCP.md#drawing-inspection-and-mechanism-workflow).

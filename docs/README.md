@@ -43,3 +43,19 @@ examples. Project-wide status lives in [the roadmap](../ROADMAP.md) and
 - [Generated drawings](DRAWINGS.md)
 - [Model history and change impact](MODEL_HISTORY.md)
 - [Semantic document comparisons and merges](DOCUMENT_DIFF.md)
+
+## AI authoring and local tools
+
+- [Model build, edit and repair requests](../tools/model/README.md)
+- [MCP setup, generated schemas and live capability catalog](../tools/model/MCP.md#launch-and-connect)
+- [Drawing, inspection and mechanism workflows](../tools/model/MCP.md#drawing-inspection-and-mechanism-workflow)
+- [Interactive annotated sketch and solid viewer](../tools/model/VIEWER.md)
+- [Drawing export CLI](../tools/drawing-export/README.md)
+- [Motion study CLI](../tools/motion-study/README.md)
+- [Mass and balance CLI](../tools/balance-report/README.md)
+- [Alternative linkage branches CLI](../tools/joint-branches/README.md)
+
+MCP tools use the existing engine and command implementations. Generated request
+schemas and complete examples are discoverable at runtime through `occt://catalog`.
+Analysis reports remain separate from accepted part builds; a merged document or
+alternative pose needs a subsequent build to verify geometry and requirements.

@@ -446,3 +446,21 @@ sampled reverse/multiple turns, non-unit oblique axes and nested paths, axial cr
 overflow rejection and handle cleanup. A 10,000-plate stack rotating through
 opposite multi-turn paths clears with one generated variant and zero pair
 queries within a 10 s benchmark budget.
+
+## Motion, balance and linkage tools through MCP
+
+The [MCP command workflow](../tools/model/MCP.md#drawing-inspection-and-mechanism-workflow)
+exposes the existing commands as `occt_motion_study`, `occt_balance_report`
+and `occt_joint_branches`. Retrieve a complete request with `occt_get_example`:
+[slider-clearance](../tools/model/slider-clearance.request.json),
+[block-balance](../tools/model/block-balance.request.json) or
+[linkage-branches](../tools/model/linkage-branches.request.json).
+
+Each request supplies `schema`, `model` and `setup`. The matching generated
+schemas are `motion_study`, `balance_report` and `joint_branches`. Commands
+write server-owned analysis artifacts and preserve the supplied model and
+accepted builds. A collision or unresolved continuous check returns
+`isError: true` with its full report. Branch searches retain their termination
+status and bounds; regenerate a branch to verify geometry and requirements.
+Balance reports require explicit/inherited density and an inline reference
+chord, and do not infer a safe CG range or evaluate structural stability.

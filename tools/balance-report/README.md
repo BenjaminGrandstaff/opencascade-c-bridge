@@ -111,3 +111,18 @@ The scale suite checks 100 integrations of 10,000 stations (5 s budget) and
 mass/material/CG reporting for 10,000 components sharing one geometry variant
 (10 s budget). Run `tools/bench/run.sh` or `cargo bench --bench balance` with the
 native library environment configured.
+
+## Use through MCP
+
+The [local MCP server](../model/MCP.md#launch-and-connect) exposes `occt_balance_report`
+when this executable is installed beside `occt-model` or in `--commands-dir`.
+Retrieve the complete [block-balance example](../model/block-balance.request.json)
+with `occt_get_example`, then pass it to the tool. Its request contains `schema`,
+`model` and `setup`; `occt_get_schema` exposes the `balance_report` schema.
+The executable also prints that complete MCP request schema with `--schema`;
+the positional CLI above continues to take separate model and setup files.
+
+Requires explicit or inherited material densities and an inline `reference.kind: "chord"`. MCP rejects `wing_project` paths; the direct CLI still supports them. The result reports geometric CG without an acceptance or stability verdict.
+Reports and named files are readable through returned `occt://analysis/...`
+resources. Model inputs and accepted builds remain unchanged. See the
+[shared workflow and resource limits](../model/MCP.md#drawing-inspection-and-mechanism-workflow).

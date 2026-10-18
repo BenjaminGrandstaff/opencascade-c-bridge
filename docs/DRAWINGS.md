@@ -1064,6 +1064,24 @@ establish geometric/form conformity. A benchmark checks
 100,000 measurements across 10,000 saved dimensions with no native handles.
 
 
+## Drawing and inspection through MCP
+
+The [local MCP server](../tools/model/MCP.md#drawing-inspection-and-mechanism-workflow)
+exposes `occt_export_drawings` and `occt_inspection_report`. Both take complete
+model/setup JSON with generated schemas; no caller-selected filesystem paths
+are needed. Start with [drawing-sheet](../tools/model/drawing-sheet.request.json)
+to export a saved dimensioned drawing as SVG and millimeter DXF, then use the
+returned `drawings.model.json` for
+[measured-sheet](../tools/model/measured-sheet.request.json) inspection.
+
+Drawing export retains supplied definitions in its output model. Inspection
+requires those definitions and supplied measurements. Reports include failed
+measurements with `isError: true` and readable `occt://analysis/...` artifacts;
+a failed result does not modify the source model or accepted builds. The
+`drawing_export` and `inspection_report` schemas are available through
+`occt_get_schema`. Each companion executable also supports `--schema` to print
+its complete MCP request contract.
+
 ## Inspection report command
 
 Run saved dimensional and fixed cylindrical position checks from JSON:
@@ -1117,8 +1135,10 @@ were not evaluated, plus how many evaluated controls are indeterminate. A
 `points` object may carry `uncertainty` as in an inspection record. Length results use mm, angles use scalar radians; output
 includes the full typed evaluation, margins, allowance and worst-sample index.
 Basic/reference/untoleranced dimensions retain their distinct dispositions and
-are counted as having no acceptance limits. No model/drawing edits, native shape
-regeneration or implicit measurement-coordinate transform occurs.
+are counted as having no acceptance limits. Dimensional and fixed-position checks
+do not regenerate geometry. Profile controls with a nominal `surface` can
+regenerate the selected output to obtain nominal points and normals. No
+model/drawing edits or implicit measurement-coordinate transform occurs.
 
 Exit status is 0 when a report was written with no explicit violations, 2 when a
 report was written with dimensional, position or measured-control violations, and 1 for invalid

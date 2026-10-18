@@ -26,6 +26,11 @@ gate results and history live in [the roadmap](ROADMAP.md#current-status).
 
 Recently landed:
 
+- **AI design tools:** MCP now exports dimensioned drawings, evaluates supplied
+  measurements, checks motion and collisions, reports mass/CG, discovers linkage
+  poses and merges model snapshots. Generated schemas and complete examples
+  accompany each tool; failed checks retain readable reports
+  ([workflow](tools/model/MCP.md#drawing-inspection-and-mechanism-workflow)).
 - **Sheet metal:** edge flanges with bend reliefs, closed and teardrop hems,
   and cutouts that run across bends, all unfolding into a flat pattern at
   the neutral factor K ([docs](docs/SHEET_METAL.md)).
@@ -42,7 +47,9 @@ Recently landed:
   per-view part visibility.
 
 Next on [the roadmap](ROADMAP.md#next): drawing conventions and
-manufacturing sheets from the ASME Y14 family.
+manufacturing sheets from the ASME Y14 family. The next
+[AI authoring priority](ROADMAP.md#ai-design-tool) is bounded multi-view visual
+feedback so an AI can inspect generated parts.
 
 ## Screenshots
 
@@ -203,6 +210,44 @@ adds `acceptance: "fully_constrained"` to reject sketches with remaining local
 free degrees before generating geometry. Try
 [`strict-sketch-block`](tools/model/strict-sketch-block.request.json) and set
 `lift` to zero to inspect a solved sketch rejected by the policy.
+
+### Start the AI tools
+
+Build the native bridge using [Build and test](#build-and-test), then build all
+Rust commands and launch the local stdio server:
+
+```sh
+OCCT_BRIDGE_LIB_DIR="$PWD/build" LD_LIBRARY_PATH="$PWD/build" \
+  cargo build --manifest-path rust/occt-parametric/Cargo.toml --bins
+LD_LIBRARY_PATH="$PWD/build" python3 tools/model/mcp_server.py \
+  --binary "$PWD/rust/occt-parametric/target/debug/occt-model" \
+  --output-root /tmp/occt-ai-artifacts
+```
+
+Configure the AI client's stdio connection to launch that command; see
+[connection details](tools/model/MCP.md#launch-and-connect). The server discovers
+companion executables beside `occt-model`; use `--commands-dir` if they are
+installed elsewhere. Read `occt://catalog` for the running engine's schema,
+examples, available tools and missing executables. Counts come from the code.
+
+| Task | MCP tool | Complete example |
+| --- | --- | --- |
+| Build folded and flat sheet metal | `occt_build` | [Hemmed tray](tools/model/hemmed-tray.request.json) |
+| Build a shell with a tapped bore | `occt_build` | [Tapped shell](tools/model/tapped-shell.request.json) |
+| Export dimensioned SVG/DXF drawings | `occt_export_drawings` | [Drawing sheet](tools/model/drawing-sheet.request.json) |
+| Check supplied measurements | `occt_inspection_report` | [Measured sheet](tools/model/measured-sheet.request.json) |
+| Check travel and continuous collisions | `occt_motion_study` | [Slider clearance](tools/model/slider-clearance.request.json) |
+| Measure mass, inertia and geometric CG | `occt_balance_report` | [Block balance](tools/model/block-balance.request.json) |
+| Discover alternative linkage poses | `occt_joint_branches` | [Linkage branches](tools/model/linkage-branches.request.json) |
+| Merge independent model edits | `occt_merge_documents` | [Merged block](tools/model/merged-block.request.json) |
+
+Retrieve an example with `occt_get_example` and pass it to the matching tool.
+Design commands return reports and `occt://analysis/...` artifact URIs. Failed
+measurement checks, collisions and merge conflicts retain their reports for
+inspection. Build merged or branch models separately to verify geometry and
+requirements before accepting them. The tapped-shell example uses a cosmetic
+thread declaration; dimensions, densities and bend allowances in examples are
+explicit demonstration assumptions. See the [full workflow and limits](tools/model/MCP.md#drawing-inspection-and-mechanism-workflow).
 
 ## Repository layout
 

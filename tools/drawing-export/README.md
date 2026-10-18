@@ -72,3 +72,18 @@ stacked deviations and limits. The second shows an angular tolerance stack.
 Labels remain upright, with estimated paper-space extents shared by SVG and
 DXF. This layout example uses illustrative dimensions and font advances;
 see [placement limits](../../docs/DRAWINGS.md#upright-dimension-label-layout).
+
+## Use through MCP
+
+The [local MCP server](../model/MCP.md#launch-and-connect) exposes `occt_export_drawings`
+when this executable is installed beside `occt-model` or in `--commands-dir`.
+Retrieve the complete [drawing-sheet example](../model/drawing-sheet.request.json)
+with `occt_get_example`, then pass it to the tool. Its request contains `schema`,
+`model` and `setup`; `occt_get_schema` exposes the `drawing_export` schema.
+The executable also prints that complete MCP request schema with `--schema`;
+the positional CLI above continues to take separate model and setup files.
+
+Exports SVG/DXF, a manifest and `drawings.model.json` with the retained drawing definitions. Use that model for subsequent measurement inspection.
+Reports and named files are readable through returned `occt://analysis/...`
+resources. Model inputs and accepted builds remain unchanged. See the
+[shared workflow and resource limits](../model/MCP.md#drawing-inspection-and-mechanism-workflow).

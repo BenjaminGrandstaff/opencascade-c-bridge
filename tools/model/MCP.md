@@ -15,7 +15,7 @@ for protocol versions `2025-11-25` and `2025-06-18`.
 From the repository root:
 
 ```sh
-LD_LIBRARY_PATH="$PWD/build" cargo build \
+OCCT_BRIDGE_LIB_DIR="$PWD/build" LD_LIBRARY_PATH="$PWD/build" cargo build \
   --manifest-path rust/occt-parametric/Cargo.toml --bins
 LD_LIBRARY_PATH="$PWD/build" python3 tools/model/mcp_server.py \
   --binary "$PWD/rust/occt-parametric/target/debug/occt-model" \
@@ -36,7 +36,8 @@ pending; workers run independently. Cancellation and stdin closure terminate
 pending workers and remove their unaccepted work directories. No HTTP listener
 or remote service is started.
 
-The server discovers optional design executables beside `--binary`. Use
+Build all companion commands before running the full wire test suite. The
+server discovers optional design executables beside `--binary`. Use
 `--commands-dir /absolute/directory` when they are installed elsewhere. Only
 installed commands are advertised as tools; the `unavailable_tools` field of
 `occt://catalog` reports missing tools. Rebuild the commands alongside the model

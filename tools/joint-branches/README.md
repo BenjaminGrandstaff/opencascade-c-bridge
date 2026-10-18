@@ -45,3 +45,18 @@ freedom or a force equilibrium. Reload a selected branch for geometry/collision
 checks and use its pose as the seed for a closed motion study.
 
 See [the API and resource limits](../../docs/ASSEMBLY_MOTION.md#alternative-linkage-poses).
+
+## Use through MCP
+
+The [local MCP server](../model/MCP.md#launch-and-connect) exposes `occt_joint_branches`
+when this executable is installed beside `occt-model` or in `--commands-dir`.
+Retrieve the complete [linkage-branches example](../model/linkage-branches.request.json)
+with `occt_get_example`, then pass it to the tool. Its request contains `schema`,
+`model` and `setup`; `occt_get_schema` exposes the `joint_branches` schema.
+The executable also prints that complete MCP request schema with `--schema`;
+the positional CLI above continues to take separate model and setup files.
+
+Returns the search report and reloadable branch models. Inspect termination status and bounds; a completed search does not prove exhaustive discovery. Build a selected branch separately to verify geometry and requirements.
+Reports and named files are readable through returned `occt://analysis/...`
+resources. Model inputs and accepted builds remain unchanged. See the
+[shared workflow and resource limits](../model/MCP.md#drawing-inspection-and-mechanism-workflow).
