@@ -1,0 +1,257 @@
+{
+  "schema": "occb-model-request-v1",
+  "model": {
+    "schema_version": 178,
+    "family": {
+      "id": "tapped-shell",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "tap_drill",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 5,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 4.9,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 5.2,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "body-valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "Selected manufacturing geometry must be valid",
+          "rule": {
+            "shape_valid": {
+              "output": "body"
+            }
+          },
+          "provenance": "example; demonstration assumptions",
+          "traces": [
+            {
+              "feature": "body"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "blank",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 40,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 30,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 24,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "shell",
+          "operation": {
+            "hollow": {
+              "input": "blank",
+              "faces": [
+                {
+                  "normal_aligned": {
+                    "direction": {
+                      "literal": {
+                        "x": {
+                          "value": 0,
+                          "dimension": "scalar",
+                          "unit": null
+                        },
+                        "y": {
+                          "value": 0,
+                          "dimension": "scalar",
+                          "unit": null
+                        },
+                        "z": {
+                          "value": 1,
+                          "dimension": "scalar",
+                          "unit": null
+                        }
+                      }
+                    },
+                    "minimum_dot": {
+                      "literal": {
+                        "value": 0.999,
+                        "dimension": "scalar",
+                        "unit": null
+                      }
+                    }
+                  }
+                }
+              ],
+              "thickness": {
+                "literal": {
+                  "value": -6,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "tolerance": {
+                "literal": {
+                  "value": 0.0001,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "body",
+          "operation": {
+            "hole": {
+              "input": "shell",
+              "position": {
+                "literal": {
+                  "x": {
+                    "value": 12,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "diameter": {
+                "parameter": "tap_drill"
+              },
+              "extent": {
+                "blind": {
+                  "depth": {
+                    "literal": {
+                      "value": 6,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "bottom": "flat",
+              "finish": "plain",
+              "thread": {
+                "designation": "M6x1",
+                "nominal_diameter": {
+                  "literal": {
+                    "value": 6,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                },
+                "pitch": {
+                  "literal": {
+                    "value": 1,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                },
+                "handedness": "right"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "body",
+          "overrides": {},
+          "provenance": "Example; dimensions, thread engagement and bend allowances are demonstration assumptions"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "body",
+      "output": "body"
+    }
+  ],
+  "step": true,
+  "preview": true
+}

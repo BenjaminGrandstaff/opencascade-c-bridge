@@ -1,0 +1,399 @@
+{
+  "schema": "occb-model-request-v1",
+  "model": {
+    "schema_version": 178,
+    "family": {
+      "id": "hemmed-tray",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "neutral_factor",
+          "parameter_type": {
+            "scalar": "scalar"
+          },
+          "default": {
+            "scalar": {
+              "value": 0.5,
+              "dimension": "scalar",
+              "unit": null
+            }
+          },
+          "minimum": {
+            "value": 0.3,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "maximum": {
+            "value": 0.5,
+            "dimension": "scalar",
+            "unit": null
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "folded-valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "Selected manufacturing geometry must be valid",
+          "rule": {
+            "shape_valid": {
+              "output": "folded"
+            }
+          },
+          "provenance": "example; demonstration assumptions",
+          "traces": [
+            {
+              "feature": "folded"
+            }
+          ]
+        },
+        {
+          "id": "flat-valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "Selected manufacturing geometry must be valid",
+          "rule": {
+            "shape_valid": {
+              "output": "flat"
+            }
+          },
+          "provenance": "example; demonstration assumptions",
+          "traces": [
+            {
+              "feature": "flat"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "folded",
+          "operation": {
+            "sheet_metal": {
+              "definition": {
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "width_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "start_direction": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "width": {
+                  "literal": {
+                    "value": 30,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                },
+                "thickness": {
+                  "literal": {
+                    "value": 2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                },
+                "flanges": [
+                  {
+                    "literal": {
+                      "value": 20,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  {
+                    "literal": {
+                      "value": 20,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  {
+                    "literal": {
+                      "value": 20,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                ],
+                "bends": [
+                  {
+                    "angle_radians": {
+                      "literal": {
+                        "value": 1.5707963267948966,
+                        "dimension": "scalar",
+                        "unit": null
+                      }
+                    },
+                    "inside_radius": {
+                      "literal": {
+                        "value": 3,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  },
+                  {
+                    "angle_radians": {
+                      "literal": {
+                        "value": 1.5707963267948966,
+                        "dimension": "scalar",
+                        "unit": null
+                      }
+                    },
+                    "inside_radius": {
+                      "literal": {
+                        "value": 3,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                ],
+                "end_hem": {
+                  "kind": "closed",
+                  "side": "negative",
+                  "length": {
+                    "literal": {
+                      "value": 8,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "cutouts": [
+                  {
+                    "id": "bend-slot",
+                    "flange": 0,
+                    "along": {
+                      "literal": {
+                        "value": 23.141592653589793,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "across": {
+                      "literal": {
+                        "value": 15,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "shape": {
+                      "kind": "slot",
+                      "length": {
+                        "literal": {
+                          "value": 16,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      "width": {
+                        "literal": {
+                          "value": 3,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      }
+                    }
+                  }
+                ],
+                "edge_flanges": [
+                  {
+                    "id": "wall-origin",
+                    "flange": 1,
+                    "edge": "origin",
+                    "start": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "length": {
+                      "literal": {
+                        "value": 20,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "angle_radians": {
+                      "literal": {
+                        "value": 1.5707963267948966,
+                        "dimension": "scalar",
+                        "unit": null
+                      }
+                    },
+                    "inside_radius": {
+                      "literal": {
+                        "value": 1,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "height": {
+                      "literal": {
+                        "value": 8,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "relief_depth": {
+                      "literal": {
+                        "value": 4,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  },
+                  {
+                    "id": "wall-far",
+                    "flange": 1,
+                    "edge": "far",
+                    "start": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "length": {
+                      "literal": {
+                        "value": 20,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "angle_radians": {
+                      "literal": {
+                        "value": 1.5707963267948966,
+                        "dimension": "scalar",
+                        "unit": null
+                      }
+                    },
+                    "inside_radius": {
+                      "literal": {
+                        "value": 1,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "height": {
+                      "literal": {
+                        "value": 8,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "relief_depth": {
+                      "literal": {
+                        "value": 4,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "flat",
+          "operation": {
+            "sheet_metal_flat": {
+              "input": "folded",
+              "neutral_factor": {
+                "parameter": "neutral_factor"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "folded",
+          "overrides": {},
+          "provenance": "Example; dimensions, thread engagement and bend allowances are demonstration assumptions"
+        }
+      },
+      {
+        "base": {
+          "id": "flat",
+          "overrides": {},
+          "provenance": "Example; dimensions, thread engagement and bend allowances are demonstration assumptions"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "folded",
+      "output": "folded"
+    },
+    {
+      "instance": "flat",
+      "output": "flat"
+    }
+  ],
+  "step": true,
+  "preview": true
+}

@@ -42,16 +42,18 @@ or remote service is started.
 | `occt_get_schema` | `name`: `request`, `model`, `feature`, `parameter`, `sketch`, `requirement`, `inspection`, `face_selector`, `edge_selector`, `edit`, `change`, `sketch_change`, or `view` | Complete generated JSON Schema |
 | `occt_get_example` | Any name listed by `tools/list`, including `sketch-repair` | Complete editable build or visualization request |
 | `occt_visualize_model` | `occb-model-view-v1` request | Annotated sketch/solid viewer and diagnostic snapshots |
-| `occt_inspect_model` / `occt_inspect_build` | Model or accepted build ID, instance and output or sketch feature | Read-only declarations, geometry queries or focused sketch diagnosis |
+| `occt_inspect_model` / `occt_inspect_build` | Model or accepted build ID, instance and output, sketch feature or loft feature | Read-only declarations, geometry queries or focused sketch/loft diagnosis |
 | `occt_preview_edit_build` | Accepted build ID/hash, guarded changes, outputs and proposed revision metadata | Diagnostic candidate with no accepted build or new revision |
 | `occt_edit_build` | Accepted build ID/hash, guarded changes, outputs and revision metadata | Verified new build and semantic change record |
 | `occt_build` | The entire `occb-model-request-v1` object | Accepted report, build ID, local directory, and artifact resource URIs |
 
 `tools/list` provides the generated complete request schema as `occt_build`'s
-input schema. All 40 current feature operations and their nested request-schema
-definitions are discoverable. Schemas derive from serde-compatible Rust types;
+input schema. All feature operations and their nested request-schema definitions are
+discoverable. Schemas derive from serde-compatible Rust types;
 new serialized variants require schema support at compilation. Authoring schemas
-target current model schema 133. The engine still migrates older documents.
+include the current model version as
+`$defs.ModelDocument.properties.schema_version.const` in the request schema.
+The engine still migrates older documents.
 Schemas describe serialization and basic request bounds; units, dependency
 references, dimensional constraints, selector resolution, and geometry validity
 are checked by the build engine.
@@ -63,8 +65,14 @@ LD_LIBRARY_PATH="$PWD/build" rust/occt-parametric/target/debug/occt-model \
   --schema request > /tmp/occt-request.schema.json
 ```
 
-`resources/list` advertises thirteen `occt://schema/NAME` and seventy-four
-`occt://example/NAME` resources. Accepted builds return specific
+`resources/list` advertises `occt://schema/NAME`, `occt://example/NAME`, and
+`occt://catalog` resources. The catalog reports the current model schema version,
+supported schema names, feature operation names, example request kinds, and
+counts of tools, schemas, examples, resources and request definitions. Counts
+come from the loaded schemas and server declarations. Every `*.request.json`
+in this directory is automatically exposed; restart the server after adding one.
+Read the catalog at runtime instead of relying on a count copied into prose.
+Accepted builds return specific
 `occt://build/BUILD_ID/ARTIFACT` URIs; a resource template advertises this form.
 JSON and SVG resources return text, while STEP and STL return base64 blobs.
 Reads are limited to 32 MiB; larger artifacts remain available at the returned
@@ -97,7 +105,8 @@ shared sessions/revision locking, or prove unverified strength/manufacturability
 ## Validation and scale
 
 Wire tests use the actual server and model executable. They independently check
-all thirteen schemas with a Draft 2020-12 validator, validate all four examples, test
+every exposed schema with a Draft 2020-12 validator, validate every example
+against its build or visualization schema and current model version, test
 initialization/discovery/errors, exercise bracket build/edit/reject/repair and
 artifact reads, reject path traversal, and stop/clean timed-out and cancelled
 workers (including repeated cancellation).
@@ -415,8 +424,7 @@ See [mirrors](../../docs/MIRRORS.md); current builds require native ABI 54.
 `scale_factor` is dimensionless and positive; `scale_center_x` moves the centre
 in millimetres. Native geometry, bounds, volume and source-face ancestry follow
 edits. The viewer links both controls to the scale label and displays measured
-result spans. See [scaling](../../docs/SCALING.md). The catalog contains 36 examples
-and 12 generated schemas, exposed as 48 discovery resources.
+result spans. See [scaling](../../docs/SCALING.md). Current capabilities are available in `occt://catalog`.
 
 
 `spring` combines the schema-82 helix operation with a parameter-driven circular
@@ -466,8 +474,7 @@ See [pattern ancestry](../../docs/PART_PATTERNS.md#retained-pattern-ancestry).
 `threaded-rod` demonstrates the existing modeled-thread operation with linked
 major diameter, pitch, run and derived turns. Its source radius and height
 follow diameter/run edits, with an illustrative unthreaded margin at both ends.
-Native validation and removed-volume checks cover the generated solid. The
-catalog targets schema 100; see [thread viewer semantics](../../docs/THREADS.md#ai-example-and-viewer-dimensions).
+Native validation and removed-volume checks cover the generated solid. See [thread viewer semantics](../../docs/THREADS.md#ai-example-and-viewer-dimensions).
 
 
 `edge-treatments` demonstrates constant-radius fillets and equal-distance
@@ -489,7 +496,7 @@ See [variable contour laws](../../docs/EDGE_TREATMENTS.md#variable-radius-contou
 Two hole-wire definitions retain the same explicit circle relationship and
 select different profile boundaries. A planar region and extrusion build the
 plate. Source sketches, real equality residuals and related controls are
-visible alongside the solid. Current catalog examples match schema 100.
+visible alongside the solid.
 See [equal circular radii](../../docs/SKETCHES.md#equal-circular-radii-schema-92).
 
 
@@ -523,26 +530,22 @@ A side-selected line/circle relation and external circle/circle relation solve
 the boss location without shared point IDs, then a native profile is extruded.
 The viewer publishes calculated contact anchors, target entity IDs and real
 millimetre residuals. The request schema exposes `SketchLineSide` and
-`SketchCircleTangency`, bringing the request to 147 definitions; the discovery
-catalog has 36 examples plus 12 schemas (48 resources).
+`SketchCircleTangency`.
 
 `arc-tangent-boss` demonstrates schema-98 directed arc contacts. The independent
 line/circular tangencies accept arcs in their circular roles and measure both
 supporting-circle tangency and directed-span membership. Its boss arc and
 closing chord generate an exact native segment face and solid. The viewer
-exposes span-inclusive millimetre residuals and calculated contacts. The catalog
-has 36 examples plus 12 schemas (48 resources); the request retains 147 definitions.
+exposes span-inclusive millimetre residuals and calculated contacts.
 
 `rational-spline-cap` demonstrates schema-99 explicit B-spline bases with a
 parameter-driven rational weight. Native ABI 53 builds the supplied poles,
 knots, multiplicities and weights directly; the viewer publishes their basis
-metadata, linked controls and dashed control polygon. The request schema has
-148 definitions and the catalog has 36 examples plus 12 schemas (48 resources).
+metadata, linked controls and dashed control polygon.
 
 `periodic-spline-pad` demonstrates schema-100 periodic explicit bases, native
 seam closure, closed control polygons and a linked rational corner weight.
-The catalog has 36 examples plus 12 schemas (48 resources); request schemas
-retain 148 definitions. Native ABI 54 is required for the periodic flag semantics.
+Native ABI 54 introduced the periodic flag semantics.
 
 The `strict-sketch-block` example demonstrates sketch `acceptance`:
 `fully_constrained` requires satisfied equations and zero local free degrees.
@@ -573,37 +576,33 @@ of source geometry. See
 [named references](../../docs/SKETCHES.md#named-chain-junction-references-schema-118).
 
 
-`occt_get_example {"name":"projected-intersection-pad"}` returns a schema-119
+`occt_get_example {"name":"projected-intersection-pad"}` returns a
 view request with circle–line crossings driving a solid pad. Named intersection
 annotations target both projected curves and their fixed reference point, and
 include controls from both sources. Change `radius` to move the pad; overly broad
-`match_radius` or a shifted missing hint rejects the build. The catalog now has
-55 examples and 12 schemas (67 resources); the request has 154 definitions.
+`match_radius` or a shifted missing hint rejects the build.
 See [intersection rules](../../docs/SKETCHES.md#named-projected-intersections-schema-119).
 
 
 ABI 61 adds `projected-spline-intersection-pad` and
 `projected-ellipse-intersection-pad`, available through `occt_get_example` and
-example resources. Both are schema-119 view requests with exact native crossings,
+example resources. Both are view requests with exact native crossings,
 fully constrained pads, direct crossing dimensions and both source controls.
-The catalog contains 57 examples and 12 schemas (69 resources), with 154 request
-definitions. All 59 saved model examples remain at schema 119. See
+See
 [native crossings](../../docs/SKETCHES.md#native-projected-intersections-abi-61).
 
 
 `occt_get_example {"name":"projected-tangent-intersection-pad"}` returns the
-schema-119 isolated-touch demo. A projected line touches a quadratic spline,
+isolated-touch demo (introduced in schema 119). A projected line touches a quadratic spline,
 and its named contact drives a pad and its dimension. Change `width`/`rise` to
 move it; positive `offset` rejects no contact, negative `offset` rejects two
-contacts. The catalog now contains 58 examples and 12 schemas (70 resources),
-with 154 request definitions. All 60 saved model examples remain at schema 119;
-native ABI remains 61. See [touch rules](../../docs/SKETCHES.md#isolated-line-spline-touches-schema-119--abi-61).
+contacts. See [touch rules](../../docs/SKETCHES.md#isolated-line-spline-touches-schema-119--abi-61).
 
 ## Sketch edit and repair workflow
 
 Use `occt_get_example` with `sketch-repair` for a buildable sketch containing a
-deliberately duplicated driving angle. The saved model remains schema 133;
-this workflow extends authoring requests, not the saved model format.
+deliberately duplicated driving angle. Examples use the current model schema;
+this workflow preserves the model’s existing requirements.
 
 1. Build the example and retain its accepted `build_id` and `model_sha256`.
 2. Call `occt_inspect_build` with `instance: "part"` and
@@ -681,3 +680,24 @@ and unavailable source geometry fail explicitly; local solve errors appear in
 local redundancy, conflict groups and free motion; they never choose design
 intent, execute automatically or add arbitrary fixed-point constraints. Local
 redundancy does not prove equivalence across every parameter configuration.
+
+## Manufacturing examples
+
+`hemmed-tray` is a build request for a 2 mm sheet with two main bends,
+relieved side walls, a closed end hem, and a slot spanning the first bend.
+Its `folded` and `flat` instances select different features from the same
+parameter variant. The linked blank uses a neutral factor of 0.5; its exact
+volume matches the folded part. `neutral_factor` can be edited to explore bend
+allowances; production allowances require material and tooling calibration.
+
+`tapped-shell` opens the top of a block with an inward 6 mm shell, then drills
+a 5 mm bore through its bottom wall with an M6x1 thread declaration. Thread
+geometry is cosmetic (no helical material removal); the exact volume check
+therefore measures the shell minus the cylindrical tap-drill bore. `tap_drill`
+is editable. Dimensions and thread engagement are demonstration assumptions.
+
+Retrieve either with `occt_get_example`, then pass the complete request to
+`occt_build`. Inspect the accepted build before guarded parameter edits. Both
+examples retain required shape-validity checks and export STEP plus annotated
+viewer artifacts. Wire tests build them, compare exact volumes, and rebuild
+a changed tap drill without modifying the original accepted build.

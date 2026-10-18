@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 175 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 791 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 98 + viewer Node 472 + branch command 2 + model command 95, MCP Python 14, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 175 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 791 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 98 + viewer Node 472 + branch command 2 + model command 95, MCP Python 15, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -3407,16 +3407,18 @@ The single-part AI loop works end to end: [MCP](tools/model/MCP.md) exposes
 generated schemas and examples, builds with verified requirements, read-only
 inspection, and guarded previews and edits with revision history. The gaps
 below keep an AI from using the rest of the engine as a design tool. They are
-ordered by priority; the first is cheap and corrects misleading guidance.
+ordered by priority; the catalog/documentation foundation is complete.
 
-1. **Current AI documentation and examples** — `tools/model/MCP.md` still
-   says authoring schemas target schema 133 (now 178), counts 40 feature
-   operations, advertises 74 example resources, and says the wire tests
-   validate four examples (88 exist). There are no
-   sheet-metal examples, and shells, drafts, patterns and assemblies with
-   drawings or GD&T have few or none. Add examples (a sheet-metal tray with
-   hems and cutouts across bends, a tapped and shelled block) and make the
-   counts come from the code, so they cannot go stale.
+1. **Current AI documentation and examples — complete.** MCP automatically
+   exposes every local request example and publishes `occt://catalog` with the
+   running binary’s schema version, operations, example kinds and derived
+   capability counts. Wire tests validate the entire catalog against generated
+   build/view schemas and require the current model version. The new
+   `hemmed-tray` builds folded and flat outputs with side walls, a closed hem
+   and a bend-crossing slot; `tapped-shell` builds an open-top shell with a
+   cosmetic tapped bore. Wire tests check native exact volumes, parameter edits and
+   preservation of accepted builds. Broader assembly/drawing/GD&T examples
+   belong with the command exposure below.
 2. **MCP access to drawings, inspection and mechanisms** — MCP offers eight
    part tools. Drawing export, inspection reports, motion studies, balance
    reports, joint branches and document merge exist only as separate

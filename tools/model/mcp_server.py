@@ -17,7 +17,7 @@ import uuid
 
 PROTOCOLS = ('2025-11-25', '2025-06-18')
 SCHEMAS = ('request', 'model', 'feature', 'parameter', 'sketch', 'requirement', 'inspection', 'face_selector', 'edge_selector', 'edit', 'change', 'sketch_change', 'view')
-EXAMPLES = ('bracket', 'enclosure', 'shaft', 'mating-parts', 'sketch-block', 'sketch-conflict', 'sketch-advanced', 'extrusion-limits', 'curved-extrusions', 'drill-point', 'hole-limits', 'profile-loft', 'constrained-loft', 'normal-profile-loft', 'aligned-profile-loft', 'partitioned-profile-loft', 'curved-pipe', 'revolved-ring', 'symmetric-revolve', 'hollow-profile', 'hollow-sweep', 'hollow-loft', 'mirrored-part', 'scaled-part', 'spring', 'offset-part', 'multi-hole-plate', 'patterned-plate', 'bolt-circle', 'threaded-rod', 'edge-treatments', 'variable-fillet', 'equal-radius-plate', 'face-pocket', 'projected-pocket', 'concentric-bushing', 'tangent-boss', 'arc-tangent-boss', 'rational-spline-cap', 'periodic-spline-pad', 'non-clamped-spline-cap', 'ellipse-tangent-pad', 'spline-tangent-cap', 'spline-tangent-boss', 'spline-tangent-pair', 'spline-tangent-ellipse', 'ellipse-tangent-boss', 'ellipse-tangent-pair', 'corner-treated-plate', 'open-corner-pipe', 'spline-corner-pad', 'mirrored-flange', 'tapped-block', 'projected-tangent-intersection-pad', 'projected-spline-intersection-pad', 'projected-ellipse-intersection-pad', 'projected-intersection-pad', 'projected-junction-pad', 'projected-chain-pad', 'projected-spline-pad', 'strict-sketch-block', 'sketch-diagnosis', 'split-housing', 'thickened-strap', 'dimensioned-plate', 'slotted-plate', 'arched-panel', 'conic-nose', 'keyhole-tag', 'spacer-set', 'g2-paddle', 'engraved-nameplate', 'discovered-lens', 'composed-regions', 'edited-regions', 'stable-sketch-references', 'reliable-sketch', 'sketch-repair')
+EXAMPLES = tuple(sorted(path.name.removesuffix('.request.json') for path in pathlib.Path(__file__).resolve().parent.glob('*.request.json')))
 MAX_MESSAGE = 64 * 1024 * 1024
 MAX_RESOURCE = 32 * 1024 * 1024
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -71,6 +71,17 @@ class Server:
         self.build_edit_schema['required'] = [name for name in self.build_edit_schema['required'] if name not in ('schema', 'model')]
         self.build_edit_schema['required'].extend(['build_id', 'expected_model_sha256'])
 
+        self.catalog = {
+            'schema_version': self.schemas['model']['properties']['schema_version']['const'],
+            'schemas': list(SCHEMAS),
+            'feature_operations': sorted(next(iter(v['properties'])) for v in self.schemas['request']['$defs']['FeatureOperation']['oneOf']),
+            'examples': {name: request['schema'] for name, request in self.examples.items()},
+            'counts': {'tools': len(self.tools()), 'schemas': len(self.schemas), 'examples': len(self.examples),
+                       'resources': len(self.fixed_resources()),
+                       'feature_operations': len(self.schemas['request']['$defs']['FeatureOperation']['oneOf']),
+                       'request_definitions': len(self.schemas['request']['$defs'])},
+        }
+
     def tools(self):
         read = dict(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
         return [
@@ -93,7 +104,7 @@ class Server:
         ]
 
     def fixed_resources(self):
-        return [dict(uri=f'occt://schema/{name}', name=f'{name} schema', mimeType='application/schema+json') for name in SCHEMAS] + [
+        return [dict(uri='occt://catalog', name='Current authoring capabilities and examples', mimeType='application/json')] + [dict(uri=f'occt://schema/{name}', name=f'{name} schema', mimeType='application/schema+json') for name in SCHEMAS] + [
             dict(uri=f'occt://example/{name}', name=f'{name} example request', mimeType='application/json') for name in EXAMPLES]
 
     @staticmethod
@@ -108,6 +119,8 @@ class Server:
         for prefix, values, mime in [('occt://schema/', self.schemas, 'application/schema+json'), ('occt://example/', self.examples, 'application/json')]:
             if uri.startswith(prefix) and uri[len(prefix):] in values:
                 return {'contents': [dict(uri=uri, mimeType=mime, text=encode(values[uri[len(prefix):]]))]}
+        if uri == 'occt://catalog':
+            return {'contents': [dict(uri=uri, mimeType='application/json', text=encode(self.catalog))]}
         match = re.fullmatch(r'occt://build/([0-9a-f]{32})/([a-zA-Z0-9_.-]+)', uri)
         if not match:
             raise RpcError(-32002, 'unknown resource')
@@ -261,7 +274,7 @@ class Server:
             return dict(protocolVersion=params['protocolVersion'] if params['protocolVersion'] in PROTOCOLS else PROTOCOLS[0],
                         capabilities=dict(tools=dict(listChanged=False), resources=dict(listChanged=False)),
                         serverInfo=dict(name='occt-model', version='0.1.0'),
-                        instructions='Read a schema/example, preserve requirements and explicit assumptions, then build. Inspect sketch_feature for solver/repair evidence or loft_feature for isolated correspondence diagnostics, preview guarded proposals with occt_preview_edit_build, then publish intended changes with occt_edit_build. Read model.json to continue from the accepted model. Preview SVGs are sampled; inspect requirement evidence.')
+                        instructions='Read occt://catalog for current capabilities, then a schema/example, preserve requirements and explicit assumptions, then build. Inspect sketch_feature for solver/repair evidence or loft_feature for isolated correspondence diagnostics, preview guarded proposals with occt_preview_edit_build, then publish intended changes with occt_edit_build. Read model.json to continue from the accepted model. Preview SVGs are sampled; inspect requirement evidence.')
         if self.state != 'ready':
             raise RpcError(-32600, 'initialize and send notifications/initialized first')
         if method == 'tools/list':

@@ -99,20 +99,38 @@ class McpTests(unittest.TestCase):
         jsonschema.Draft202012Validator.check_schema(schema)
         self.assertEqual(schema['properties']['model']['$ref'], '#/$defs/ModelDocument')
         variants = schema['$defs']['FeatureOperation']['oneOf']
-        self.assertEqual(len(variants), 40)
-        for name in ['request', 'model', 'feature', 'parameter', 'sketch', 'requirement', 'inspection', 'face_selector', 'edge_selector', 'edit', 'change', 'sketch_change', 'view']:
+        operations = sorted(next(iter(v['properties'])) for v in variants)
+        catalog = json.loads(self.client.call('resources/read', dict(uri='occt://catalog'))['result']['contents'][0]['text'])
+        self.assertEqual(catalog['feature_operations'], operations)
+        self.assertEqual(catalog['counts']['tools'], len(tools))
+        self.assertEqual(catalog['counts']['feature_operations'], len(operations))
+        self.assertEqual(catalog['counts']['request_definitions'], len(schema['$defs']))
+        validators = {}
+        for name in catalog['schemas']:
             result = self.client.tool('occt_get_schema', dict(name=name))
             self.assertFalse(result['isError'])
             jsonschema.Draft202012Validator.check_schema(result['structuredContent'])
-        for name in ['bracket', 'enclosure', 'shaft', 'mating-parts']:
-            example = self.client.tool('occt_get_example', dict(name=name))['structuredContent']
-            jsonschema.validate(example, schema)
+            validators[name] = jsonschema.Draft202012Validator(result['structuredContent'])
+        files = {p.name.removesuffix('.request.json') for p in (ROOT / 'tools/model').glob('*.request.json')}
+        self.assertEqual(set(catalog['examples']), files)
+        example_tool = next(t for t in tools if t['name'] == 'occt_get_example')
+        self.assertEqual(set(example_tool['inputSchema']['properties']['name']['enum']), files)
+        self.assertEqual(catalog['counts']['examples'], len(files))
+        self.assertEqual(catalog['counts']['schemas'], len(validators))
+        for name, kind in catalog['examples'].items():
+            with self.subTest(example=name):
+                example = self.client.tool('occt_get_example', dict(name=name))['structuredContent']
+                validators['request' if kind == 'occb-model-request-v1' else 'view'].validate(example)
+                self.assertEqual(example['model']['schema_version'], catalog['schema_version'])
+                resource = self.client.call('resources/read', dict(uri=f'occt://example/{name}'))['result']['contents'][0]
+                self.assertEqual(json.loads(resource['text']), example)
         bad = self.client.tool('occt_get_example', dict(name='shaft'))['structuredContent']
         bad['unexpected'] = True
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
         resources = self.client.call('resources/list')['result']['resources']
-        self.assertEqual(len(resources), 91)
+        self.assertEqual({r['uri'] for r in resources}, {'occt://catalog'} | {f'occt://schema/{n}' for n in validators} | {f'occt://example/{n}' for n in files})
+        self.assertEqual(len(resources), catalog['counts']['resources'])
         self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
@@ -1016,6 +1034,36 @@ class McpTests(unittest.TestCase):
             inspected=self.client.tool('occt_inspect_build',dict(build_id=built['structuredContent']['build_id'],instance='plate',output='body',face_selector=selector,limit=100))
             self.assertFalse(inspected['isError'])
             self.assertEqual(inspected['structuredContent']['geometry']['faces']['total'],count)
+
+    def test_manufacturing_examples_build_and_preserve_material(self):
+        tray = self.client.tool('occt_get_example', dict(name='hemmed-tray'))['structuredContent']
+        result = self.client.tool('occt_build', tray)
+        self.assertFalse(result['isError'], result)
+        outputs = result['structuredContent']['report']['outputs']
+        self.assertEqual(len(outputs), 2)
+        self.assertGreater(outputs[0]['volume_mm3'], 0)
+        self.assertTrue(all(o['valid'] for o in outputs))
+        self.assertTrue(all(r['status'] == 'passed' for r in result['structuredContent']['report']['verification']))
+        self.assertAlmostEqual(outputs[0]['volume_mm3'], outputs[1]['volume_mm3'], places=5)
+        shell = self.client.tool('occt_get_example', dict(name='tapped-shell'))['structuredContent']
+        result = self.client.tool('occt_build', shell)
+        self.assertFalse(result['isError'], result)
+        source = result['structuredContent']
+        expected = 40 * 30 * 24 - 28 * 18 * 18 - math.pi * 2.5**2 * 6
+        self.assertAlmostEqual(source['report']['outputs'][0]['volume_mm3'], expected, places=5)
+        self.assertTrue(all(r['status'] == 'passed' for r in source['report']['verification']))
+        original = pathlib.Path(source['directory'], 'model.json').read_bytes()
+        shell['edits'] = [dict(instance='body', parameter='tap_drill', value=dict(scalar=dict(value=5.2, dimension='length', unit='millimeter')))]
+        changed = self.client.tool('occt_build', shell)
+        self.assertFalse(changed['isError'], changed)
+        expected = 40 * 30 * 24 - 28 * 18 * 18 - math.pi * 2.6**2 * 6
+        self.assertAlmostEqual(changed['structuredContent']['report']['outputs'][0]['volume_mm3'], expected, places=5)
+        self.assertEqual(pathlib.Path(source['directory'], 'model.json').read_bytes(), original)
+        shell['edits'][0]['value']['scalar']['value'] = 20
+        rejected = self.client.tool('occt_build', shell)
+        self.assertTrue(rejected['isError'], rejected)
+        self.assertEqual(pathlib.Path(source['directory'], 'model.json').read_bytes(), original)
+
 
 if __name__ == '__main__':
     unittest.main()

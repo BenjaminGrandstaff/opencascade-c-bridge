@@ -24,7 +24,7 @@ explicitly selected.
 ```json
 {
   "schema": "occb-model-request-v1",
-  "model": { "schema_version": 120, "...": "complete ModelDocument" },
+  "model": { "schema_version": 178, "...": "complete ModelDocument" },
   "outputs": [{ "instance": "bracket", "output": "body" }],
   "edits": [{
     "instance": "bracket",
@@ -103,7 +103,7 @@ Existing drawing definitions can be exported with `occt-drawing-export`.
 The command tests cover bracket creation, spacing edits, failed-wall rejection,
 repair, STEP re-import, STL/SVG generation, source/accepted-output preservation,
 schema migration, and malformed requests/edits/selections. The example and
-scale checker builds all four examples and verifies a 1,000-instance report
+focused scale checker builds the four original examples and verifies a 1,000-instance report
 with one shared variant within a 10-second budget:
 
 ```sh
@@ -167,3 +167,17 @@ ancestry reaches every generated wall. Split vectors support parameters and
 participate in incremental invalidation. All executable examples use schema 172.
 MCP exposes `partitioned-profile-loft`, `constrained-loft`, `normal-profile-loft`
 and `aligned-profile-loft` through `occt_get_example` and example resources.
+
+## Current AI authoring catalog
+
+MCP discovers every local `*.request.json` automatically and exposes the
+generated `occt://catalog` resource with the running binary’s model schema,
+feature operations and capability counts. See [MCP discovery](MCP.md). Wire
+tests validate all examples against their generated build or view schemas.
+
+Manufacturing build requests include [hemmed tray](hemmed-tray.request.json)
+(folded and flat outputs, closed hem, side walls and a bend-crossing slot) and
+[tapped shell](tapped-shell.request.json) (open-top shell and a cosmetic M6
+thread declaration on its bottom-wall bore). Both export STEP and interactive
+viewers. Dimensions, bend allowances and thread engagement are example
+assumptions; see [the workflow](MCP.md#manufacturing-examples).
