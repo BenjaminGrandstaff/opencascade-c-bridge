@@ -31,7 +31,7 @@ pub use threads::{MeasuredThread, ThreadDiameter, ThreadDiameterCheck, ThreadIns
 /// Upper bound on measured points in one record, which bounds memory and time.
 pub const MAX_INSPECTION_POINTS: usize = 10_000_000;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MeasuredFeature {
     /// Drawing datum feature ID or feature control frame ID.
@@ -44,7 +44,7 @@ pub struct MeasuredFeature {
     pub nominals: Vec<MeasuredNominal>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MeasuredNominal {
     pub point_mm: [f64; 3],
@@ -82,7 +82,7 @@ pub struct InspectionRecord {
 /// Expanded measurement uncertainty U of each control's measured deviation,
 /// as the measuring process reports it (usually with coverage factor k = 2),
 /// and the rule deciding conformance with it (ISO 14253-1, ASME B89.7.3.1).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MeasurementUncertainty {
     #[serde(default)]
@@ -105,7 +105,7 @@ pub struct MeasurementUncertainty {
 /// again, and U is `coverage` times the standard deviation of each control's
 /// deviation over the trials (the largest over a composite's segments).
 /// Deterministic for a given `seed`. Costs `trials` further evaluations.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UncertaintySimulation {
     pub point_mm: f64,
@@ -160,7 +160,9 @@ impl Normal {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum DecisionRule {
     /// Conforms when the deviation is within the allowed zone; U is
@@ -189,7 +191,7 @@ impl DecisionRule {
 /// requirement's parameter and unit (for example several Ra traces in µm),
 /// and stylus profiles whose parameter the report computes. Profile readings
 /// follow the given values, in order.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MeasuredTexture {
     pub id: String,

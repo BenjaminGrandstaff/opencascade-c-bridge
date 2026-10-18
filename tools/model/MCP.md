@@ -1,7 +1,8 @@
 # AI tools over local MCP
 
-The stdio server exposes the `occt-model` build loop directly to an MCP client.
-It uses Python 3.11+ standard-library modules and the built Rust executable;
+The stdio server exposes the `occt-model` build loop and existing design commands
+to an MCP client.
+It uses Python 3.11+ standard-library modules and built Rust executables;
 there are no Python runtime package dependencies. It targets POSIX pipe I/O.
 The server implements the MCP [stdio transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports),
 [lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle),
@@ -15,7 +16,7 @@ From the repository root:
 
 ```sh
 LD_LIBRARY_PATH="$PWD/build" cargo build \
-  --manifest-path rust/occt-parametric/Cargo.toml --bin occt-model
+  --manifest-path rust/occt-parametric/Cargo.toml --bins
 LD_LIBRARY_PATH="$PWD/build" python3 tools/model/mcp_server.py \
   --binary "$PWD/rust/occt-parametric/target/debug/occt-model" \
   --output-root /tmp/occt-ai-builds
@@ -30,21 +31,34 @@ particular AI application's settings.
 `--output-root` selects the persistent local artifact directory. Tool callers
 cannot choose filesystem destinations or executables. Each build uses a fresh
 UUID directory and preserves all earlier accepted builds. `--timeout` sets the
-per-build worker timeout in seconds (default 120). Up to eight requests may be
+per-worker timeout in seconds (default 120). Up to eight requests may be
 pending; workers run independently. Cancellation and stdin closure terminate
 pending workers and remove their unaccepted work directories. No HTTP listener
 or remote service is started.
+
+The server discovers optional design executables beside `--binary`. Use
+`--commands-dir /absolute/directory` when they are installed elsewhere. Only
+installed commands are advertised as tools; the `unavailable_tools` field of
+`occt://catalog` reports missing tools. Rebuild the commands alongside the model
+binary when updating the engine. A model-only installation retains the original
+part tools.
 
 ## Tools and resources
 
 | Tool | Arguments | Result |
 | --- | --- | --- |
-| `occt_get_schema` | `name`: `request`, `model`, `feature`, `parameter`, `sketch`, `requirement`, `inspection`, `face_selector`, `edge_selector`, `edit`, `change`, `sketch_change`, or `view` | Complete generated JSON Schema |
-| `occt_get_example` | Any name listed by `tools/list`, including `sketch-repair` | Complete editable build or visualization request |
+| `occt_get_schema` | `name`: a schema name from `occt://catalog` | Complete generated JSON Schema |
+| `occt_get_example` | Any name listed by `tools/list`, including `sketch-repair` | Complete editable build, visualization or command request |
 | `occt_visualize_model` | `occb-model-view-v1` request | Annotated sketch/solid viewer and diagnostic snapshots |
 | `occt_inspect_model` / `occt_inspect_build` | Model or accepted build ID, instance and output, sketch feature or loft feature | Read-only declarations, geometry queries or focused sketch/loft diagnosis |
 | `occt_preview_edit_build` | Accepted build ID/hash, guarded changes, outputs and proposed revision metadata | Diagnostic candidate with no accepted build or new revision |
 | `occt_edit_build` | Accepted build ID/hash, guarded changes, outputs and revision metadata | Verified new build and semantic change record |
+| `occt_export_drawings` | Model and drawing setup | SVG, DXF, retained drawing model and manifest |
+| `occt_inspection_report` | Model and supplied measurements | Complete dimensional/GD&T/texture/thread report, including failed checks |
+| `occt_motion_study` | Model and component drives | Sampled and continuous collision reports, assembly and study |
+| `occt_balance_report` | Model, materials and inline chord reference | Mass, inertia, per-material totals and geometric CG |
+| `occt_joint_branches` | Model and explicit seed axes | Bounded search report and reloadable branch models |
+| `occt_merge_documents` | Base, current and other model snapshots | Merged model or complete semantic conflicts |
 | `occt_build` | The entire `occb-model-request-v1` object | Accepted report, build ID, local directory, and artifact resource URIs |
 
 `tools/list` provides the generated complete request schema as `occt_build`'s
@@ -106,7 +120,7 @@ shared sessions/revision locking, or prove unverified strength/manufacturability
 
 Wire tests use the actual server and model executable. They independently check
 every exposed schema with a Draft 2020-12 validator, validate every example
-against its build or visualization schema and current model version, test
+against its build, visualization or command schema and current model version, test
 initialization/discovery/errors, exercise bracket build/edit/reject/repair and
 artifact reads, reject path traversal, and stop/clean timed-out and cancelled
 workers (including repeated cancellation).
@@ -209,7 +223,7 @@ LD_LIBRARY_PATH="$PWD/build" rust/occt-parametric/target/debug/occt-model \
 ```
 
 Additional schema names are `inspection`, `face_selector`, and `edge_selector`.
-`occt_get_schema` and `resources/list` expose all twelve schema targets. The
+`occt_get_schema` and `resources/list` expose the installed schema targets. The
 `occt_inspect_model`/`occt_inspect_build` input schemas are discoverable through
 `tools/list`. The report file must be new; the CLI does not overwrite it.
 
@@ -321,7 +335,7 @@ The CLI relies on the supplied model and feature guards; it has no parent-build
 store to verify a fingerprint. Optional `source` is caller-provided provenance
 there. The MCP tool loads/verifies the accepted snapshot and supplies source
 provenance itself. Schema targets `edit` and `change` are available through the
-CLI, discovery tools and resources, bringing the total to eleven schemas.
+CLI, discovery tools and resources.
 
 Three additional command tests cover guarded feature replacement, additions,
 removal, new requirements/references/parameters, parameter-only revision chains,
@@ -336,7 +350,7 @@ retrieves the accepted model within a 30-second budget.
 verdicts, dimension/control links, failed geometric-check witnesses and
 interactive solid orbiting. Accepted previews include it automatically;
 `occt_visualize_model` can display unaccepted proposals without promoting them
-into builds. `view` is the twelfth schema, and `sketch-block`/`sketch-conflict`
+into builds. `view` is available as a schema, and `sketch-block`/`sketch-conflict`
 are additional diagnostic examples.
 
 `sketch-advanced` demonstrates the schema-72 sketch additions. Its view request
@@ -701,3 +715,52 @@ Retrieve either with `occt_get_example`, then pass the complete request to
 examples retain required shape-validity checks and export STEP plus annotated
 viewer artifacts. Wire tests build them, compare exact volumes, and rebuild
 a changed tap drill without modifying the original accepted build.
+
+## Drawing, inspection and mechanism workflow
+
+Each command tool takes a complete generated request with `schema`, `model`
+and `setup`. The corresponding schema names are `drawing_export`,
+`inspection_report`, `motion_study`, `balance_report` and `joint_branches`.
+`document_merge` instead takes `schema`, `base`, `current` and `other`. Each
+command executable also prints its complete MCP request schema with `--schema`;
+its ordinary positional CLI contract remains available. All model snapshots
+use the current model schema. Retrieve a complete example with `occt_get_example`:
+
+| Example | Tool | Demonstrates |
+| --- | --- | --- |
+| `drawing-sheet` | `occt_export_drawings` | Saved dimensioned sheet, exact curves, SVG and DXF |
+| `measured-sheet` | `occt_inspection_report` | Supplied width against explicit limits |
+| `slider-clearance` | `occt_motion_study` | Clear slider travel; change end travel to −60 mm for a crossing |
+| `block-balance` | `occt_balance_report` | Explicit density and geometric CG relative to a chord |
+| `linkage-branches` | `occt_joint_branches` | Alternative crank-slider poses and bounded search status |
+| `merged-block` | `occt_merge_documents` | Independent edits to box dimensions |
+
+To continue from an accepted build, read its `model.json` resource and pass that
+snapshot as `model`. Drawing export uses saved definitions when `setup.drawings`
+is empty or omitted; supplied definitions are retained in `drawings.model.json`.
+Use that retained model for subsequent measurement inspection. An inspection
+report evaluates supplied measurements; it does not acquire measurements from
+a machine or infer their uncertainty. Balance requires explicit/inherited
+material density and an inline chord (`reference.kind: "chord"`); filesystem
+`wing_project` references are available only through the direct CLI.
+
+Command results return `analysis_id`, `command`, `status`, the complete `report`,
+a server-owned `directory`, and named `resources` under
+`occt://analysis/ANALYSIS_ID/ARTIFACT`. JSON, SVG and millimeter DXF are readable
+text resources with the same 32 MiB read limit as build artifacts. Input paths,
+logs, partial outputs and unlisted files are excluded. Timeouts and cancellation
+terminate the worker and remove partial outputs. The original model snapshots
+and accepted builds remain unchanged.
+
+A completed inspection with nonconforming measurements, motion collision or
+unresolved continuous check, or semantic merge conflict returns `isError: true`
+and `status: "failed_checks"` **with readable reports**. Malformed requests or
+worker failures publish no analysis artifacts. Branch searches expose their
+termination status and bounds; a successful tool call does not prove exhaustive
+discovery. Analysis results do not receive a `build_id`. Build a merged or
+branch model separately to verify geometry and requirements before accepting it.
+
+The merge CLI also supports `--report BASE CURRENT OTHER NEW_OUTPUT_DIRECTORY`
+for the same nonmutating report behavior; exit code 2 retains a conflict report.
+The ordinary Git merge-driver invocation continues to replace CURRENT only on
+a successful merge.

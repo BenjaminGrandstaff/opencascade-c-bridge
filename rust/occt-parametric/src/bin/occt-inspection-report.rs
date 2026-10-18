@@ -1,6 +1,9 @@
 //! Supplied dimensional and fixed position measurements against saved drawings.
 //! Profile controls with a `surface` take their nominals from the regenerated
 //! part when the measured points omit them.
+#[path = "design_schema/mod.rs"]
+mod design_schema;
+
 use occt_bridge::Session;
 use occt_parametric::*;
 use serde::{Deserialize, Serialize};
@@ -14,13 +17,13 @@ use std::{
     process::ExitCode,
 };
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Setup {
     schema: String,
     drawings: Vec<Request>,
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Request {
     drawing: String,
@@ -32,7 +35,7 @@ struct Request {
     #[serde(default)]
     points: Option<MeasuredPoints>,
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct MeasuredPoints {
     #[serde(default)]
@@ -142,6 +145,9 @@ struct Report {
 }
 
 fn main() -> ExitCode {
+    if design_schema::print::<Setup>("inspection-report") {
+        return ExitCode::SUCCESS;
+    }
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     match run(&args) {
         Ok(false) => ExitCode::SUCCESS,

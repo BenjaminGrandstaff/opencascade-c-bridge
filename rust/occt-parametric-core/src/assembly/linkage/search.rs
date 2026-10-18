@@ -3,7 +3,7 @@ use super::*;
 pub mod seeds;
 use seeds::{checked_axes, seed_graph};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct JointSeedAxis {
     pub variable: JointVariable,
@@ -11,7 +11,9 @@ pub struct JointSeedAxis {
     pub seeds: Vec<Quantity>,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum JointBranchEquivalence {
     /// Compare unwrapped coordinate values, including complete revolutions.
@@ -21,7 +23,7 @@ pub enum JointBranchEquivalence {
     PeriodicAngles,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct JointBranchSearchOptions {
     pub joint_solver: JointSolveOptions,

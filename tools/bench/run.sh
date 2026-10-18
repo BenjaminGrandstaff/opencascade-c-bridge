@@ -120,7 +120,7 @@ OCCT_BRIDGE_LIB_DIR="$build" LD_LIBRARY_PATH="$build" \
 
 # AI command examples and 1,000-instance report/publication budget.
 OCCT_BRIDGE_LIB_DIR="$build" LD_LIBRARY_PATH="$build" \
-    cargo build --quiet --release --manifest-path "$root/rust/occt-parametric/Cargo.toml" --bin occt-model
+    cargo build --quiet --release --manifest-path "$root/rust/occt-parametric/Cargo.toml" --bins
 LD_LIBRARY_PATH="$build" \
     python3 "$root/tools/model/check.py" "$root/rust/occt-parametric/target/release/occt-model"
 

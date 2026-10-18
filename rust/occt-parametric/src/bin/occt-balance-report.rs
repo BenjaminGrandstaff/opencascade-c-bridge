@@ -1,8 +1,11 @@
 //! Selected component and per-material mass, inertia, and geometric CG report.
 #[path = "balance_report/config.rs"]
 mod config;
+#[path = "design_schema/mod.rs"]
+mod design_schema;
 #[path = "balance_report/report.rs"]
 mod report;
+
 use occt_bridge::Session;
 use occt_parametric::ModelDocument;
 use occt_parametric::prelude::*;
@@ -16,6 +19,9 @@ use std::{
 };
 
 fn main() -> ExitCode {
+    if design_schema::print::<config::Setup>("balance-report") {
+        return ExitCode::SUCCESS;
+    }
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     match run(&args) {
         Ok(()) => ExitCode::SUCCESS,

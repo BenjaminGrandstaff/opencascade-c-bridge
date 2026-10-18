@@ -96,7 +96,10 @@ CAD and requirement measurements come from the BREP. This is a one-shot CLI. The
 examples, builds and artifact resources to AI clients. Interactive shared
 sessions, concurrency revision checks, automatic design planning and
 stress-analysis certification remain outside this tool.
-Existing drawing definitions can be exported with `occt-drawing-export`.
+Existing drawing definitions can be exported with `occt-drawing-export` or
+MCP `occt_export_drawings`. MCP also exposes measurement inspection, motion,
+balance, linkage branch search and semantic document merge; see the
+[command workflow](MCP.md#drawing-inspection-and-mechanism-workflow).
 
 ## Checks and scale
 
@@ -173,7 +176,7 @@ and `aligned-profile-loft` through `occt_get_example` and example resources.
 MCP discovers every local `*.request.json` automatically and exposes the
 generated `occt://catalog` resource with the running binary’s model schema,
 feature operations and capability counts. See [MCP discovery](MCP.md). Wire
-tests validate all examples against their generated build or view schemas.
+tests validate all examples against their generated build, view or command schemas.
 
 Manufacturing build requests include [hemmed tray](hemmed-tray.request.json)
 (folded and flat outputs, closed hem, side walls and a bend-crossing slot) and

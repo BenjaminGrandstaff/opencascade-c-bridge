@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 175 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 791 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 98 + viewer Node 472 + branch command 2 + model command 95, MCP Python 15, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 175 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 791 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 98 + viewer Node 472 + branch command 2 + model command 95, MCP Python 22, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -3419,14 +3419,14 @@ ordered by priority; the catalog/documentation foundation is complete.
    cosmetic tapped bore. Wire tests check native exact volumes, parameter edits and
    preservation of accepted builds. Broader assembly/drawing/GD&T examples
    belong with the command exposure below.
-2. **MCP access to drawings, inspection and mechanisms** — MCP offers eight
-   part tools. Drawing export, inspection reports, motion studies, balance
-   reports, joint branches and document merge exist only as separate
-   commands (`occt-drawing-export`, `occt-inspection-report`,
-   `occt-motion-study`, `occt-balance-report`, `occt-joint-branches`,
-   `occt-document-merge`), so an AI client cannot produce a drawing sheet,
-   evaluate measured parts or run a mechanism. Expose them as tools with
-   generated schemas, examples and readable artifacts.
+2. **MCP access to drawings, inspection and mechanisms — complete.** The
+   adapter discovers the existing drawing, inspection, motion, balance,
+   joint-branch and merge commands and exposes generated schemas, complete
+   examples and readable analysis artifacts. Negative measurements, collisions
+   and semantic conflicts retain complete reports. Model inputs and accepted
+   builds stay unchanged; merged and branch models require a separate build
+   for verification. Wire tests exercise all commands, artifact boundaries,
+   optional installations, timeout/cancellation cleanup and negative results.
 3. **Visual feedback for the AI** — builds return isometric SVG previews only.
    Add bounded raster renders from several standard views, section views and
    sheet-metal flat patterns as build artifacts, so a multimodal client can

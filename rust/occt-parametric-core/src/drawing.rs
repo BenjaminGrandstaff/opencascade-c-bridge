@@ -212,7 +212,7 @@ pub struct DrawingDefinition {
     pub metadata: BTreeMap<String, String>,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct DrawingRenderOptions {
     /// Exact standard curves, detail trims and hatch intersections.

@@ -2,7 +2,7 @@ use occt_parametric::*;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Setup {
     pub schema: String,
@@ -16,7 +16,7 @@ pub struct Setup {
     pub excluded_pairs: Vec<[String; 2]>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Component {
     pub id: String,
@@ -26,7 +26,7 @@ pub struct Component {
     pub slider: Option<Slider>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Hinge {
     /// In the source instance's enclosing frame coordinates, in millimeters.
@@ -38,7 +38,7 @@ pub struct Hinge {
     pub end_deg: f64,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Slider {
     /// Direction in the source instance's enclosing frame; normalized by the engine.

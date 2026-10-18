@@ -18,6 +18,23 @@ import uuid
 PROTOCOLS = ('2025-11-25', '2025-06-18')
 SCHEMAS = ('request', 'model', 'feature', 'parameter', 'sketch', 'requirement', 'inspection', 'face_selector', 'edge_selector', 'edit', 'change', 'sketch_change', 'view')
 EXAMPLES = tuple(sorted(path.name.removesuffix('.request.json') for path in pathlib.Path(__file__).resolve().parent.glob('*.request.json')))
+# Tool name -> executable suffix, report filename, output is a single file.
+COMMANDS = {
+    'occt_export_drawings': ('drawing-export', 'manifest.json', False),
+    'occt_inspection_report': ('inspection-report', 'report.json', True),
+    'occt_motion_study': ('motion-study', 'motion.report.json', False),
+    'occt_balance_report': ('balance-report', 'report.json', True),
+    'occt_joint_branches': ('joint-branches', 'report.json', False),
+    'occt_merge_documents': ('document-merge', 'report.json', False),
+}
+COMMAND_DESCRIPTIONS = {
+    'occt_export_drawings': 'Export saved or supplied drawing sheets to SVG and millimeter DXF. Returns a retained drawing model and manifest. Does not modify or accept a model build.',
+    'occt_inspection_report': 'Evaluate supplied dimensions, positions, measured points, surface textures and thread diameters against saved drawings. Nonconforming results retain the complete report with isError true.',
+    'occt_motion_study': 'Run sampled and continuous collision checks for configured hinge or slider components. Retains assembly, study and report even when collision checks fail or remain unresolved.',
+    'occt_balance_report': 'Measure selected components using explicit materials/densities and an inline reference chord. Returns mass, inertia and geometric center of gravity; no recommended CG range is assumed.',
+    'occt_joint_branches': 'Search alternative linkage poses from explicit seeds and return the search status plus reloadable branch models. A bounded search does not prove all branches were found.',
+    'occt_merge_documents': 'Three-way semantic merge of base, current and other model snapshots. Returns a merged model or complete conflict report. Inputs and accepted builds remain unchanged; build a merged model separately to verify geometry and requirements.',
+}
 MAX_MESSAGE = 64 * 1024 * 1024
 MAX_RESOURCE = 32 * 1024 * 1024
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -44,7 +61,7 @@ def object_schema(properties, required):
     return dict(type='object', properties=properties, required=required, additionalProperties=False)
 
 class Server:
-    def __init__(self, binary, output_root, timeout=120):
+    def __init__(self, binary, output_root, timeout=120, commands_dir=None):
         self.binary = pathlib.Path(binary).resolve(strict=True)
         self.output_root = pathlib.Path(output_root).resolve()
         self.output_root.mkdir(parents=True, exist_ok=True)
@@ -57,6 +74,21 @@ class Server:
             if process.returncode:
                 raise RuntimeError(f'schema startup failed: {process.stderr}')
             self.schemas[name] = decode(process.stdout)
+        command_directory = pathlib.Path(commands_dir).resolve() if commands_dir else self.binary.parent
+        self.commands = {}
+        for tool, (suffix, _, _) in COMMANDS.items():
+            executable = command_directory / ('occt-' + suffix)
+            if not executable.is_file():
+                continue
+            process = subprocess.run([str(executable), '--schema'], capture_output=True, text=True, timeout=30)
+            if process.returncode:
+                raise RuntimeError(f'{suffix} schema startup failed: {process.stderr}')
+            generated = decode(process.stdout)
+            version = generated['$defs']['ModelDocument']['properties']['schema_version']['const']
+            if version != self.schemas['model']['properties']['schema_version']['const']:
+                raise RuntimeError(f'{suffix} model schema differs from occt-model; rebuild the commands together')
+            self.schemas[suffix.replace('-', '_')] = generated
+            self.commands[tool] = executable
         self.examples = {name: decode((ROOT / 'tools/model' / (name + '.request.json')).read_text()) for name in EXAMPLES}
         self.build_inspection_schema = copy.deepcopy(self.schemas['inspection'])
         for name in ('schema', 'model'):
@@ -73,7 +105,8 @@ class Server:
 
         self.catalog = {
             'schema_version': self.schemas['model']['properties']['schema_version']['const'],
-            'schemas': list(SCHEMAS),
+            'schemas': list(self.schemas),
+            'unavailable_tools': sorted(set(COMMANDS) - set(self.commands)),
             'feature_operations': sorted(next(iter(v['properties'])) for v in self.schemas['request']['$defs']['FeatureOperation']['oneOf']),
             'examples': {name: request['schema'] for name, request in self.examples.items()},
             'counts': {'tools': len(self.tools()), 'schemas': len(self.schemas), 'examples': len(self.examples),
@@ -86,7 +119,7 @@ class Server:
         read = dict(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
         return [
             dict(name='occt_get_schema', description='Read the complete generated JSON Schema for an engine authoring type. Semantic/unit/geometry checks run at build time.',
-                 inputSchema=object_schema({'name': dict(type='string', enum=list(SCHEMAS))}, ['name']), annotations=read),
+                 inputSchema=object_schema({'name': dict(type='string', enum=list(self.schemas))}, ['name']), annotations=read),
             dict(name='occt_get_example', description='Read a complete editable example request; dimensions are demonstration assumptions.',
                  inputSchema=object_schema({'name': dict(type='string', enum=list(EXAMPLES))}, ['name']), annotations=read),
             dict(name='occt_inspect_model', description='Read paged model/instance parameters, feature inputs, datums, references and requirements. Use sketch_feature with an instance for isolated sketch solver/geometry diagnosis and guarded repair candidates. Use loft_feature with an instance for isolated exact boundary, partition, start, ordered edge-count and hollow-station material-region diagnostics, even when the loft itself fails. Optional output regeneration measures faces/edges and tests semantic selectors. Does not publish or edit a build.',
@@ -101,10 +134,13 @@ class Server:
                  inputSchema=self.build_edit_schema, annotations=dict(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)),
             dict(name='occt_build', description='Validate/migrate a model, apply typed parameter edits, verify requirements, and build selected parts into a new server-owned directory. Returns report and artifact resource URIs. Failed edits preserve previous builds.',
                  inputSchema=self.schemas['request'], annotations=dict(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)),
-        ]
+        ] + [dict(name=name, description=COMMAND_DESCRIPTIONS[name],
+                  inputSchema=self.schemas[COMMANDS[name][0].replace('-', '_')],
+                  annotations=dict(readOnlyHint=True, destructiveHint=False, idempotentHint=False, openWorldHint=False))
+             for name in self.commands]
 
     def fixed_resources(self):
-        return [dict(uri='occt://catalog', name='Current authoring capabilities and examples', mimeType='application/json')] + [dict(uri=f'occt://schema/{name}', name=f'{name} schema', mimeType='application/schema+json') for name in SCHEMAS] + [
+        return [dict(uri='occt://catalog', name='Current authoring capabilities and examples', mimeType='application/json')] + [dict(uri=f'occt://schema/{name}', name=f'{name} schema', mimeType='application/schema+json') for name in self.schemas] + [
             dict(uri=f'occt://example/{name}', name=f'{name} example request', mimeType='application/json') for name in EXAMPLES]
 
     @staticmethod
@@ -121,6 +157,18 @@ class Server:
                 return {'contents': [dict(uri=uri, mimeType=mime, text=encode(values[uri[len(prefix):]]))]}
         if uri == 'occt://catalog':
             return {'contents': [dict(uri=uri, mimeType='application/json', text=encode(self.catalog))]}
+        analysis = re.fullmatch(r'occt://analysis/([0-9a-f]{32})/([a-zA-Z0-9_.-]+)', uri)
+        if analysis:
+            identity, artifact = analysis.groups()
+            work = self.output_root / identity
+            manifest = work / 'analysis-artifacts.json'
+            if not manifest.is_file() or manifest.is_symlink():
+                raise RpcError(-32002, 'analysis is incomplete or unknown')
+            allowed = decode(self.read_file(manifest))
+            path = work / 'results' / artifact
+            if artifact not in allowed or path.is_symlink() or not path.resolve().is_relative_to(work / 'results'):
+                raise RpcError(-32002, 'unknown analysis artifact')
+            return self.artifact_content(uri, path)
         match = re.fullmatch(r'occt://build/([0-9a-f]{32})/([a-zA-Z0-9_.-]+)', uri)
         if not match:
             raise RpcError(-32002, 'unknown resource')
@@ -136,10 +184,13 @@ class Server:
         path = directory / artifact
         if artifact not in allowed or path.is_symlink() or not path.resolve().is_relative_to(self.output_root):
             raise RpcError(-32002, 'unknown build artifact')
+        return self.artifact_content(uri, path)
+
+    def artifact_content(self, uri, path):
         data = self.read_file(path)
-        mime = {'.json': 'application/json', '.svg': 'image/svg+xml', '.html': 'text/html', '.stl': 'model/stl', '.step': 'application/step'}.get(path.suffix, 'application/octet-stream')
+        mime = {'.json': 'application/json', '.svg': 'image/svg+xml', '.html': 'text/html', '.dxf': 'image/vnd.dxf', '.stl': 'model/stl', '.step': 'application/step'}.get(path.suffix, 'application/octet-stream')
         content = dict(uri=uri, mimeType=mime)
-        if path.suffix in ('.json', '.svg', '.html'):
+        if path.suffix in ('.json', '.svg', '.html', '.dxf'):
             content['text'] = data.decode('utf-8')
         else:
             content['blob'] = base64.b64encode(data).decode('ascii')
@@ -256,6 +307,76 @@ class Server:
             if not accepted:
                 shutil.rmtree(work)
 
+    async def command_worker(self, name, request):
+        suffix, report_name, single_file = COMMANDS[name]
+        merging = suffix == 'document-merge'
+        fields = {'schema', 'base', 'current', 'other'} if merging else {'schema', 'model', 'setup'}
+        if not isinstance(request, dict) or set(request) != fields or request.get('schema') != f'occb-{suffix}-request-v1':
+            raise RpcError(-32602, 'expected the complete generated command request; filesystem paths are not accepted')
+        if not all(isinstance(request[k], dict) for k in fields - {'schema'}):
+            raise RpcError(-32602, 'models and setup must be objects')
+        if suffix == 'balance-report':
+            reference = request['setup'].get('reference')
+            if not isinstance(reference, dict) or reference.get('kind') != 'chord':
+                raise RpcError(-32602, 'MCP balance reports require an inline chord reference')
+        identity = uuid.uuid4().hex
+        work = self.output_root / identity
+        work.mkdir(mode=0o700)
+        results = work / 'results'
+        process = None
+        retained = False
+        try:
+            command = [str(self.commands[name])]
+            if merging:
+                command.append('--report')
+                for key in ('base', 'current', 'other'):
+                    path = work / (key + '.json')
+                    path.write_text(encode(request[key]))
+                    command.append(str(path))
+            else:
+                for key in ('model', 'setup'):
+                    path = work / (key + '.json')
+                    path.write_text(encode(request[key]))
+                    command.append(str(path))
+            if single_file:
+                results.mkdir()
+            report_path = results / report_name
+            command.append(str(report_path if single_file else results))
+            with (work / 'kernel.stderr').open('wb') as stderr:
+                process = await asyncio.create_subprocess_exec(*command,
+                    stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL, stderr=stderr)
+                await asyncio.wait_for(process.wait(), self.timeout)
+            # Exit 2 is a completed negative measurement, motion check or merge.
+            if process.returncode not in (0, 2) or not report_path.is_file():
+                with (work / 'kernel.stderr').open('rb') as stderr:
+                    stderr.seek(0, 2)
+                    stderr.seek(max(0, stderr.tell() - 8192))
+                    detail = stderr.read().decode('utf-8', errors='replace').strip()
+                return tool_result(dict(status='failed', stage=suffix, message=detail or 'command failed without a report'), True)
+            report = decode(self.read_file(report_path))
+            files = sorted(p.name for p in results.iterdir() if p.is_file() and not p.is_symlink()
+                           and re.fullmatch(r'[a-zA-Z0-9_.-]+', p.name))
+            (work / 'analysis-artifacts.json').write_text(encode(files))
+            retained = True
+            return tool_result(dict(analysis_id=identity, command=suffix,
+                status='completed' if process.returncode == 0 else 'failed_checks',
+                report=report, directory=str(results),
+                resources={file: f'occt://analysis/{identity}/{file}' for file in files}), process.returncode != 0)
+        except TimeoutError:
+            return tool_result(dict(status='failed', stage='timeout', message=f'command exceeded {self.timeout:g} seconds'), True)
+        finally:
+            if process is not None and process.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    process.terminate()
+                try:
+                    await asyncio.wait_for(process.wait(), 5)
+                except TimeoutError:
+                    with contextlib.suppress(ProcessLookupError):
+                        process.kill()
+                    await process.wait()
+            if not retained:
+                shutil.rmtree(work)
+
     async def dispatch(self, message):
         method = message['method']
         params = message.get('params', {})
@@ -274,7 +395,7 @@ class Server:
             return dict(protocolVersion=params['protocolVersion'] if params['protocolVersion'] in PROTOCOLS else PROTOCOLS[0],
                         capabilities=dict(tools=dict(listChanged=False), resources=dict(listChanged=False)),
                         serverInfo=dict(name='occt-model', version='0.1.0'),
-                        instructions='Read occt://catalog for current capabilities, then a schema/example, preserve requirements and explicit assumptions, then build. Inspect sketch_feature for solver/repair evidence or loft_feature for isolated correspondence diagnostics, preview guarded proposals with occt_preview_edit_build, then publish intended changes with occt_edit_build. Read model.json to continue from the accepted model. Preview SVGs are sampled; inspect requirement evidence.')
+                        instructions='Read occt://catalog for current capabilities, then a schema/example. Design command tools return analysis artifacts; build resulting models separately to verify requirements. Preserve requirements and explicit assumptions, then build. Inspect sketch_feature for solver/repair evidence or loft_feature for isolated correspondence diagnostics, preview guarded proposals with occt_preview_edit_build, then publish intended changes with occt_edit_build. Read model.json to continue from the accepted model. Preview SVGs are sampled; inspect requirement evidence.')
         if self.state != 'ready':
             raise RpcError(-32600, 'initialize and send notifications/initialized first')
         if method == 'tools/list':
@@ -283,8 +404,10 @@ class Server:
             return dict(tools=self.tools())
         if method == 'tools/call':
             name, arguments = params.get('name'), params.get('arguments', {})
+            if name in self.commands:
+                return await self.command_worker(name, arguments)
             if name == 'occt_get_schema':
-                return tool_result(self.schemas[self.named(arguments, SCHEMAS)])
+                return tool_result(self.schemas[self.named(arguments, self.schemas)])
             if name == 'occt_get_example':
                 return tool_result(self.examples[self.named(arguments, EXAMPLES)])
             if name == 'occt_inspect_model':
@@ -303,7 +426,8 @@ class Server:
         if method == 'resources/list':
             return dict(resources=self.fixed_resources())
         if method == 'resources/templates/list':
-            return dict(resourceTemplates=[dict(uriTemplate='occt://build/{build_id}/{artifact}', name='Build or diagnostic artifact',
+            return dict(resourceTemplates=[dict(uriTemplate='occt://analysis/{analysis_id}/{artifact}', name='Design command artifact',
+                description='Only artifact URIs returned by design tools can be read; reports, models, SVG and DXF; maximum 32 MiB.'), dict(uriTemplate='occt://build/{build_id}/{artifact}', name='Build or diagnostic artifact',
                 description='Use artifact URIs returned by build or preview tools: model/report JSON, SVG previews, binary STL or STEP; maximum read size 32 MiB.')])
         if method == 'resources/read':
             return self.resource(params.get('uri'))
@@ -382,11 +506,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binary', required=True, help='absolute path to built occt-model executable')
     parser.add_argument('--output-root', required=True, help='directory for persistent server-owned build artifacts')
-    parser.add_argument('--timeout', type=float, default=120, help='per-build timeout in seconds (default 120)')
+    parser.add_argument('--timeout', type=float, default=120, help='per-worker timeout in seconds (default 120)')
+    parser.add_argument('--commands-dir', help='directory of optional design command binaries (default: model binary directory)')
     args = parser.parse_args()
     if not math.isfinite(args.timeout) or args.timeout <= 0:
         parser.error('--timeout must be finite and positive')
-    asyncio.run(Server(args.binary, args.output_root, args.timeout).serve())
+    asyncio.run(Server(args.binary, args.output_root, args.timeout, args.commands_dir).serve())
 
 if __name__ == '__main__':
     main()

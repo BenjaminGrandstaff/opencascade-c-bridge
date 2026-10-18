@@ -13,7 +13,7 @@ pub struct InstanceOutputRef {
     pub output: String,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CollisionOptions {
     pub minimum_clearance: Quantity,
     pub contact_tolerance: Quantity,

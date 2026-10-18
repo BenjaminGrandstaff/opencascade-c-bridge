@@ -1,4 +1,7 @@
 //! General drawing and planar cutting-template batch export.
+#[path = "design_schema/mod.rs"]
+mod design_schema;
+
 use occt_bridge::Session;
 use occt_parametric::prelude::*;
 use occt_parametric::{DrawingDefinition, DrawingRenderOptions, ModelDocument};
@@ -6,7 +9,7 @@ use serde::Deserialize;
 use serde_json::json;
 use std::{error::Error, ffi::OsString, fs, path::Path, process::ExitCode};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Setup {
     schema: String,
@@ -17,6 +20,9 @@ struct Setup {
 }
 
 fn main() -> ExitCode {
+    if design_schema::print::<Setup>("drawing-export") {
+        return ExitCode::SUCCESS;
+    }
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     match run(&args) {
         Ok(()) => ExitCode::SUCCESS,

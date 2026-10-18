@@ -11,8 +11,11 @@ BINARY = pathlib.Path(os.environ.get('OCCT_MODEL_BINARY', ROOT / 'rust/occt-para
 SERVER = ROOT / 'tools/model/mcp_server.py'
 
 class Client:
-    def __init__(self, root, binary=BINARY, timeout=120, initialize=True):
-        self.process = subprocess.Popen([sys.executable, str(SERVER), '--binary', str(binary), '--output-root', str(root), '--timeout', str(timeout)],
+    def __init__(self, root, binary=BINARY, timeout=120, initialize=True, commands_dir=None):
+        command = [sys.executable, str(SERVER), '--binary', str(binary), '--output-root', str(root), '--timeout', str(timeout)]
+        if commands_dir is not None:
+            command.extend(['--commands-dir', str(commands_dir)])
+        self.process = subprocess.Popen(command,
                                         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.counter = 0
         if initialize:

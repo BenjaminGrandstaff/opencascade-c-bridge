@@ -1,0 +1,134 @@
+{
+  "schema": "occb-balance-report-request-v1",
+  "model": {
+    "schema_version": 178,
+    "family": {
+      "id": "analysis-block",
+      "version": 1,
+      "parameters": [],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [],
+      "datums": [],
+      "features": [
+        {
+          "id": "body",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 40,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 30,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 24,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "prototype",
+          "overrides": {},
+          "provenance": "Example; dimensions, thread engagement and bend allowances are demonstration assumptions"
+        }
+      }
+    ]
+  },
+  "setup": {
+    "schema": "occb-balance-report-v1",
+    "materials": [
+      {
+        "id": "assumed",
+        "name": "Demonstration homogeneous density; replace with measured material",
+        "density_kg_per_cubic_meter": 1000
+      }
+    ],
+    "components": [
+      {
+        "id": "block",
+        "source": "prototype",
+        "output": "body",
+        "material": "assumed"
+      }
+    ],
+    "reference": {
+      "kind": "chord",
+      "chord": {
+        "leading_edge": {
+          "x": {
+            "value": 0,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "y": {
+            "value": 0,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "z": {
+            "value": 0,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        "direction": {
+          "x": {
+            "value": 1,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "y": {
+            "value": 0,
+            "dimension": "scalar",
+            "unit": null
+          },
+          "z": {
+            "value": 0,
+            "dimension": "scalar",
+            "unit": null
+          }
+        },
+        "length": {
+          "value": 100,
+          "dimension": "length",
+          "unit": "millimeter"
+        }
+      }
+    }
+  }
+}

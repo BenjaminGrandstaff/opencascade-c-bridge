@@ -1,10 +1,13 @@
 //! Discover alternative linkage poses and export reloadable branch models.
+#[path = "design_schema/mod.rs"]
+mod design_schema;
+
 use occt_parametric::{JointBranchSearchOptions, JointSeedAxis, ModelDocument};
 use serde::Deserialize;
 use serde_json::json;
 use std::{error::Error, ffi::OsString, fs, path::Path, process::ExitCode};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Setup {
     schema: String,
@@ -13,6 +16,9 @@ struct Setup {
     options: JointBranchSearchOptions,
 }
 fn main() -> ExitCode {
+    if design_schema::print::<Setup>("joint-branches") {
+        return ExitCode::SUCCESS;
+    }
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     match run(&args) {
         Ok(()) => ExitCode::SUCCESS,

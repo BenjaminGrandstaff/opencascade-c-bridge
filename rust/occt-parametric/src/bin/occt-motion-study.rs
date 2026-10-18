@@ -4,12 +4,18 @@ mod config;
 #[path = "motion_study/report.rs"]
 mod report;
 
+#[path = "design_schema/mod.rs"]
+mod design_schema;
+
 use occt_bridge::Session;
 use occt_parametric::ModelDocument;
 use occt_parametric::prelude::*;
 use std::{error::Error, ffi::OsString, fs, path::Path, process::ExitCode};
 
 fn main() -> ExitCode {
+    if design_schema::print::<config::Setup>("motion-study") {
+        return ExitCode::SUCCESS;
+    }
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     match run(&args) {
         Ok(true) => ExitCode::SUCCESS,

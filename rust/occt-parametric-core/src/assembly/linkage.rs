@@ -12,13 +12,13 @@ pub use search::{
 };
 
 /// Coordinate the solver may change. Every other coordinate remains driven.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct JointVariable {
     pub frame: String,
     pub coordinate: JointDof,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct JointSolveOptions {
     /// Between 1 and 1000; each iteration evaluates a finite-difference Jacobian.

@@ -5,7 +5,7 @@ use crate::screw_threads::{UnifiedLimits, UnifiedThread, UnifiedThreadSpec};
 /// Diameters measured on a modeled thread or tapped hole that names a
 /// Unified class: the pitch diameter (for example by the three-wire method)
 /// and optionally the major and minor diameters, in millimetres.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MeasuredThread {
     pub instance: String,

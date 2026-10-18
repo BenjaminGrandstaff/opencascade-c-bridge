@@ -1,0 +1,444 @@
+{
+  "schema": "occb-drawing-export-request-v1",
+  "model": {
+    "schema_version": 178,
+    "family": {
+      "id": "dimension-layout",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "width",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 30,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 100,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "depth",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 20,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 12,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 80,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "height",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 6,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 50,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "block-valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "source block is valid",
+          "rule": {
+            "shape_valid": {
+              "output": "block"
+            }
+          },
+          "provenance": "Illustrative drawing layout",
+          "traces": [
+            {
+              "feature": "block"
+            }
+          ]
+        }
+      ],
+      "datums": [
+        {
+          "id": "origin",
+          "kind": {
+            "point": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "x",
+          "kind": {
+            "point": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "parameter": "width"
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "y",
+          "kind": {
+            "point": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "parameter": "depth"
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "features": [
+        {
+          "id": "block",
+          "operation": {
+            "box": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "size": {
+                "components": {
+                  "x": {
+                    "parameter": "width"
+                  },
+                  "y": {
+                    "parameter": "depth"
+                  },
+                  "z": {
+                    "parameter": "height"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "part",
+          "overrides": {},
+          "provenance": "dimensions are illustrative assumptions"
+        }
+      }
+    ],
+    "drawings": [
+      {
+        "id": "linear-layout",
+        "title": "Paper-space dimension layout - linear",
+        "paper_size_mm": [
+          297,
+          210
+        ],
+        "views": [
+          {
+            "id": "top",
+            "outputs": [
+              {
+                "instance": "part",
+                "output": "block"
+              }
+            ],
+            "origin": {
+              "x": {
+                "value": 0,
+                "dimension": "length",
+                "unit": "millimeter"
+              },
+              "y": {
+                "value": 0,
+                "dimension": "length",
+                "unit": "millimeter"
+              },
+              "z": {
+                "value": 0,
+                "dimension": "length",
+                "unit": "millimeter"
+              }
+            },
+            "direction": {
+              "x": {
+                "value": 0,
+                "dimension": "scalar",
+                "unit": null
+              },
+              "y": {
+                "value": 0,
+                "dimension": "scalar",
+                "unit": null
+              },
+              "z": {
+                "value": 1,
+                "dimension": "scalar",
+                "unit": null
+              }
+            },
+            "x_axis": {
+              "x": {
+                "value": 1,
+                "dimension": "scalar",
+                "unit": null
+              },
+              "y": {
+                "value": 0,
+                "dimension": "scalar",
+                "unit": null
+              },
+              "z": {
+                "value": 0,
+                "dimension": "scalar",
+                "unit": null
+              }
+            },
+            "paper_origin_mm": [
+              95,
+              85
+            ],
+            "scale": 2,
+            "show_hidden": false,
+            "kind": "orthographic",
+            "detail": null
+          }
+        ],
+        "dimensions": [
+          {
+            "id": "width-basic",
+            "view": "top",
+            "first": {
+              "instance": "part",
+              "datum": "origin"
+            },
+            "second": {
+              "instance": "part",
+              "datum": "x"
+            },
+            "direction": "horizontal",
+            "offset_mm": 55,
+            "precision": 2,
+            "presentation": {
+              "length_unit": "millimeter",
+              "tolerance": "basic"
+            }
+          },
+          {
+            "id": "depth-deviations",
+            "view": "top",
+            "first": {
+              "instance": "part",
+              "datum": "origin"
+            },
+            "second": {
+              "instance": "part",
+              "datum": "y"
+            },
+            "direction": "vertical",
+            "offset_mm": 20,
+            "precision": 2,
+            "presentation": {
+              "length_unit": "millimeter",
+              "tolerance": {
+                "deviations": {
+                  "lower": {
+                    "value": -0.05,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "upper": {
+                    "value": 0.1,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "id": "width-limits",
+            "view": "top",
+            "first": {
+              "instance": "part",
+              "datum": "origin"
+            },
+            "second": {
+              "instance": "part",
+              "datum": "x"
+            },
+            "direction": "horizontal",
+            "offset_mm": -18,
+            "precision": 2,
+            "presentation": {
+              "length_unit": "millimeter",
+              "tolerance": {
+                "limits": {
+                  "lower": {
+                    "value": 29.9,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "upper": {
+                    "value": 30.1,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "id": "depth-reference",
+            "view": "top",
+            "first": {
+              "instance": "part",
+              "datum": "origin"
+            },
+            "second": {
+              "instance": "part",
+              "datum": "y"
+            },
+            "direction": "vertical",
+            "offset_mm": -82,
+            "precision": 2,
+            "presentation": {
+              "length_unit": "millimeter",
+              "tolerance": "reference"
+            }
+          }
+        ],
+        "metadata": {
+          "units": "mm",
+          "view scale": "2:1"
+        }
+      }
+    ]
+  },
+  "setup": {
+    "schema": "occb-drawing-export-v1",
+    "options": {
+      "exact_curves": true
+    }
+  }
+}

@@ -24,7 +24,7 @@ pub const SAMPLING_LENGTHS: usize = 5;
 /// the surface. It spans at least six sampling lengths: five evaluated and
 /// half of one at each end, which the filter needs as run-up and run-out
 /// (plus λs at each end for a raw trace).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MeasuredProfile {
     /// Distance between samples, in micrometres.

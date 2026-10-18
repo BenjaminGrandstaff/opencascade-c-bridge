@@ -2,7 +2,7 @@
 use super::*;
 
 /// Nominal axis in the same established datum coordinate frame as the samples.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PositionToleranceAxis {
     pub origin: VectorQuantity,
@@ -148,7 +148,7 @@ impl DrawingDefinition {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DrawingPositionMeasurement {
     pub control: String,

@@ -19,7 +19,7 @@ The current C ABI version is **84** and the document schema is **178**.
 | Sketch studio and viewer (`occt-view --serve`) | — | Edits the same documents; adds no capability of its own |
 
 Tests: C 7/7, bridge 175, parametric core 57, kernel 791, view command 98,
-model command 95, viewer Node 472 and MCP Python 14, all passing. The scale
+model command 95, viewer Node 472 and MCP Python 22, all passing. The scale
 benchmark suite (199 Rust cases plus model-command and matcher cases) runs
 within budget. Formatting and Clippy are clean across all crates. Full
 gate results and history live in [the roadmap](ROADMAP.md#current-status).
@@ -184,7 +184,9 @@ examples demonstrate the authoring and repair loop. Earlier build directories
 and the source document remain intact after rejected changes.
 [The local MCP server](tools/model/MCP.md) exposes generated schemas for all
 feature operations, complete examples, build tools and readable artifact
-resources to AI clients. Read-only inspection exposes resolved parameters,
+resources to AI clients. It also exposes drawing export, measurement inspection,
+motion and balance reports, linkage branch search and semantic document merge.
+Read-only inspection exposes resolved parameters,
 feature dependencies and semantic face/edge queries before edits. Guarded
 feature edits branch from accepted snapshots, retain requirements, and publish
 verified revision records without overwriting previous builds. The

@@ -9,7 +9,7 @@ pub struct MaterialMassProperties {
 }
 
 /// A reference chord in world coordinates. It need not be along world X.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ChordReference {
     pub leading_edge: VectorQuantity,
     pub direction: VectorQuantity,

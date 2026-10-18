@@ -35,7 +35,7 @@ class McpTests(unittest.TestCase):
         self.assertEqual(result['result']['protocolVersion'], '2025-06-18')
         self.assertEqual(self.client.call('tools/list')['error']['code'], -32600)
         self.client.send(dict(jsonrpc='2.0', method='notifications/initialized'))
-        self.assertEqual(len(self.client.call('tools/list')['result']['tools']), 8)
+        self.assertEqual(len(self.client.call('tools/list')['result']['tools']), 14)
         self.assertEqual(self.client.call('initialize')['error']['code'], -32600)
 
     def test_loft_diagnosis_inspection_schema_and_failed_loft_sources(self):
@@ -94,7 +94,7 @@ class McpTests(unittest.TestCase):
 
     def test_discovery_schemas_and_complete_examples(self):
         tools = self.client.call('tools/list')['result']['tools']
-        self.assertEqual({tool['name'] for tool in tools}, {'occt_get_schema', 'occt_get_example', 'occt_build', 'occt_inspect_model', 'occt_inspect_build', 'occt_edit_build', 'occt_preview_edit_build', 'occt_visualize_model'})
+        self.assertEqual({tool['name'] for tool in tools}, {'occt_get_schema', 'occt_get_example', 'occt_build', 'occt_inspect_model', 'occt_inspect_build', 'occt_edit_build', 'occt_preview_edit_build', 'occt_visualize_model', 'occt_export_drawings', 'occt_inspection_report', 'occt_motion_study', 'occt_balance_report', 'occt_joint_branches', 'occt_merge_documents'})
         schema = next(tool['inputSchema'] for tool in tools if tool['name'] == 'occt_build')
         jsonschema.Draft202012Validator.check_schema(schema)
         self.assertEqual(schema['properties']['model']['$ref'], '#/$defs/ModelDocument')
@@ -117,11 +117,14 @@ class McpTests(unittest.TestCase):
         self.assertEqual(set(example_tool['inputSchema']['properties']['name']['enum']), files)
         self.assertEqual(catalog['counts']['examples'], len(files))
         self.assertEqual(catalog['counts']['schemas'], len(validators))
+        kinds = {v.schema['properties']['schema']['const']: v for v in validators.values() if 'schema' in v.schema.get('properties', {}) and 'const' in v.schema['properties']['schema']}
         for name, kind in catalog['examples'].items():
             with self.subTest(example=name):
                 example = self.client.tool('occt_get_example', dict(name=name))['structuredContent']
-                validators['request' if kind == 'occb-model-request-v1' else 'view'].validate(example)
-                self.assertEqual(example['model']['schema_version'], catalog['schema_version'])
+                kinds[kind].validate(example)
+                for field in ('model', 'base', 'current', 'other'):
+                    if field in example:
+                        self.assertEqual(example[field]['schema_version'], catalog['schema_version'])
                 resource = self.client.call('resources/read', dict(uri=f'occt://example/{name}'))['result']['contents'][0]
                 self.assertEqual(json.loads(resource['text']), example)
         bad = self.client.tool('occt_get_example', dict(name='shaft'))['structuredContent']
@@ -131,7 +134,7 @@ class McpTests(unittest.TestCase):
         resources = self.client.call('resources/list')['result']['resources']
         self.assertEqual({r['uri'] for r in resources}, {'occt://catalog'} | {f'occt://schema/{n}' for n in validators} | {f'occt://example/{n}' for n in files})
         self.assertEqual(len(resources), catalog['counts']['resources'])
-        self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 1)
+        self.assertEqual(len(self.client.call('resources/templates/list')['result']['resourceTemplates']), 2)
         read = self.client.call('resources/read', dict(uri='occt://schema/request'))['result']['contents'][0]
         self.assertEqual(json.loads(read['text']), schema)
 
@@ -1064,6 +1067,176 @@ class McpTests(unittest.TestCase):
         self.assertTrue(rejected['isError'], rejected)
         self.assertEqual(pathlib.Path(source['directory'], 'model.json').read_bytes(), original)
 
+
+    def command_example(self, name):
+        return self.client.tool('occt_get_example', dict(name=name))['structuredContent']
+
+    def analysis_resource(self, result, artifact):
+        uri = result['structuredContent']['resources'][artifact]
+        response = self.client.call('resources/read', dict(uri=uri))
+        self.assertIn('result', response, response)
+        return response['result']['contents'][0]
+
+    def test_drawing_export_and_measured_conformance_reports(self):
+        request = self.command_example('drawing-sheet')
+        result = self.client.tool('occt_export_drawings', request)
+        self.assertFalse(result['isError'], result)
+        self.assertEqual(result['structuredContent']['report']['drawings'][0]['id'], 'linear-layout')
+        svg = self.analysis_resource(result, '0001.svg')
+        self.assertEqual(svg['mimeType'], 'image/svg+xml')
+        self.assertIn('<svg', svg['text'])
+        dxf = self.analysis_resource(result, '0001.dxf')
+        self.assertEqual(dxf['mimeType'], 'image/vnd.dxf')
+        self.assertIn('ENTITIES', dxf['text'])
+        saved = json.loads(self.analysis_resource(result, 'drawings.model.json')['text'])
+        request = self.command_example('measured-sheet')
+        request['model'] = saved
+        result = self.client.tool('occt_inspection_report', request)
+        self.assertFalse(result['isError'], result)
+        self.assertEqual(result['structuredContent']['report']['summary']['dimensions_within_limits'], 1)
+        request['setup']['drawings'][0]['dimensions'][0]['value']['value'] = 31
+        result = self.client.tool('occt_inspection_report', request)
+        self.assertTrue(result['isError'], result)
+        report = json.loads(self.analysis_resource(result, 'report.json')['text'])
+        self.assertEqual(report['summary']['dimensions_outside_limits'], 1)
+        self.assertNotIn('build_id', result['structuredContent'])
+
+    def test_balance_reports_use_explicit_material_and_inline_reference(self):
+        request = self.command_example('block-balance')
+        result = self.client.tool('occt_balance_report', request)
+        self.assertFalse(result['isError'], result)
+        report = json.loads(self.analysis_resource(result, 'report.json')['text'])
+        self.assertAlmostEqual(report['total']['mass_kg'], .0288)
+        self.assertAlmostEqual(report['balance']['percent_chord'], 20)
+        accepted = set((self.root / 'builds').iterdir())
+        request['setup']['components'][0]['material'] = 'missing'
+        result = self.client.tool('occt_balance_report', request)
+        self.assertTrue(result['isError'], result)
+        self.assertEqual(set((self.root / 'builds').iterdir()), accepted)
+        request['setup']['reference'] = dict(kind='wing_project', project='/etc/passwd')
+        response = self.client.call('tools/call', dict(name='occt_balance_report', arguments=request))
+        self.assertEqual(response['error']['code'], -32602)
+        schema = self.client.tool('occt_get_schema', dict(name='balance_report'))['structuredContent']
+        with self.assertRaises(jsonschema.ValidationError):
+            jsonschema.validate(request, schema)
+
+    def test_motion_clear_and_collision_reports_remain_readable(self):
+        request = self.command_example('slider-clearance')
+        result = self.client.tool('occt_motion_study', request)
+        self.assertFalse(result['isError'], result)
+        self.assertTrue(result['structuredContent']['report']['passed'])
+        self.assertIn('assembly.model.json', result['structuredContent']['resources'])
+        self.assertIn('study.json', result['structuredContent']['resources'])
+        request['setup']['components'][1]['slider'].update(start_mm=60, end_mm=-60)
+        result = self.client.tool('occt_motion_study', request)
+        self.assertTrue(result['isError'], result)
+        report = json.loads(self.analysis_resource(result, 'motion.report.json')['text'])
+        self.assertFalse(report['passed'])
+        self.assertEqual(report['continuous']['status'], 'collision')
+        self.assertEqual(len(report['sampled']['samples']), 2)
+        self.assertNotIn('build_id', result['structuredContent'])
+
+    def test_joint_branches_export_reloadable_alternative_models(self):
+        request = self.command_example('linkage-branches')
+        result = self.client.tool('occt_joint_branches', request)
+        self.assertFalse(result['isError'], result)
+        report = result['structuredContent']['report']
+        self.assertEqual(report['search']['status'], 'seeds_exhausted')
+        self.assertEqual(len(report['models']), 2)
+        schema = self.client.tool('occt_get_schema', dict(name='model'))['structuredContent']
+        for filename in report['models']:
+            candidate = json.loads(self.analysis_resource(result, filename)['text'])
+            jsonschema.validate(candidate, schema)
+            self.assertEqual(candidate['family'], request['model']['family'])
+            self.assertEqual([v['base']['id'] for v in candidate['instances']],
+                             [v['base']['id'] for v in request['model']['instances']])
+        candidate_build = dict(schema='occb-model-request-v1', model=candidate,
+            outputs=[dict(instance=candidate['instances'][0]['base']['id'],
+                          output=candidate['family']['features'][-1]['id'])],
+            step=False, preview=False)
+        built = self.client.tool('occt_build', candidate_build)
+        self.assertFalse(built['isError'], built)
+
+    def test_semantic_merge_reports_conflicts_and_requires_separate_build(self):
+        request = self.command_example('merged-block')
+        before = json.dumps(request, sort_keys=True)
+        result = self.client.tool('occt_merge_documents', request)
+        self.assertFalse(result['isError'], result)
+        merged = json.loads(self.analysis_resource(result, 'merged.model.json')['text'])
+        size = merged['family']['features'][0]['operation']['box']['size']['literal']
+        self.assertEqual([size[k]['value'] for k in 'xyz'], [44, 32, 24])
+        built = self.client.tool('occt_build', dict(schema='occb-model-request-v1', model=merged,
+            outputs=[dict(instance='prototype', output='body')], step=False, preview=False))
+        self.assertFalse(built['isError'], built)
+        self.assertAlmostEqual(built['structuredContent']['report']['outputs'][0]['volume_mm3'], 44 * 32 * 24)
+        self.assertEqual(json.dumps(request, sort_keys=True), before)
+        work = pathlib.Path(result['structuredContent']['directory']).parent
+        for key in ('base', 'current', 'other'):
+            self.assertEqual(json.loads((work / (key + '.json')).read_text()), request[key])
+        request['other']['family']['features'][0]['operation']['box']['size']['literal']['x']['value'] = 48
+        result = self.client.tool('occt_merge_documents', request)
+        self.assertTrue(result['isError'], result)
+        report = json.loads(self.analysis_resource(result, 'report.json')['text'])
+        self.assertEqual(report['status'], 'conflicts')
+        self.assertTrue(report['conflicts'])
+        self.assertNotIn('merged.model.json', result['structuredContent']['resources'])
+
+    def test_analysis_artifact_paths_and_symlinks_are_rejected(self):
+        result = self.client.tool('occt_balance_report', self.command_example('block-balance'))
+        self.assertFalse(result['isError'], result)
+        identity = result['structuredContent']['analysis_id']
+        for artifact in ('../model.json', 'model.json', 'kernel.stderr', 'analysis-artifacts.json'):
+            response = self.client.call('resources/read', dict(uri=f'occt://analysis/{identity}/{artifact}'))
+            self.assertIn('error', response)
+        path = pathlib.Path(result['structuredContent']['directory'], 'report.json')
+        path.unlink()
+        path.symlink_to('/etc/passwd')
+        response = self.client.call('resources/read', dict(uri=f'occt://analysis/{identity}/report.json'))
+        self.assertIn('error', response)
+        request = self.command_example('drawing-sheet')
+        request['output'] = '/tmp/untrusted'
+        response = self.client.call('tools/call', dict(name='occt_export_drawings', arguments=request))
+        self.assertEqual(response['error']['code'], -32602)
+
+    def test_optional_commands_are_reported_and_command_timeout_cleans_artifacts(self):
+        commands = self.root / 'commands'
+        commands.mkdir()
+        self.client.close()
+        self.client = Client(self.root / 'minimal', commands_dir=commands)
+        catalog = json.loads(self.client.call('resources/read', dict(uri='occt://catalog'))['result']['contents'][0]['text'])
+        self.assertEqual(catalog['counts']['tools'], 8)
+        self.assertEqual(len(catalog['unavailable_tools']), 6)
+        self.client.close()
+        executable = commands / 'occt-drawing-export'
+        real = str(BINARY.parent / 'occt-drawing-export')
+        executable.write_text('#!' + sys.executable + '\n' +
+            'import pathlib, subprocess, sys, time\n' +
+            'if sys.argv[1:] == ["--schema"]:\n' +
+            '    sys.exit(subprocess.call([' + repr(real) + ', "--schema"]))\n' +
+            'destination = pathlib.Path(sys.argv[-1])\n' +
+            'destination.mkdir()\n' +
+            '(destination / "started").write_text("partial")\n' +
+            'time.sleep(60)\n')
+        executable.chmod(0o700)
+        self.client = Client(self.root / 'timed-command', timeout=.1, commands_dir=commands)
+        request = self.command_example('drawing-sheet')
+        result = self.client.tool('occt_export_drawings', request)
+        self.assertTrue(result['isError'], result)
+        self.assertEqual(result['structuredContent']['stage'], 'timeout')
+        self.assertEqual(list((self.root / 'timed-command').iterdir()), [])
+        self.client.close()
+        self.client = Client(self.root / 'cancelled-command', commands_dir=commands)
+        self.client.send(dict(jsonrpc='2.0', id=100, method='tools/call', params=dict(name='occt_export_drawings', arguments=request)))
+        deadline = time.monotonic() + 10
+        while not list((self.root / 'cancelled-command').glob('*/results/started')) and time.monotonic() < deadline:
+            time.sleep(.01)
+        self.assertTrue(list((self.root / 'cancelled-command').glob('*/results/started')))
+        self.client.send(dict(jsonrpc='2.0', method='notifications/cancelled', params=dict(requestId=100)))
+        self.assertEqual(self.client.call('ping')['result'], {})
+        deadline = time.monotonic() + 10
+        while list((self.root / 'cancelled-command').iterdir()) and time.monotonic() < deadline:
+            time.sleep(.01)
+        self.assertEqual(list((self.root / 'cancelled-command').iterdir()), [])
 
 if __name__ == '__main__':
     unittest.main()

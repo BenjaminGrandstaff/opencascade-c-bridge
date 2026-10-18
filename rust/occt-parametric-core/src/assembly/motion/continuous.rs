@@ -2,7 +2,7 @@
 use super::*;
 use occt_types::Bounds;
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ContinuousCollisionOptions {
     /// Extra separation margin for kernel/numeric uncertainty, in length units.
     pub distance_guard: Quantity,
