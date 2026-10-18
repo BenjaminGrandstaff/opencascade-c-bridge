@@ -5,6 +5,8 @@ mod inspect;
 mod patch;
 #[path = "model/preview.rs"]
 mod preview;
+#[path = "model/render.rs"]
+mod render;
 #[path = "model/report.rs"]
 mod report;
 #[path = "model/schema.rs"]
@@ -40,6 +42,12 @@ struct Request {
     stl: bool,
     #[serde(default = "yes")]
     preview: bool,
+    /// Shaded PNG renders of each selected output from standard views and
+    /// through section planes, for visual review by multimodal clients. Each
+    /// output's `renders` lists the images. Off unless given; `{}` renders
+    /// the iso, front, top and right views at 512 px.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    renders: Option<render::RenderOptions>,
 }
 fn yes() -> bool {
     true
@@ -171,6 +179,11 @@ fn build_internal(
             "select 1..10000 outputs and at most 10000 parameter edits",
         ));
     }
+    if let Some(renders) = &request.renders {
+        renders
+            .validate(request.outputs.len())
+            .map_err(|e| failure("request", e))?;
+    }
     let mut selected = HashSet::new();
     for output in &request.outputs {
         if !selected.insert(&output.instance) {
@@ -261,6 +274,7 @@ fn build_internal(
         request.step.then_some(pmi),
         request.stl,
         request.preview,
+        request.renders.as_ref(),
         destination,
         &session,
         &graph,
@@ -314,6 +328,7 @@ fn publish(
     step: Option<Option<(&DrawingDefinition, DrawingReleaseStatus)>>,
     stl: bool,
     previews: bool,
+    renders: Option<&render::RenderOptions>,
     destination: &Path,
     session: &Session,
     graph: &InstanceGraph<'_>,
@@ -380,6 +395,9 @@ fn publish(
             value["outputs"][index]["preview"] = json!(filename);
         }
     }
+    if let Some(options) = renders {
+        render_outputs(session, generation, outputs, options, destination, value)?;
+    }
     fs::write(destination.join("model.json"), persisted).map_err(|e| failure("publication", e))?;
     if write_report {
         fs::write(
@@ -388,6 +406,27 @@ fn publish(
         )
         .map_err(|e| failure("publication", e))?;
     }
+    Ok(())
+}
+/// Writes each output's renders and lists them under `outputs[i].renders`.
+fn render_outputs(
+    session: &Session,
+    generation: &GraphRegeneration<'_>,
+    outputs: &[InstanceOutputRef],
+    options: &render::RenderOptions,
+    destination: &Path,
+    value: &mut Value,
+) -> Result<(), Failure> {
+    for (index, output) in outputs.iter().enumerate() {
+        let shape = generation
+            .result(&output.instance)
+            .and_then(|r| r.shape(&output.output))
+            .ok_or_else(|| failure("render", "missing generated output"))?;
+        let images = render::write(session, shape, options, index, destination)
+            .map_err(|e| failure("render", e))?;
+        value["outputs"][index]["renders"] = json!(images);
+    }
+    value["render_quality"] = json!("tessellated; visual review only");
     Ok(())
 }
 #[cfg(test)]

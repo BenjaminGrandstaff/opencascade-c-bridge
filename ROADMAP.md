@@ -17,14 +17,27 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 175 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 791 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 98 + viewer Node 472 + branch command 2 + model command 95, MCP Python 22, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 175 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 791 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 98 + viewer Node 472 + branch command 2 + model command 100, MCP Python 24, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | Last full suite: 194 Rust cases (199 with the parallel glTF, 1,000-part view, advanced sweep, tray and bend-cutout cases) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
+| Scale benchmarks | Last full suite: 194 Rust cases (199 with the parallel glTF, 1,000-part view, advanced sweep, tray and bend-cutout cases) plus 7 model-command cases (including 256 renders in one build) and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Rendered views and sections for AI review (no schema or ABI change).
+  Build, edit and edit-preview requests take an optional `renders` field
+  that writes shaded PNG images of each selected output. The images cover
+  standard views (iso, front, back, top, bottom, left, right) and section
+  planes that hatch the cut face. MCP returns up to eight of them as image
+  content and keeps all of them as `image/png` resources. A built-in z-buffer
+  rasterizer outlines B-rep face boundaries and silhouettes, and a built-in
+  PNG encoder writes the images, so no dependency is added. Limits are 8
+  views and 4 sections per output, 64 to 1,024 px, and 256 images per build;
+  256 images took 3.95 s and 55 MB. Tests decode the PNGs and check framing,
+  hatched cut faces, empty sections, determinism, limits and the MCP inline
+  budget. See [rendered views](tools/model/README.md#rendered-views-and-sections).
 
 - Studio sheet-metal editor (no schema or ABI change). Sketch to solid
   builds and edits sheet-metal parts with placement, width and thickness,
@@ -3427,10 +3440,12 @@ ordered by priority; the catalog/documentation foundation is complete.
    builds stay unchanged; merged and branch models require a separate build
    for verification. Wire tests exercise all commands, artifact boundaries,
    optional installations, timeout/cancellation cleanup and negative results.
-3. **Visual feedback for the AI** — builds return isometric SVG previews only.
-   Add bounded raster renders from several standard views, section views and
-   sheet-metal flat patterns as build artifacts, so a multimodal client can
-   check interference, bend direction and missing features.
+3. **Visual feedback for the AI — complete.** Builds, edits and edit
+   previews render shaded PNG views and hatched section planes on request,
+   and MCP returns them as image content. Flat patterns render as ordinary
+   outputs. Remaining refinements: bend lines on flat-pattern images, several
+   outputs in one scene for checking interference, and dimension labels in
+   the images.
 4. **Complete failure reports** — required failures return the engine's error
    context rather than the full rejected measurement table, which leaves less
    evidence for repair. Return the same verification table as accepted builds.

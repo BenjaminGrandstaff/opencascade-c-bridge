@@ -1,8 +1,10 @@
 """Wire-protocol, schema, and geometry checks against the actual model binary."""
+import base64
 import json
 import math
 import os
 import pathlib
+import struct
 import sys
 import tempfile
 import time
@@ -1067,6 +1069,53 @@ class McpTests(unittest.TestCase):
         self.assertTrue(rejected['isError'], rejected)
         self.assertEqual(pathlib.Path(source['directory'], 'model.json').read_bytes(), original)
 
+
+    def test_renders_return_png_views_and_sections(self):
+        tray = self.client.tool('occt_get_example', dict(name='hemmed-tray'))['structuredContent']
+        tray.update(step=False, renders=dict(views=['iso', 'top'], sections=[dict(id='mid-y', origin_mm=[11.5, 15, -15], normal=[0, 1, 0])], size_px=128))
+        result = self.client.tool('occt_build', tray)
+        self.assertFalse(result['isError'], result)
+        value = result['structuredContent']
+        names = [image['file'] for output in value['report']['outputs'] for image in output['renders']]
+        self.assertEqual(names, ['0001-iso.png', '0001-top.png', '0001-section-mid-y.png', '0002-iso.png', '0002-top.png', '0002-section-mid-y.png'])
+        self.assertEqual(value['inline_images'], names)
+        images = [item for item in result['content'] if item['type'] == 'image']
+        self.assertEqual(len(images), 6)
+        for item in images:
+            data = base64.b64decode(item['data'])
+            self.assertEqual(item['mimeType'], 'image/png')
+            self.assertEqual(data[:8], b'\x89PNG\r\n\x1a\n')
+            self.assertEqual(struct.unpack('>II', data[16:24]), (128, 128))
+        resource = self.client.call('resources/read', dict(uri=value['resources']['0001-section-mid-y.png']))['result']['contents'][0]
+        self.assertEqual(resource['mimeType'], 'image/png')
+        self.assertEqual(base64.b64decode(resource['blob']), base64.b64decode(images[2]['data']))
+        # Past eight images the rest stay resources only.
+        tray['renders'] = dict(views=['iso', 'front', 'back', 'top', 'bottom', 'left', 'right'], size_px=64)
+        result = self.client.tool('occt_build', tray)
+        self.assertFalse(result['isError'], result)
+        self.assertEqual(len(result['structuredContent']['inline_images']), 8)
+        self.assertEqual(sum(item['type'] == 'image' for item in result['content']), 8)
+        self.assertIn('0002-right.png', result['structuredContent']['resources'])
+        # Builds without renders are unchanged, and bad options fail the request.
+        del tray['renders']
+        plain = self.client.tool('occt_build', tray)
+        self.assertEqual([item['type'] for item in plain['content']], ['text'])
+        self.assertNotIn('inline_images', plain['structuredContent'])
+        tray['renders'] = dict(views=['iso', 'iso'])
+        rejected = self.client.tool('occt_build', tray)
+        self.assertTrue(rejected['isError'])
+        self.assertEqual(rejected['structuredContent']['stage'], 'request')
+
+    def test_edit_previews_render_the_candidate(self):
+        shell = self.client.tool('occt_get_example', dict(name='tapped-shell'))['structuredContent']
+        shell.update(step=False)
+        built = self.client.tool('occt_build', shell)['structuredContent']
+        preview = self.client.tool('occt_preview_edit_build', dict(build_id=built['build_id'], expected_model_sha256=built['model_sha256'],
+            changes=[], outputs=shell['outputs'], edits=[dict(instance='body', parameter='tap_drill', value=dict(scalar=dict(value=5.2, dimension='length', unit='millimeter')))],
+            revision=dict(id='drill-1', author='test', recorded_at='test-time', message='Wider tap drill'), renders=dict(views=[], sections=[dict(id='bore', origin_mm=[20, 15, 12], normal=[1, 0, 0])], size_px=96)))
+        self.assertFalse(preview['isError'], preview)
+        self.assertEqual(preview['structuredContent']['inline_images'], ['0001-section-bore.png'])
+        self.assertEqual(sum(item['type'] == 'image' for item in preview['content']), 1)
 
     def command_example(self, name):
         return self.client.tool('occt_get_example', dict(name=name))['structuredContent']

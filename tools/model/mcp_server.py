@@ -37,6 +37,9 @@ COMMAND_DESCRIPTIONS = {
 }
 MAX_MESSAGE = 64 * 1024 * 1024
 MAX_RESOURCE = 32 * 1024 * 1024
+# Renders attached to a build result as image content; the rest stay resources.
+MAX_INLINE_IMAGES = 8
+MAX_INLINE_BYTES = 4 * 1024 * 1024
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 class RpcError(Exception):
@@ -53,9 +56,18 @@ def reject_constant(value):
 def decode(value):
     return json.loads(value, parse_constant=reject_constant)
 
-def tool_result(value, error=False):
-    return {'content': [{'type': 'text', 'text': encode(value)}],
-            'structuredContent': value, 'isError': error}
+def tool_result(value, error=False, images=()):
+    content = [{'type': 'text', 'text': encode(value)}]
+    content.extend({'type': 'image', 'mimeType': 'image/png', 'data': base64.b64encode(data).decode('ascii')} for data in images)
+    return {'content': content, 'structuredContent': value, 'isError': error}
+
+def output_files(report):
+    """Per-output artifact filenames a build report lists."""
+    files = set()
+    for output in report['outputs']:
+        files.update(output[key] for key in ('preview', 'stl') if key in output)
+        files.update(image['file'] for image in output.get('renders', ()) if 'file' in image)
+    return files
 
 def object_schema(properties, required):
     return dict(type='object', properties=properties, required=required, additionalProperties=False)
@@ -128,11 +140,11 @@ class Server:
                  inputSchema=self.build_inspection_schema, annotations=read),
             dict(name='occt_visualize_model', description='Create a self-contained interactive annotated viewer for sketches and 3D shapes. Dimensions, driving values, solver constraint residuals, and failed requirement witnesses are linked to geometry. Diagnostic snapshots never become accepted builds.',
                  inputSchema=self.schemas['view'], annotations=dict(readOnlyHint=True, destructiveHint=False, idempotentHint=False, openWorldHint=False)),
-            dict(name='occt_preview_edit_build', description='Preview guarded edits against an accepted build snapshot. Returns diagnostic candidate geometry and solver reports without accepting the candidate, recording a revision, or modifying the source build. Repair suggestions require a successful verified edit before publication.',
+            dict(name='occt_preview_edit_build', description='Preview guarded edits against an accepted build snapshot. Returns diagnostic candidate geometry and solver reports without accepting the candidate, recording a revision, or modifying the source build. Repair suggestions require a successful verified edit before publication. Set renders to see the candidate as shaded PNG views and sections.',
                  inputSchema=self.build_edit_schema, annotations=dict(readOnlyHint=True, destructiveHint=False, idempotentHint=False, openWorldHint=False)),
             dict(name='occt_edit_build', description='Apply guarded feature, sketch element/constraint/configuration and named-reference edits to an accepted model snapshot, or set parameter overrides. Requires expected model SHA-256 and explicit revision metadata. Preserves existing requirements and source build; verifies and publishes a new build with a semantic change record.',
                  inputSchema=self.build_edit_schema, annotations=dict(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)),
-            dict(name='occt_build', description='Validate/migrate a model, apply typed parameter edits, verify requirements, and build selected parts into a new server-owned directory. Returns report and artifact resource URIs. Failed edits preserve previous builds.',
+            dict(name='occt_build', description='Validate/migrate a model, apply typed parameter edits, verify requirements, and build selected parts into a new server-owned directory. Returns report and artifact resource URIs. Failed edits preserve previous builds. Set renders (for example {} or views plus section planes) to get shaded PNG views of each output; up to eight come back as image content and all stay readable as resources.',
                  inputSchema=self.schemas['request'], annotations=dict(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)),
         ] + [dict(name=name, description=COMMAND_DESCRIPTIONS[name],
                   inputSchema=self.schemas[COMMANDS[name][0].replace('-', '_')],
@@ -178,9 +190,7 @@ class Server:
         if not directory.resolve().is_relative_to(self.output_root) or not report_path.is_file() or report_path.is_symlink():
             raise RpcError(-32002, 'build is incomplete or unknown')
         report = decode(self.read_file(report_path))
-        allowed = {'report.json', *report['artifacts'].values()}
-        for output in report['outputs']:
-            allowed.update(output[key] for key in ('preview', 'stl') if key in output)
+        allowed = {'report.json', *report['artifacts'].values(), *output_files(report)}
         path = directory / artifact
         if artifact not in allowed or path.is_symlink() or not path.resolve().is_relative_to(self.output_root):
             raise RpcError(-32002, 'unknown build artifact')
@@ -188,13 +198,30 @@ class Server:
 
     def artifact_content(self, uri, path):
         data = self.read_file(path)
-        mime = {'.json': 'application/json', '.svg': 'image/svg+xml', '.html': 'text/html', '.dxf': 'image/vnd.dxf', '.stl': 'model/stl', '.step': 'application/step'}.get(path.suffix, 'application/octet-stream')
+        mime = {'.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.html': 'text/html', '.dxf': 'image/vnd.dxf', '.stl': 'model/stl', '.step': 'application/step'}.get(path.suffix, 'application/octet-stream')
         content = dict(uri=uri, mimeType=mime)
         if path.suffix in ('.json', '.svg', '.html', '.dxf'):
             content['text'] = data.decode('utf-8')
         else:
             content['blob'] = base64.b64encode(data).decode('ascii')
         return {'contents': [content]}
+
+    def inline_renders(self, directory, report):
+        """Render PNGs to attach in report order, within the inline budget."""
+        images, names, total = [], [], 0
+        for output in report['outputs']:
+            for image in output.get('renders', ()):
+                name = image.get('file')
+                path = directory / name if isinstance(name, str) else None
+                if path is None or len(images) == MAX_INLINE_IMAGES or path.is_symlink() or not path.is_file():
+                    continue
+                data = self.read_file(path)
+                if total + len(data) > MAX_INLINE_BYTES:
+                    continue
+                total += len(data)
+                images.append(data)
+                names.append(name)
+        return images, names
 
     @staticmethod
     def read_file(path):
@@ -283,15 +310,16 @@ class Server:
             report = decode(self.read_file(report_path))
             if inspection:
                 return tool_result(report)
-            filenames = {'report.json', *report['artifacts'].values()}
-            for output in report['outputs']:
-                filenames.update(output[key] for key in ('preview', 'stl') if key in output)
+            filenames = {'report.json', *report['artifacts'].values(), *output_files(report)}
             with (work / 'build/model.json').open('rb') as file:
                 fingerprint = hashlib.file_digest(file, 'sha256').hexdigest()
             accepted = True
             result = dict(model_sha256=fingerprint, report=report, directory=str(work / 'build'),resources={name: f'occt://build/{build_id}/{name}' for name in sorted(filenames)})
             result['visualization_id' if visualization or previewing else 'build_id'] = build_id
-            return tool_result(result)
+            images, attached = self.inline_renders(work / 'build', report)
+            if attached:
+                result['inline_images'] = attached
+            return tool_result(result, images=images)
         except TimeoutError:
             return tool_result(dict(status='failed', stage='timeout', message=f'build exceeded {self.timeout:g} seconds'), True)
         finally:

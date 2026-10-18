@@ -11,6 +11,7 @@ mod helix_views;
 mod inspection;
 mod patching;
 mod profile_views;
+mod renders;
 mod transform_views;
 mod views;
 

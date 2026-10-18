@@ -67,3 +67,22 @@ with tempfile.TemporaryDirectory(prefix='occb-model-check-') as temporary:
     assert all(abs(o['volume_mm3'] - 1500 * 3.141592653589793) < 1e-7 for o in report['outputs'])
     assert elapsed < 10
     print(f'PASS 1000 selected instances: one variant, validity, analytic volumes, requirements, persistence/report ({elapsed:.3f}s / 10s)')
+    # Render limits: the most images one build may ask for, and the largest size.
+    request = json.loads((root / 'tools/model/shaft.request.json').read_text())
+    request.update(step=False, stl=False, preview=False)
+    for i in range(1, 32):
+        request['model']['instances'].append({'clone': {'id': f'shaft-{i}', 'source': 'shaft', 'overrides': {}, 'provenance': 'scale'}})
+        request['outputs'].append({'instance': f'shaft-{i}', 'output': 'body'})
+    views = ['iso', 'front', 'back', 'top', 'bottom', 'left', 'right']
+    request['renders'] = dict(views=views, sections=[dict(id='axis', origin_mm=[0, 0, 0], normal=[1, 0, 0])])
+    report, elapsed = build(request, folder / 'renders')
+    images = [image['file'] for output in report['outputs'] for image in output['renders']]
+    assert len(images) == 256 and all((folder / 'renders' / name).read_bytes()[:4] == b'\x89PNG' for name in images)
+    assert elapsed < 10
+    print(f'PASS 256 renders (32 outputs x 7 views + 1 section, 512 px) ({elapsed:.3f}s / 10s)')
+    request = json.loads((root / 'tools/model/hemmed-tray.request.json').read_text())
+    request.update(step=False, preview=False, renders=dict(views=views, sections=[dict(id='mid', origin_mm=[11.5, 15, -15], normal=[0, 1, 0])], size_px=1024))
+    report, elapsed = build(request, folder / 'large-renders')
+    assert sum(len(output['renders']) for output in report['outputs']) == 16
+    assert elapsed < 10
+    print(f'PASS 16 renders at 1024 px of a hemmed sheet-metal tray and its flat pattern ({elapsed:.3f}s / 10s)')

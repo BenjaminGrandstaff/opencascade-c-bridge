@@ -22,6 +22,9 @@ pub struct PatchRequest {
     stl: bool,
     #[serde(default = "yes")]
     preview: bool,
+    /// Shaded PNG renders, as for builds; previews render the candidate.
+    #[serde(default)]
+    renders: Option<render::RenderOptions>,
 }
 #[derive(Deserialize, serde::Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -219,6 +222,11 @@ fn edit(request: PatchRequest, destination: &Path, preview: bool) -> Result<Valu
                 .set_override(&edit.instance, &edit.parameter, edit.value.clone())
                 .map_err(|e| model_failure("edits", e))?;
         }
+        if let Some(renders) = &request.renders {
+            renders
+                .validate(request.outputs.len())
+                .map_err(|e| failure("request", e))?;
+        }
         let refreshed = ModelDocument::from_graph(&graph);
         edited.instances = refreshed.instances;
         edited.patterns = refreshed.patterns;
@@ -233,6 +241,32 @@ fn edit(request: PatchRequest, destination: &Path, preview: bool) -> Result<Valu
         report["status"] = json!("previewed");
         report["accepted"] = json!(false);
         report["source"] = json!(request.source);
+        if let Some(options) = &request.renders {
+            // The candidate is regenerated once more for its renders; the
+            // accepted build stays untouched either way.
+            let rendered = (|| {
+                let session = Session::new().map_err(|e| failure("kernel", e))?;
+                // `edited` now carries the candidate's overrides.
+                let mut graph = edited
+                    .instance_graph()
+                    .map_err(|e| model_failure("validation", e))?;
+                let generation = graph
+                    .regenerate_all(&session)
+                    .map_err(|e| model_failure("regeneration", e))?;
+                render_outputs(
+                    &session,
+                    &generation,
+                    &request.outputs,
+                    options,
+                    destination,
+                    &mut report,
+                )
+            })();
+            if rendered.is_err() {
+                let _ = fs::remove_dir_all(destination);
+            }
+            rendered?;
+        }
         let publication = fs::write(
             destination.join("report.json"),
             serde_json::to_string_pretty(&report).map_err(|e| failure("publication", e))?,
@@ -254,6 +288,7 @@ fn edit(request: PatchRequest, destination: &Path, preview: bool) -> Result<Valu
             step_pmi: None,
             stl: request.stl,
             preview: request.preview,
+            renders: request.renders,
         },
         destination,
         false,

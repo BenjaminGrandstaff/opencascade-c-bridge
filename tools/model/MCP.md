@@ -89,12 +89,16 @@ in this directory is automatically exposed; restart the server after adding one.
 Read the catalog at runtime instead of relying on a count copied into prose.
 Accepted builds return specific
 `occt://build/BUILD_ID/ARTIFACT` URIs; a resource template advertises this form.
-JSON and SVG resources return text, while STEP and STL return base64 blobs.
+JSON and SVG resources return text, while STEP, STL and PNG return base64 blobs.
 Reads are limited to 32 MiB; larger artifacts remain available at the returned
 local directory. Only listed artifacts from completed builds can be read.
 Request files, worker logs, arbitrary paths, and incomplete builds are excluded.
 
 Tool results provide both `structuredContent` and equivalent JSON text content.
+When a build, edit or edit preview sets `renders`, the result also carries up
+to eight of its PNG renders as `image` content (at most 4 MiB together, in
+report order) and lists them in `inline_images`; every render stays readable
+as an `image/png` resource. See [rendered views and sections](README.md#rendered-views-and-sections).
 Build/verification failures return `isError: true` with the native structured
 failure report. Protocol errors use JSON-RPC errors. Native STEP progress stays
 inside the worker subprocess and cannot appear on MCP stdout. Required failures
@@ -107,8 +111,9 @@ rejected measurement table. See the [build contract](README.md).
 2. Describe the function/interfaces as requirements; record uncertain inputs as
    explicit assumptions with provenance, rather than inventing verified facts.
 3. Call `occt_build` with explicit units and selected final outputs.
-4. Inspect the verification table and its exact/sampled evidence. Read the SVG
-   preview resource for visual review and model/report resources for details.
+4. Inspect the verification table and its exact/sampled evidence. Set
+   `renders` to look at the result: standard views, plus section planes
+   through walls, bores or bends. Read model/report resources for details.
 5. Read accepted `model.json`, put it into the next request, and provide typed
    parameter edits. Required failures preserve the preceding accepted build.
 6. Return STEP/STL artifacts and the editable model to the user.

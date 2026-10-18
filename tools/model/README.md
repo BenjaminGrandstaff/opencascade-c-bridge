@@ -50,6 +50,41 @@ report's `dataset`; `pmi.release` gives the drawing's release status.
 See [Semantic PMI](../../docs/DRAWINGS.md#semantic-pmi-on-persistent-faces-schema-144-abi-70)
 and [Annotation views](../../docs/DRAWINGS.md#annotation-views-schema-145-abi-71).
 
+### Rendered views and sections
+
+Add `"renders"` for shaded PNG images of each selected output, so a client
+that reads images can check what it built: interference, bend direction,
+missing or misplaced features. `{}` renders the iso, front, top and right
+views at 512 px. All fields are optional:
+
+```json
+"renders": {
+  "views": ["iso", "front", "top", "right"],
+  "sections": [{ "id": "mid", "origin_mm": [20, 15, 12], "normal": [1, 0, 0] }],
+  "size_px": 512
+}
+```
+
+Views are in model coordinates with +Z up: `front` looks along +Y, `top`
+along −Z, `right` along −X, and `iso` from the front-right-top corner; `back`,
+`bottom` and `left` are the opposites. A section removes the material on the
+side its normal points to, hatches the cut face and looks back along the
+normal, which shows wall thickness, bores and hems in profile. A plane that
+removes the whole part reports `"empty": true` instead of an image. Faces are
+flat-shaded with their B-rep boundaries and silhouettes outlined, and a
+corner triad shows X (red), Y (green) and Z (blue). Sheet-metal flat patterns
+are ordinary outputs, so a `top` render of the flat output shows the blank.
+
+Each output's `renders` lists `{view|section, file, width_px, height_px}` in
+request order, and files are named `NNNN-<view>.png` or
+`NNNN-section-<id>.png`. Limits: 8 views and 4 sections per output, 64 to
+1,024 px, and 256 images per build; invalid options fail the `request` stage
+before anything is built. Renders use the tessellation, not the exact
+geometry, and are for visual review only; the report's measurements stay the
+evidence. Edit previews and edits take the same `renders` field and render the
+candidate. Measured cost: 256 images at 512 px took 3.95 s and 55 MB; 16
+images at 1,024 px took 1.38 s and 100 MB.
+
 Use the complete examples here for valid model structure: [bracket](bracket.request.json),
 [enclosure](enclosure.request.json), [shaft](shaft.request.json), and
 [mating shaft/sleeve](mating-parts.request.json). Their dimensions and wall
