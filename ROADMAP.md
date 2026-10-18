@@ -3401,6 +3401,51 @@ scopes and inspected repo capabilities, not a full conformity audit.
    parts lists with item balloons (schemas 87, 91) that merge identical
    sub-assemblies (schema 157) exist.
 
+### AI design tool
+
+The single-part AI loop works end to end: [MCP](tools/model/MCP.md) exposes
+generated schemas and examples, builds with verified requirements, read-only
+inspection, and guarded previews and edits with revision history. The gaps
+below keep an AI from using the rest of the engine as a design tool. They are
+ordered by priority; the first is cheap and corrects misleading guidance.
+
+1. **Current AI documentation and examples** — `tools/model/MCP.md` still
+   says authoring schemas target schema 133 (now 178), counts 40 feature
+   operations, advertises 74 example resources, and says the wire tests
+   validate four examples (88 exist). There are no
+   sheet-metal examples, and shells, drafts, patterns and assemblies with
+   drawings or GD&T have few or none. Add examples (a sheet-metal tray with
+   hems and cutouts across bends, a tapped and shelled block) and make the
+   counts come from the code, so they cannot go stale.
+2. **MCP access to drawings, inspection and mechanisms** — MCP offers eight
+   part tools. Drawing export, inspection reports, motion studies, balance
+   reports, joint branches and document merge exist only as separate
+   commands (`occt-drawing-export`, `occt-inspection-report`,
+   `occt-motion-study`, `occt-balance-report`, `occt-joint-branches`,
+   `occt-document-merge`), so an AI client cannot produce a drawing sheet,
+   evaluate measured parts or run a mechanism. Expose them as tools with
+   generated schemas, examples and readable artifacts.
+3. **Visual feedback for the AI** — builds return isometric SVG previews only.
+   Add bounded raster renders from several standard views, section views and
+   sheet-metal flat patterns as build artifacts, so a multimodal client can
+   check interference, bend direction and missing features.
+4. **Complete failure reports** — required failures return the engine's error
+   context rather than the full rejected measurement table, which leaves less
+   evidence for repair. Return the same verification table as accepted builds.
+5. **Shared sessions with the studio** — studio and MCP edits are separate,
+   with no shared live session or revision locking, so a person and an AI
+   cannot edit one model at once. Add a session both can join, with guarded
+   edits checked against the accepted revision.
+6. **Design knowledge** — expressions cannot look up catalogs or materials
+   (see Later), there is no standard-part library (fasteners, bearings, dowel
+   pins), wall thickness is sampled rather than exact, and draft is not
+   checked on freeform faces. Strength and manufacturability are not proven;
+   strength still needs an external solver.
+7. **Design starting points** — turning a functional need into features is
+   left entirely to the AI client. Add parameterized templates (brackets,
+   enclosures, shafts, sheet-metal trays) whose requirements and assumptions
+   an AI fills in, rather than authoring every feature from scratch.
+
 ## Later
 
 - Sheet-metal closed and teardrop hems, cutouts across bends, edge
