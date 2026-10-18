@@ -148,6 +148,41 @@ test('sweep edits keep twists and sections, and the form adds them',async()=>{
 });
 
 
+test('shell, draft, mirror and pattern forms pick faces, add tools and keep saved ones',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const host=new Element('div'),calls=[],picks=[];
+ const top={normal_aligned:{z:1}};
+ const saved={id:'twin',operation:{mirror:{input:'body',origin:{parameter:'pivot'},normal:{literal:{x:{value:1,dimension:'scalar',unit:null},y:{value:0,dimension:'scalar',unit:null},z:{value:0,dimension:'scalar',unit:null}}}}}};
+ const features=[...base,saved];
+ createSolidEditor({host,instance:()=> 'part',preview:async()=>{},applied:async()=>{},restore:async()=>{},pickLimitingFace:async target=>{picks.push(target);return {target,face:top,origin_mm:[20,15,20]};},request:async(path,options)=>{
+  if(!options)return {version:1,features,output:'body',parameters:[]};
+  calls.push(JSON.parse(options.body));return {can_apply:true};
+ }});
+ await button(host,'Sketch to solid').onclick();
+ control(host,'Solid feature').value='hollow';control(host,'Solid feature').onchange();
+ assert.equal(control(host,'Solid operation'),undefined);assert.equal(control(host,'Sketch / planar profile'),undefined);
+ control(host,'Result feature name').value='shell';control(host,'Result feature name').oninput();
+ control(host,'Source solid').value='body';control(host,'Source solid').onchange();
+ await button(host,'Pick a face to open').onclick();assert.deepEqual(picks,['body']);
+ await button(host,'Preview solid').onclick();
+ assert.deepEqual(calls[0].features,[{id:'shell',operation:{hollow:{input:'body',faces:[top],thickness:{literal:{value:-2,dimension:'length',unit:'millimeter'}},tolerance:{literal:{value:0.001,dimension:'length',unit:'millimeter'}}}}}]);
+ // A pattern added to its source makes the pattern and a union.
+ control(host,'Solid feature').value='linear_pattern';control(host,'Solid feature').onchange();
+ control(host,'Solid operation').value='fuse';control(host,'Solid operation').onchange();
+ control(host,'Target solid').value='body';control(host,'Target solid').onchange();
+ control(host,'Source solid').value='body';control(host,'Source solid').onchange();
+ control(host,'Result feature name').value='row';control(host,'Result feature name').oninput();
+ await button(host,'Preview solid').onclick();
+ assert.deepEqual(calls[1].features.map(f=>f.id),['row-linear-pattern','row']);
+ assert.equal(calls[1].features[0].operation.linear_pattern.count.literal.value,3);
+ // Editing a saved mirror keeps its formula untouched.
+ await button(host,'Edit mirror twin').onclick();
+ await button(host,'Preview solid').onclick();assert.deepEqual(calls[2].features,[saved]);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});
+
+
 test('loft definitions validate ordered outer sections, distinct complete hole tracks and limits',()=>{
  const features=['a','b','c','ha','hb','hc'].map(id=>({id})),definition={profiles:['a','b','c'],holes:[['ha','hb','hc']],ruled:true};
  assert.deepEqual(loftDefinition(features,definition),definition);

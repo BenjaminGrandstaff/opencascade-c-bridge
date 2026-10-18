@@ -1,0 +1,57 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readSolidTool,solidToolOperation,solidToolKind,inPlaceTool,isSolidTool} from './solid-tools.mjs';
+
+const features=[{id:'body',operation:{extrude:{}}},{id:'other',operation:{extrude:{}}}];
+const face={normal_aligned:{direction:{literal:{x:{value:0,dimension:'scalar',unit:null},y:{value:0,dimension:'scalar',unit:null},z:{value:1,dimension:'scalar',unit:null}}},minimum_dot:{literal:{value:0.999,dimension:'scalar',unit:null}}}};
+const length=value=>({literal:{value,dimension:'length',unit:'millimeter'}});
+const scalar=value=>({literal:{value,dimension:'scalar',unit:null}});
+
+test('shells open picked faces with walls inside or outside, keeping formulas',()=>{
+  const state=readSolidTool('hollow',null,'body');
+  assert.equal(state.side,'inside');assert.equal(state.thickness.value,2);
+  assert.throws(()=>solidToolOperation('hollow',state,features),/at least one face/);
+  state.faces.push(face);
+  const inside=solidToolOperation('hollow',state,features).hollow;
+  assert.deepEqual(inside.thickness,length(-2));assert.deepEqual(inside.faces,[face]);assert.equal(inside.input,'body');
+  state.side='outside';state.thickness.value=1.5;
+  assert.deepEqual(solidToolOperation('hollow',state,features).hollow.thickness,length(1.5));
+  // A parameter inside negates it; reading it back keeps the side.
+  state.side='inside';state.thickness.source='parameter:wall';
+  const linked=solidToolOperation('hollow',state,features).hollow;
+  assert.deepEqual(linked.thickness,{negate:{parameter:'wall'}});
+  const reread=readSolidTool('hollow',linked);
+  assert.equal(reread.side,'inside');assert.equal(reread.thickness.source,'parameter:wall');
+  assert.deepEqual(solidToolOperation('hollow',reread,features).hollow,linked);
+  state.thickness.source='literal';state.thickness.value=0;
+  assert.throws(()=>solidToolOperation('hollow',state,features),/wall thickness/);
+});
+
+test('drafts, mirrors and patterns write the engine operations and refuse bad values',()=>{
+  const draft=readSolidTool('draft',null,'body');draft.faces.push(face);
+  const op=solidToolOperation('draft',draft,features).draft;
+  assert.ok(Math.abs(op.angle_radians.literal.value-3*Math.PI/180)<1e-15);
+  assert.equal(op.neutral_normal.components.z.literal.value,1);
+  draft.angle.value=90;assert.throws(()=>solidToolOperation('draft',draft,features),/draft angle/);
+  const mirror=readSolidTool('mirror',null,'body');mirror.normal.values=[0,3,0];
+  assert.equal(solidToolOperation('mirror',mirror,features).mirror.normal.components.y.literal.value,1);
+  mirror.normal.values=[0,0,0];assert.throws(()=>solidToolOperation('mirror',mirror,features),/nonzero/);
+  const linear=readSolidTool('linear_pattern',null,'body');linear.direction=[0,2,0];linear.spacing.value=15;linear.count.value=4;
+  const step=solidToolOperation('linear_pattern',linear,features).linear_pattern;
+  assert.deepEqual([step.step.components.y.literal.value,step.count.literal.value],[15,4]);
+  assert.deepEqual(readSolidTool('linear_pattern',step).direction,[0,1,0]);
+  linear.count.value=1.5;assert.throws(()=>solidToolOperation('linear_pattern',linear,features),/whole number/);
+  const circular=readSolidTool('circular_pattern',null,'body');
+  const ring=solidToolOperation('circular_pattern',circular,features).circular_pattern;
+  assert.ok(Math.abs(ring.angle_step_radians.literal.value-Math.PI/3)<1e-15);
+  circular.count.source='parameter:n';
+  assert.throws(()=>solidToolOperation('circular_pattern',circular,features),/entered count/);
+  circular.spacing='step';circular.angle.value=30;
+  assert.ok(Math.abs(solidToolOperation('circular_pattern',circular,features).circular_pattern.angle_step_radians.literal.value-Math.PI/6)<1e-15);
+  // Saved formulas round-trip untouched.
+  const saved={input:'body',origin:{parameter:'pivot'},normal:{literal:{x:scalar(1),y:scalar(0),z:scalar(0)}}};
+  assert.deepEqual(solidToolOperation('mirror',readSolidTool('mirror',saved),features).mirror.origin,{parameter:'pivot'});
+  assert.throws(()=>solidToolOperation('mirror',readSolidTool('mirror',null,'gone'),features),/source solid/);
+  assert.equal(solidToolKind({circular_pattern:{}}),'circular_pattern');
+  assert.ok(inPlaceTool('hollow')&&!inPlaceTool('mirror')&&isSolidTool('draft')&&!isSolidTool('extrude'));
+});

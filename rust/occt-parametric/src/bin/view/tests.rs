@@ -7338,3 +7338,82 @@ fn loft_station_diagnosis_identifies_invalid_draft_hole_planes_without_changing_
     assert_eq!(studio.handle("GET", "/api/model.gltf", b"").body, mesh);
     assert_eq!(fs::read_to_string(path).unwrap(), saved);
 }
+
+#[test]
+fn studio_shells_drafts_mirrors_and_patterns_preview_exact_solids() {
+    // A 40 × 30 × 20 block from the origin.
+    let length = |v: f64| json!({"value": v, "dimension": "length", "unit": "millimeter"});
+    let scalar = |v: f64| json!({"value": v, "dimension": "scalar", "unit": null});
+    let lengths = |x: f64, y: f64, z: f64| json!({"components": {"x": {"literal": length(x)}, "y": {"literal": length(y)}, "z": {"literal": length(z)}}});
+    let scalars = |x: f64, y: f64, z: f64| json!({"components": {"x": {"literal": scalar(x)}, "y": {"literal": scalar(y)}, "z": {"literal": scalar(z)}}});
+    let model = json!({"schema_version": CURRENT_SCHEMA_VERSION, "family": {
+        "id": "block", "version": 1, "parameters": [], "derived_parameters": [],
+        "derived_vector_parameters": [], "constraints": [], "requirements": [], "datums": [],
+        "features": [{"id": "block", "operation": {"box": {"origin": lengths(0.0, 0.0, 0.0), "size": lengths(40.0, 30.0, 20.0)}}}]},
+        "instances": [{"base": {"id": "part", "overrides": {}, "provenance": "test"}}]});
+    let document = ModelDocument::from_json(&model.to_string()).unwrap();
+    let directory = Directory::new();
+    let path = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&path, Some("block".into())).unwrap();
+    assert_eq!(studio.handle("GET", "/solid-tools.mjs", b"").status, 200);
+    let (_, data) = get(&mut studio, "/api/features");
+    let state = get(&mut studio, "/api/state").1;
+    let facing = |x: f64, y: f64, z: f64| json!({"normal_aligned": {"direction": {"literal": {"x": scalar(x), "y": scalar(y), "z": scalar(z)}}, "minimum_dot": {"literal": scalar(0.999)}}});
+    let preview = |studio: &mut serve::Studio, features: serde_json::Value, output: &str| -> f64 {
+        let edit = json!({"version": data["version"], "instance": "part", "expected": data["features"], "action": "add", "features": features, "output": output, "apply": false});
+        let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(body["can_apply"], true, "{body}");
+        body["geometry"]["part"]["volume_mm3"].as_f64().unwrap()
+    };
+    let close = |actual: f64, expected: f64| {
+        assert!(
+            (actual - expected).abs() < 1e-6 * expected,
+            "{actual} vs {expected}"
+        )
+    };
+    // Shell: the top opened, 2 mm walls inside.
+    let shell = preview(
+        &mut studio,
+        json!([{"id": "shell", "operation": {"hollow": {"input": "block", "faces": [facing(0.0, 0.0, 1.0)], "thickness": {"literal": length(-2.0)}, "tolerance": {"literal": length(0.001)}}}}]),
+        "shell",
+    );
+    close(shell, 24000.0 - 36.0 * 26.0 * 18.0);
+    // Draft: the +x face tilted 5° about the base, removing a wedge.
+    let draft = preview(
+        &mut studio,
+        json!([{"id": "tapered", "operation": {"draft": {"input": "block", "faces": [facing(1.0, 0.0, 0.0)], "neutral_origin": lengths(0.0, 0.0, 0.0), "neutral_normal": scalars(0.0, 0.0, 1.0), "pull_direction": scalars(0.0, 0.0, 1.0), "angle_radians": {"literal": scalar(5f64.to_radians())}}}}]),
+        "tapered",
+    );
+    close(
+        draft,
+        24000.0 - 0.5 * 30.0 * 20.0 * 20.0 * 5f64.to_radians().tan(),
+    );
+    // Mirror across the YZ plane, added to the block: twice its volume.
+    let mirrored = preview(
+        &mut studio,
+        json!([
+        {"id": "both-mirror", "operation": {"mirror": {"input": "block", "origin": lengths(0.0, 0.0, 0.0), "normal": scalars(1.0, 0.0, 0.0)}}},
+        {"id": "both", "operation": {"fuse": {"left": "block", "right": "both-mirror"}}}]),
+        "both",
+    );
+    close(mirrored, 48000.0);
+    // Three touching copies along x, added to the block.
+    let row = preview(
+        &mut studio,
+        json!([
+        {"id": "row-linear-pattern", "operation": {"linear_pattern": {"input": "block", "step": lengths(40.0, 0.0, 0.0), "count": {"literal": scalar(3.0)}}}},
+        {"id": "row", "operation": {"fuse": {"left": "block", "right": "row-linear-pattern"}}}]),
+        "row",
+    );
+    close(row, 72000.0);
+    // Four quarter-turn copies about a corner's vertical edge, apart.
+    let ring = preview(
+        &mut studio,
+        json!([{"id": "ring", "operation": {"circular_pattern": {"input": "block", "origin": lengths(0.0, 0.0, 0.0), "axis": scalars(0.0, 0.0, 1.0), "count": {"literal": scalar(4.0)}, "angle_step_radians": {"literal": scalar(std::f64::consts::FRAC_PI_2)}}}}]),
+        "ring",
+    );
+    close(ring, 96000.0);
+    // Previews leave the accepted model alone.
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+}

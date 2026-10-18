@@ -421,6 +421,50 @@ preview. A rejected preview also restores the accepted view and retains the form
 for correction. Sketch layers retain their applied definitions during this solid
 preview.
 
+### Shells, drafts, mirrors and patterns
+
+**Solid feature** also offers five operations on an accepted solid. Each
+names its **Source solid**:
+
+- **Shell (hollow) a solid** removes the picked faces and leaves walls of
+  the entered or parameter-linked thickness. The walls go inside the
+  original surface (the default) or outside it. Inside walls are saved as a
+  negative thickness, or a negated parameter.
+- **Draft faces** tapers the picked faces. You give a neutral plane (a
+  point and normal), a pull direction and an angle: entered degrees, or a
+  parameter in radians. Positive angles remove material on the pull
+  direction's side.
+- **Mirror a solid** reflects it across a principal plane (YZ, XZ, XY) or a
+  custom one through an entered point.
+- **Linear pattern of a solid** repeats it along a direction at a spacing.
+  **Circular pattern of a solid** repeats it about an axis, evenly round a
+  full turn or at an entered angle. The copy count includes the original,
+  and may be a parameter.
+
+Shell and draft change their solid in place, like fillets. **Pick a face to
+open** or **Pick a face to draft** picks planar faces of the amber source in
+the canvas, one per click; **Remove face …** drops one. Curved faces can be
+chosen in the model document.
+
+Mirror and patterns make new bodies. With **Add material** and the source as
+target they join it, which is how to make a symmetric part or a row of
+features. **Edit shell …**, **Edit draft …**, **Edit mirror …** and the pattern
+edit buttons reopen saved features. They keep picked face selectors, and
+any saved vector or value you leave unchanged keeps its saved form. Kept
+formulas are listed, and an **Enter … instead** button replaces one.
+
+Tests check each operation's preview on a block against its exact volume:
+- the shell;
+- the draft's removed wedge;
+- the mirrored union;
+- a touching row of three;
+- four quarter-turn copies.
+
+Form tests cover picking, the inside/outside sign, unions with the source,
+and unchanged edits. A browser check picked a top face in the canvas and
+previewed the open box at its exact 7,152 mm³. It then edited the saved
+shell to 3 mm walls (10,128 mm³).
+
 **Apply verified solid** repeats native validation and commits the feature graph
 as one model-history step, including the extrusion and boolean together. All
 family variants must produce valid, nonempty solids; a boolean must actually

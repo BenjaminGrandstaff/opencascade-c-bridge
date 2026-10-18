@@ -47,7 +47,7 @@ export function installConstraints(studio, document) {
   const layer = () => studio.activeLayer();
   const scene = () => (layer() ? studio.sceneOf(layer().feature) : null);
   /** The definition constraints are added to: the open draft, or the layer's sketch. */
-  const definition = () => studio.draft?.feature === layer()?.feature ? studio.draft.definition : studio.definitions[layer()?.feature] ?? null;
+  const definition = () => studio.draft && studio.draft.feature === layer()?.feature ? studio.draft.definition : studio.definitions[layer()?.feature] ?? null;
 
   function screenAt(event) {
     const box = view.getBoundingClientRect();
