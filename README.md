@@ -32,6 +32,9 @@ Recently landed:
 - **Advanced sweeps:** twist and scale laws, guide rails and intermediate
   sections on constrained sketch paths, plus planes placed normal to a path
   ([docs](docs/ADVANCED_SWEEPS.md)).
+- **Sketch studio:** draw lines, arcs, splines, conics, slots and text;
+  dimension and constrain them with a live solver; then fillet, trim, offset
+  and pattern ([docs](docs/SKETCH_STUDIO.md)).
 - **Studio solid editing:** shells, drafts, mirrors, linear and circular
   patterns, catalog-tapped holes with cut threads, and a sheet-metal part
   editor ([docs](docs/SKETCH_STUDIO.md)).
@@ -48,6 +51,8 @@ Captured from `occt-view --serve` (classic viewer at `/`, sketch studio at
 
 | | |
 |---|---|
+| ![Fully constrained sketch in the studio](docs/images/sketch-dimensioned.jpg) | ![Constraint suggestions on a selected line](docs/images/sketch-constraints.jpg) |
+| The sketcher on [`dimensioned-plate`](tools/model/dimensioned-plate.request.json): lines with an angled corner, a notch and a hole, held by driving dimensions and constraints. The inspector shows the solver at 0 free degrees. | Selecting a line in [`sketch-diagnosis`](tools/model/sketch-diagnosis.request.json) lists the constraints on it and suggests new ones (horizontal, vertical, length, angle). The layer still has 1 free degree. |
 | ![Sheet-metal tray in the viewer](docs/images/tray-viewer.jpg) | ![Sheet-metal editor in the studio](docs/images/tray-studio.jpg) |
 | A sheet-metal tray: two 90° bends, edge flanges with reliefs, a teardrop hem, a closed hem, and cutouts, with measured spans. | The same part in the studio's sheet-metal editor: stock, flanges and bends, and hems are form fields; Preview checks every instance before apply. |
 | ![Swept duct in the viewer](docs/images/duct-viewer.jpg) | ![Sweep path and path planes in the studio](docs/images/duct-studio.jpg) |
