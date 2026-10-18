@@ -7417,3 +7417,88 @@ fn studio_shells_drafts_mirrors_and_patterns_preview_exact_solids() {
     // Previews leave the accepted model alone.
     assert_eq!(get(&mut studio, "/api/state").1, state);
 }
+
+#[test]
+fn studio_threads_holes_from_the_tap_catalog() {
+    let length = |v: f64| json!({"value": v, "dimension": "length", "unit": "millimeter"});
+    let scalar = |v: f64| json!({"value": v, "dimension": "scalar", "unit": null});
+    let lengths = |x: f64, y: f64, z: f64| json!({"components": {"x": {"literal": length(x)}, "y": {"literal": length(y)}, "z": {"literal": length(z)}}});
+    let scalars = |x: f64, y: f64, z: f64| json!({"components": {"x": {"literal": scalar(x)}, "y": {"literal": scalar(y)}, "z": {"literal": scalar(z)}}});
+    let model = json!({"schema_version": CURRENT_SCHEMA_VERSION, "family": {
+        "id": "block", "version": 1, "parameters": [], "derived_parameters": [],
+        "derived_vector_parameters": [], "constraints": [], "requirements": [], "datums": [],
+        "features": [{"id": "block", "operation": {"box": {"origin": lengths(0.0, 0.0, 0.0), "size": lengths(40.0, 30.0, 20.0)}}}]},
+        "instances": [{"base": {"id": "part", "overrides": {}, "provenance": "test"}}]});
+    let document = ModelDocument::from_json(&model.to_string()).unwrap();
+    let directory = Directory::new();
+    let path = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&path, Some("block".into())).unwrap();
+    assert_eq!(
+        studio.handle("GET", "/solid-hole-threads.mjs", b"").status,
+        200
+    );
+    let (_, data) = get(&mut studio, "/api/features");
+    // The catalog: 28 metric and 36 inch sizes; inch sizes name their
+    // Unified series and standard designation.
+    let sizes = &data["thread_sizes"];
+    assert_eq!(
+        (
+            sizes["metric"].as_array().unwrap().len(),
+            sizes["inch"].as_array().unwrap().len()
+        ),
+        (28, 36)
+    );
+    let quarter = sizes["inch"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["label"] == "1/4-20")
+        .unwrap()
+        .clone();
+    assert_eq!(quarter["designation"], "1/4-20 UNC-2B");
+    assert_eq!(quarter["series"], "unc");
+    let m6 = sizes["metric"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["label"] == "M6x1")
+        .unwrap()
+        .clone();
+    let hole = |thread: serde_json::Value, size: &serde_json::Value, system: &str| {
+        json!({"id": "tapped", "operation": {"hole": {
+        "input": "block", "position": lengths(20.0, 15.0, 20.0), "axis": scalars(0.0, 0.0, -1.0),
+        "diameter": {"carr_lane_tap_drill_v1": {"nominal_diameter": {"literal": size["nominal"]}, "pitch": {"literal": size["pitch"]}, "system": system}},
+        "extent": {"blind": {"depth": {"literal": length(12.0)}}}, "thread": thread}}})
+    };
+    let preview = |studio: &mut serve::Studio, feature: serde_json::Value| -> serde_json::Value {
+        let edit = json!({"version": data["version"], "instance": "part", "expected": data["features"], "action": "add", "features": [feature], "output": "tapped", "apply": false});
+        let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+        serde_json::from_slice(&response.body).unwrap()
+    };
+    // A 1/4-20 UNC-2B callout on the catalog's #7 drill: within B1.1's
+    // minor-diameter limits, and the bore is exactly that drill.
+    let unified = json!({"designation": "1/4-20 UNC-2B", "nominal_diameter": {"literal": quarter["nominal"]}, "pitch": {"literal": quarter["pitch"]}, "handedness": "right", "unified": {"series": "unc", "class": "2B"}});
+    let result = preview(&mut studio, hole(unified.clone(), &quarter, "inch"));
+    assert_eq!(result["can_apply"], true, "{result}");
+    let drill = quarter["drill_mm"].as_f64().unwrap();
+    let expected = 24000.0 - std::f64::consts::PI * drill * drill / 4.0 * 12.0;
+    let volume = result["geometry"]["part"]["volume_mm3"].as_f64().unwrap();
+    assert!(
+        (volume - expected).abs() < 1e-6 * expected,
+        "{volume} vs {expected}"
+    );
+    // A wrong designation for the class is refused.
+    let mut wrong = unified.clone();
+    wrong["designation"] = json!("1/4-20 UNC-1B");
+    assert_eq!(
+        preview(&mut studio, hole(wrong, &quarter, "inch"))["can_apply"],
+        false
+    );
+    // An M6x1 cut 8 mm deep in the catalog's 5 mm bore removes more than
+    // the plain bore.
+    let cut = json!({"designation": "M6x1", "nominal_diameter": {"literal": m6["nominal"]}, "pitch": {"literal": m6["pitch"]}, "handedness": "right", "modeled": {"length": {"literal": length(8.0)}}});
+    let result = preview(&mut studio, hole(cut, &m6, "metric"));
+    assert_eq!(result["can_apply"], true, "{result}");
+    let plain = 24000.0 - std::f64::consts::PI * 2.5 * 2.5 * 12.0;
+    assert!(result["geometry"]["part"]["volume_mm3"].as_f64().unwrap() < plain - 1.0);
+}

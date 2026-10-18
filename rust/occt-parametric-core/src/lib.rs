@@ -111,9 +111,9 @@ pub use expressions::*;
 pub use graph::*;
 pub use hole_sizes::clearance_scalar;
 pub use hole_sizes::{
-    ClearanceSeries, HoleCatalogSystem, SocketHeadDimension, SocketHeadRecess,
+    ClearanceSeries, HoleCatalogSystem, SocketHeadDimension, SocketHeadRecess, TapSize,
     carr_lane_socket_dimension_v1, carr_lane_socket_head_v1, carr_lane_tap_drill_v1,
-    iso273_clearance_v1,
+    carr_lane_tap_sizes_v1, iso273_clearance_v1,
 };
 pub use mesh::*;
 pub use pattern::*;

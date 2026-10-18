@@ -210,6 +210,47 @@ fn factor(system: HoleCatalogSystem) -> f64 {
         HoleCatalogSystem::Inch => 25.4,
     }
 }
+/// One cut-tap size of the frozen catalog: the nominal diameter and pitch in
+/// millimetres and the recommended drill in millimetres, with the inch
+/// threads per inch (zero for metric sizes).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TapSize {
+    pub nominal_mm: f64,
+    pub pitch_mm: f64,
+    pub drill_mm: f64,
+    pub threads_per_inch: f64,
+    /// The nominal diameter in the catalog's own unit (mm or in).
+    pub nominal: f64,
+}
+
+/// Every size of the frozen Carr Lane V1 tap-drill catalog in `system`, in
+/// catalog order: the sizes `carr_lane_tap_drill_v1` accepts. O(sizes).
+pub fn carr_lane_tap_sizes_v1(system: HoleCatalogSystem) -> Vec<TapSize> {
+    let scale = factor(system);
+    let rows = match system {
+        HoleCatalogSystem::Metric => METRIC_TAPS.as_slice(),
+        HoleCatalogSystem::Inch => INCH_TAPS.as_slice(),
+    };
+    rows.iter()
+        .map(|row| match system {
+            HoleCatalogSystem::Metric => TapSize {
+                nominal_mm: row[0],
+                pitch_mm: row[1],
+                drill_mm: row[2],
+                threads_per_inch: 0.0,
+                nominal: row[0],
+            },
+            HoleCatalogSystem::Inch => TapSize {
+                nominal_mm: row[0] * scale,
+                pitch_mm: 1.0 / row[1] * scale,
+                drill_mm: row[2] * scale,
+                threads_per_inch: row[1],
+                nominal: row[0],
+            },
+        })
+        .collect()
+}
+
 /// Frozen cut-tap recommendation. Pitch is a length in either system: for
 /// 20 TPI use Quantity::length(1.0/20.0, LengthUnit::Inch). No interpolation.
 pub fn carr_lane_tap_drill_v1(

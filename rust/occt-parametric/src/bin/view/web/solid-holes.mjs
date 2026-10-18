@@ -1,4 +1,5 @@
 // Hole controls keep existing finishing/thread metadata and opaque formulas intact.
+import {createThreadControls} from './solid-hole-threads.mjs';
 const scalar=value=>({literal:{value,dimension:'scalar',unit:null}});
 const length=value=>({literal:{value,dimension:'length',unit:'millimeter'}});
 const mm=q=>q?.dimension==='length'?q.value*({millimeter:1,centimeter:10,meter:1000,inch:25.4}[q.unit]??NaN):NaN;
@@ -7,7 +8,8 @@ const vector=(values,dimension)=>{
  return {components:Object.fromEntries(['x','y','z'].map((k,i)=>[k,{literal:{value:values[i],dimension,unit:dimension==='length'?'millimeter':null}}]))};
 };
 const read=(v,dimension)=>['x','y','z'].map(k=>{const q=v?.literal?.[k]??v?.components?.[k]?.literal;return dimension==='length'?mm(q):q?.dimension==='scalar'?q.value:NaN;});
-export function createHoleControls(saved=null,target='') {
+export function createHoleControls(saved=null,target='',threadSizes={metric:[],inch:[]}) {
+ const thread=createThreadControls(saved?.thread??null,threadSizes);
  const original=structuredClone(saved),position=read(saved?.position,'length'),axis=read(saved?.axis,'scalar');
  const state={input:saved?.input??target,position:saved?position:[0,0,0],axis:saved?axis:[0,0,-1],placement:saved?'preserve':'literal',extent:saved?.extent?.blind?'blind':saved?.extent?.up_to_face?'up_to_face':saved?.extent??'blind',face:saved?.extent?.up_to_face?.face??null};
  const cb=saved?.finish?.counterbore,cs=saved?.finish?.countersink,tip=saved?.bottom?.drill_point;
@@ -24,7 +26,7 @@ export function createHoleControls(saved=null,target='') {
  }
  return {
   state,
-  definition(){
+  baseDefinition(){
    if(!state.input)throw Error('Choose a solid to drill.');
    if(!['blind','through_all','up_to_next','up_to_face'].includes(state.extent))throw Error('Choose a hole extent.');
    if(state.extent==='up_to_face'&&!state.face)throw Error('Pick a limiting face.');
@@ -33,6 +35,14 @@ export function createHoleControls(saved=null,target='') {
    const finish=state.finish==='plain'?'plain':state.finish==='counterbore'?{counterbore:{diameter:expression('counterbore diameter'),depth:expression('counterbore depth'),...(state.relief?{relief:expression('relief diameter')}:{})}}:{countersink:{diameter:expression('countersink diameter'),angle_radians:expression('countersink angle')}};
    return {...structuredClone(original),input:state.input,position:state.placement==='preserve'?structuredClone(original.position):vector(state.position,'length'),axis:state.placement==='preserve'?structuredClone(original.axis):vector(state.axis,'scalar'),diameter:expression('diameter'),extent:state.extent==='blind'?{blind:{depth:expression('depth')}}:state.extent==='up_to_face'?{up_to_face:{face:structuredClone(state.face)}}:state.extent,bottom,finish};
   },
+  definition(){
+   const hole=this.baseDefinition(),threaded=thread.definition();
+   if(threaded.thread===null)delete hole.thread;
+   else if(threaded.thread)hole.thread=threaded.thread;
+   if(threaded.diameter)hole.diameter=threaded.diameter;
+   return hole;
+  },
+  thread,
   render({select,number,content,button,features,parameters,editing,invalidate,pickPosition,pickFace,cancelPick,message,current}){
    select('Drill solid',[['','Choose solid'],...features.filter(f=>f.id!==editing?.id).map(f=>[f.id,f.id])],state.input,value=>{state.input=value;state.face=null;current.render();});
    if(pickPosition)content.append(button('Place hole on face in canvas',async()=>{
@@ -53,7 +63,9 @@ export function createHoleControls(saved=null,target='') {
     select(`Hole ${key} source`,choices,entry.source,value=>{entry.source=value;current.render();});
     number(`Hole ${key} (${angle?'degrees':'mm'})`,entry.source==='literal'&&Number.isFinite(entry.value)?entry.value:'',value=>entry.value=value).disabled=entry.source!=='literal';
    }
-   field('diameter');if(state.extent==='blind')field('depth');
+   const drill=thread.drillNote();
+   if(drill){const follows=document.createElement('p');follows.textContent=drill;content.append(follows);}else field('diameter');
+   if(state.extent==='blind')field('depth');
    select('Hole bottom',[['flat','Flat'],['drill_point','Drill point (blind only)']],state.bottom,value=>{state.bottom=value;current.render();});
    if(state.bottom==='drill_point')field('drill point angle');
    select('Hole entry finish',[['plain','Plain bore'],['counterbore','Counterbore'],['countersink','Countersink']],state.finish,value=>{state.finish=value;current.render();});
@@ -73,7 +85,8 @@ export function createHoleControls(saved=null,target='') {
      state.face=structuredClone(picked.face);current.render();message(picked.binding==='anchored_center'?'Face selected with a fixed center anchor. Moving it requires picking again; Preview checks every instance.':'Hole limiting face selected. Preview checks every instance.');
     }),button('Cancel hole face pick',()=>{invalidate();cancelPick();message('Face picking canceled. Hole draft retained.');}));
    }
-   const note=document.createElement('p');note.textContent='Position is the bore entry in family coordinates; the axis points into material. Through all spans both directions. Included angles use degrees; scalar parameters use radians. Drill points add a tip below the blind bore depth. Existing threads are retained. Preview checks recess sizes, relief, tip containment and every instance.';content.append(note);
+   thread.render({select,number,content,current});
+   const note=document.createElement('p');note.textContent='Position is the bore entry in family coordinates; the axis points into material. Through all spans both directions. Included angles use degrees; scalar parameters use radians. Drill points add a tip below the blind bore depth. Preview checks recess sizes, thread class limits, relief, tip containment and every instance.';content.append(note);
   }
  };
 }

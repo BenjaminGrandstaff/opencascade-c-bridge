@@ -11,7 +11,8 @@ impl Studio {
         let dependencies = self.document.family.feature_inputs().ok();
         json!({"version":self.version,"family":self.document.family.id,
             "features":self.document.family.features,"parameters":self.document.family.parameters,"dependencies":dependencies,
-            "output":self.output.as_deref().or_else(||self.document.family.features.last().map(|f|f.id.as_str()))})
+            "output":self.output.as_deref().or_else(||self.document.family.features.last().map(|f|f.id.as_str())),
+            "thread_sizes":thread_sizes()})
     }
     pub(super) fn feature_edit(&mut self, body: &[u8]) -> Result<Value, String> {
         #[derive(serde::Deserialize)]
@@ -307,4 +308,50 @@ fn build_solid(
         requirement_report(document, &generation),
         Value::Object(geometry),
     ))
+}
+
+/// The tap sizes the studio offers for threaded holes: the frozen Carr Lane
+/// V1 catalog, whose tap-drill expression the hole diameter can follow.
+/// Inch sizes name their Unified (B1.1) series and standard 2B designation
+/// where the core's size table has one. O(sizes).
+fn thread_sizes() -> Value {
+    use occt_parametric::{
+        HoleCatalogSystem, UnifiedClass, UnifiedSeries, UnifiedThread, carr_lane_tap_sizes_v1,
+    };
+    let trim = |value: f64| {
+        let text = format!("{value:.4}");
+        text.trim_end_matches('0').trim_end_matches('.').to_owned()
+    };
+    let metric: Vec<Value> = carr_lane_tap_sizes_v1(HoleCatalogSystem::Metric)
+        .into_iter()
+        .map(|size| {
+            json!({"label": format!("M{}x{}", trim(size.nominal_mm), trim(size.pitch_mm)),
+                "nominal": {"value": size.nominal, "dimension": "length", "unit": "millimeter"},
+                "pitch": {"value": size.pitch_mm, "dimension": "length", "unit": "millimeter"},
+                "drill_mm": size.drill_mm})
+        })
+        .collect();
+    let inch: Vec<Value> = carr_lane_tap_sizes_v1(HoleCatalogSystem::Inch)
+        .into_iter()
+        .map(|size| {
+            let unified = [UnifiedSeries::Unc, UnifiedSeries::Unf, UnifiedSeries::Unef]
+                .into_iter()
+                .find_map(|series| {
+                    UnifiedThread::new(size.nominal_mm, size.pitch_mm, series, UnifiedClass::TwoB, false)
+                        .ok()
+                        .map(|thread| (series, thread.designation()))
+                });
+            let label = match &unified {
+                Some((_, designation)) => designation.split(' ').next().unwrap_or_default().to_owned(),
+                None => format!("{}-{}", trim(size.nominal), trim(size.threads_per_inch)),
+            };
+            json!({"label": label,
+                "series": unified.as_ref().map(|(series, _)| series),
+                "designation": unified.as_ref().map(|(_, designation)| designation),
+                "nominal": {"value": size.nominal, "dimension": "length", "unit": "inch"},
+                "pitch": {"value": 1.0 / size.threads_per_inch, "dimension": "length", "unit": "inch"},
+                "drill_mm": size.drill_mm})
+        })
+        .collect();
+    json!({"metric": metric, "inch": inch})
 }

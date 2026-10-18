@@ -406,9 +406,35 @@ formula** so opening and applying an edit preserves their expressions.
 
 Switching finish types retains the draft values for switching back. Choosing
 plain or no relief explicitly removes that feature from the submitted hole.
-Thread specifications remain intact; thread authoring is not yet exposed here.
 Native Preview checks recess/bore relationships, floor relief, complete drill-tip
 containment, and every instance before Apply.
+
+**Thread** adds a tapped-hole callout from the frozen Carr Lane V1 tap
+catalog: 28 metric sizes (M1.6x0.35 to M27x2) and 36 Unified inch sizes
+(#0-80 to 1-1/8-12). The server lists the sizes with the studio's feature
+data.
+
+- **Inch sizes** take their UNC, UNF or UNEF series and standard designation
+  from the core's B1.1 size table, with class 2B or 1B. Preview checks the
+  bore against the class's minor-diameter limits.
+- **Metric sizes** are designated `M6x1`.
+- **Left-hand threads** add `-LH`.
+- **Bore diameter.** **Follow the catalog tap drill** makes the hole's
+  diameter the catalog's `carr_lane_tap_drill_v1` expression for the size,
+  and the form shows the drill in place of the diameter field. **Keep the
+  hole diameter** leaves it alone.
+- **Thread geometry.** **Cut the thread form** models the ISO 68-1 basic
+  profile in the bore, over an optional length (blank threads the whole
+  usable bore).
+- **Editing.** A saved thread on a catalog size reads back into these
+  controls. Any other saved thread is kept as it is (**Keep existing thread
+  …**), and **No thread** removes it.
+
+A server test checks the catalog as served. A 1/4-20 UNC-2B callout on the
+catalog's #7 drill passes the class limits, with the bore's exact volume.
+A designation that disagrees with its class is refused, and a modeled
+M6x1 cuts thread form beyond the plain bore. A browser check previewed an
+8 mm M6x1 tapped hole in a block, with its grooves visible.
 
 **Preview solid** displays the native validated mesh in the 3D viewer, with
 solid count and volume for the selected instance in the form. Fit uses the

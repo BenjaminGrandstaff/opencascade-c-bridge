@@ -6,8 +6,9 @@
 use super::*;
 pub mod catalogs;
 pub use catalogs::{
-    HoleCatalogSystem, SocketHeadDimension, SocketHeadRecess, carr_lane_socket_dimension_v1,
-    carr_lane_socket_head_v1, carr_lane_tap_drill_v1,
+    HoleCatalogSystem, SocketHeadDimension, SocketHeadRecess, TapSize,
+    carr_lane_socket_dimension_v1, carr_lane_socket_head_v1, carr_lane_tap_drill_v1,
+    carr_lane_tap_sizes_v1,
 };
 pub use catalogs::{socket_scalar, tap_scalar};
 

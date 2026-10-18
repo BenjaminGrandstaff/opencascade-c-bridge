@@ -183,6 +183,30 @@ test('shell, draft, mirror and pattern forms pick faces, add tools and keep save
 });
 
 
+test('hole forms add catalog thread callouts with the tap drill as the bore',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const host=new Element('div'),calls=[];
+ const q=(value,unit)=>({value,dimension:'length',unit});
+ const thread_sizes={metric:[{label:'M6x1',nominal:q(6,'millimeter'),pitch:q(1,'millimeter'),drill_mm:5}],inch:[{label:'1/4-20',series:'unc',designation:'1/4-20 UNC-2B',nominal:q(0.25,'inch'),pitch:q(0.05,'inch'),drill_mm:5.1054}]};
+ createSolidEditor({host,instance:()=> 'part',preview:async()=>{},applied:async()=>{},restore:async()=>{},request:async(path,options)=>{
+  if(!options)return {version:1,features:base,output:'body',parameters:[],thread_sizes};
+  calls.push(JSON.parse(options.body));return {can_apply:true};
+ }});
+ await button(host,'Sketch to solid').onclick();
+ control(host,'Solid feature').value='hole';control(host,'Solid feature').onchange();
+ control(host,'Result feature name').value='tapped';control(host,'Result feature name').oninput();
+ control(host,'Thread').value='inch';control(host,'Thread').onchange();
+ assert.equal(control(host,'Thread class').value,'2B');
+ control(host,'Thread hand').value='left';control(host,'Thread hand').onchange();
+ await button(host,'Preview solid').onclick();
+ const hole=calls[0].features[0].operation.hole;
+ assert.equal(hole.thread.designation,'1/4-20 UNC-2B-LH');assert.deepEqual(hole.thread.unified,{series:'unc',class:'2B'});
+ assert.deepEqual(hole.diameter.carr_lane_tap_drill_v1.system,'inch');
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});
+
+
 test('loft definitions validate ordered outer sections, distinct complete hole tracks and limits',()=>{
  const features=['a','b','c','ha','hb','hc'].map(id=>({id})),definition={profiles:['a','b','c'],holes:[['ha','hb','hc']],ruled:true};
  assert.deepEqual(loftDefinition(features,definition),definition);

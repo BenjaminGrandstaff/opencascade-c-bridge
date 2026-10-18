@@ -136,7 +136,7 @@ export function createSolidEditor({host,request,instance,preview,applied,restore
     loftCorrespondence=createLoftCorrespondenceControls(loft);
     loft.holes??=[];loftStarted=Boolean(feature?.operation.profile_loft);
     finishTarget=isEdgeFinish(kind)?sweep.input:target;finishEdges=isEdgeFinish(kind)?structuredClone(sweep.edges):[];savedSize=isEdgeFinish(kind)?sweep.radius??sweep.distance:null;finishSize=savedSize?(savedSize.literal?mm(savedSize.literal):NaN):2;finishSource=savedSize?.parameter?`parameter:${savedSize.parameter}`:savedSize?'preserve':'literal';
-    holeControls=createHoleControls(feature?.operation.hole,target);
+    holeControls=createHoleControls(feature?.operation.hole,target,data.thread_sizes);
     tool=isSolidTool(kind)?readSolidTool(kind,feature?.operation[kind],target):null;
     render();started(feature,data.output);message(feature?`Editing ${solidNames[kind]} ${feature.id}.`:'Choose a profile and operation. Apply any pending sketch edits first.');
   }
