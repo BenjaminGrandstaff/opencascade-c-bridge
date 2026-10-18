@@ -7502,3 +7502,68 @@ fn studio_threads_holes_from_the_tap_catalog() {
     let plain = 24000.0 - std::f64::consts::PI * 2.5 * 2.5 * 12.0;
     assert!(result["geometry"]["part"]["volume_mm3"].as_f64().unwrap() < plain - 1.0);
 }
+
+#[test]
+fn studio_previews_sheet_metal_parts_with_linked_blanks() {
+    let length = |v: f64| json!({"value": v, "dimension": "length", "unit": "millimeter"});
+    let scalar = |v: f64| json!({"value": v, "dimension": "scalar", "unit": null});
+    let lengths = |x: f64, y: f64, z: f64| json!({"components": {"x": {"literal": length(x)}, "y": {"literal": length(y)}, "z": {"literal": length(z)}}});
+    let scalars = |x: f64, y: f64, z: f64| json!({"components": {"x": {"literal": scalar(x)}, "y": {"literal": scalar(y)}, "z": {"literal": scalar(z)}}});
+    let model = json!({"schema_version": CURRENT_SCHEMA_VERSION, "family": {
+        "id": "block", "version": 1, "parameters": [], "derived_parameters": [],
+        "derived_vector_parameters": [], "constraints": [], "requirements": [], "datums": [],
+        "features": [{"id": "block", "operation": {"box": {"origin": lengths(100.0, 0.0, 0.0), "size": lengths(10.0, 10.0, 10.0)}}}]},
+        "instances": [{"base": {"id": "part", "overrides": {}, "provenance": "test"}}]});
+    let document = ModelDocument::from_json(&model.to_string()).unwrap();
+    let directory = Directory::new();
+    let path = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&path, Some("block".into())).unwrap();
+    assert_eq!(
+        studio.handle("GET", "/solid-sheet-metal.mjs", b"").status,
+        200
+    );
+    let (_, data) = get(&mut studio, "/api/features");
+    let half = std::f64::consts::FRAC_PI_2;
+    let sheet = |extra: serde_json::Value| {
+        let mut definition = json!({"origin": lengths(0.0, 0.0, 0.0), "width_axis": scalars(0.0, 1.0, 0.0), "start_direction": scalars(1.0, 0.0, 0.0),
+            "width": {"literal": length(30.0)}, "thickness": {"literal": length(2.0)},
+            "flanges": [{"literal": length(40.0)}, {"literal": length(30.0)}],
+            "bends": [{"angle_radians": {"literal": scalar(half)}, "inside_radius": {"literal": length(2.0)}}]});
+        for (key, value) in extra.as_object().unwrap() {
+            definition[key] = value.clone();
+        }
+        json!({"id": "bracket", "operation": {"sheet_metal": {"definition": definition}}})
+    };
+    let flat = json!({"id": "bracket-flat", "operation": {"sheet_metal_flat": {"input": "bracket", "neutral_factor": {"literal": scalar(0.5)}}}});
+    let preview = |studio: &mut serve::Studio, features: serde_json::Value| -> serde_json::Value {
+        let edit = json!({"version": data["version"], "instance": "part", "expected": data["features"], "action": "add", "features": features, "output": "bracket", "apply": false});
+        let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+        serde_json::from_slice(&response.body).unwrap()
+    };
+    // The editor's default L bracket and its blank: the folded volume is
+    // the midplane length times width times thickness.
+    let result = preview(&mut studio, json!([flat, sheet(json!({}))]));
+    assert_eq!(result["can_apply"], true, "{result}");
+    let expected = (70.0 + half * 3.0) * 30.0 * 2.0;
+    let volume = result["geometry"]["part"]["volume_mm3"].as_f64().unwrap();
+    assert!(
+        (volume - expected).abs() < 1e-6 * expected,
+        "{volume} vs {expected}"
+    );
+    // With a wall on the far edge of the base flange, relieved at the
+    // bend, a closed end hem and a hole: still one valid solid.
+    let rich = sheet(json!({
+        "edge_flanges": [{"id": "wall", "flange": 0, "edge": "far", "start": {"literal": length(10.0)}, "length": {"literal": length(30.0)},
+            "angle_radians": {"literal": scalar(half)}, "inside_radius": {"literal": length(1.0)}, "height": {"literal": length(8.0)}, "relief_depth": {"literal": length(4.0)}}],
+        "end_hem": {"kind": "closed", "side": "negative", "length": {"literal": length(8.0)}},
+        "cutouts": [{"id": "hole", "flange": 0, "along": {"literal": length(15.0)}, "across": {"literal": length(15.0)}, "shape": {"kind": "circle", "diameter": {"literal": length(5.0)}}}]}));
+    let result = preview(&mut studio, json!([flat, rich]));
+    assert_eq!(result["can_apply"], true, "{result}");
+    // A bad neutral factor is refused before anything changes.
+    let mut bad = flat.clone();
+    bad["operation"]["sheet_metal_flat"]["neutral_factor"] = json!({"literal": scalar(1.5)});
+    assert_eq!(
+        preview(&mut studio, json!([bad, sheet(json!({}))]))["can_apply"],
+        false
+    );
+}

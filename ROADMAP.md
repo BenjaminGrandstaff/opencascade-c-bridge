@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 175 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 791 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 97 + viewer Node 468 + branch command 2 + model command 95, MCP Python 14, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 175 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 791 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 98 + viewer Node 472 + branch command 2 + model command 95, MCP Python 14, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,15 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases (199 with the parallel glTF, 1,000-part view, advanced sweep, tray and bend-cutout cases) plus 5 model-command cases and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Studio sheet-metal editor (no schema or ABI change). Sketch to solid
+  builds and edits sheet-metal parts with placement, width and thickness,
+  flanges and bends, hems of all four kinds, edge flanges with reliefs,
+  cutouts, and a linked flat blank with its K factor. Every value can be
+  entered, parameter-linked or kept as a formula. Edits replace the part
+  and its blank together and keep its bend table. A browser-built
+  relieved, hemmed channel previewed at its analytic volume. See
+  [sheet-metal parts](docs/SKETCH_STUDIO.md#sheet-metal-parts).
 
 - Studio thread authoring on holes (no schema or ABI change). Holes take a
   thread from the frozen Carr Lane V1 tap catalog: 28 metric and 36

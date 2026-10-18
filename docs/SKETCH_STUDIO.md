@@ -447,6 +447,38 @@ preview. A rejected preview also restores the accepted view and retains the form
 for correction. Sketch layers retain their applied definitions during this solid
 preview.
 
+### Sheet-metal parts
+
+**Sheet-metal part** builds the engine's `sheet_metal` strip without a
+sketch. The form covers:
+
+- **Placement and stock:** the origin, start and width directions, and the
+  width and thickness.
+- **Flanges and bends:** flange lengths with a bend between each pair
+  (signed angle in degrees, inside radius). **Add flange and bend** and
+  **Remove last flange and bend** change the count.
+- **Start and end hems:** open, closed, rolled or teardrop, on either side.
+- **Edge flanges:** on either width edge of any flange, with a relief depth
+  where they reach a bend.
+- **Cutouts:** circles, rectangles and slots, placed along and across a
+  flange (they may cross bends).
+- **Flat blank:** **Add a linked flat blank** adds a `sheet_metal_flat`
+  feature named `<part>-flat` unless named otherwise, with its neutral
+  factor K.
+
+Every value is entered, linked to a parameter of its kind, or kept as its
+saved formula. Unchanged values write back exactly as saved. The part is a
+new solid, or a tool added to or cut from a target. **Edit sheet-metal
+part …** reopens a saved part with its linked blank, keeping the blank's
+bend table, and replaces both together.
+
+A server test previews the default L bracket at its exact volume, and a
+part with a relieved wall, a closed hem and a hole as one valid solid. It
+also checks that a neutral factor outside 0–1 is refused. A browser check
+built a channel through the form. It had three flanges, walls on both
+floor edges with reliefs, a closed end hem and a hole. Its preview matched
+the analytic 8,249.3 mm³.
+
 ### Shells, drafts, mirrors and patterns
 
 **Solid feature** also offers five operations on an accepted solid. Each

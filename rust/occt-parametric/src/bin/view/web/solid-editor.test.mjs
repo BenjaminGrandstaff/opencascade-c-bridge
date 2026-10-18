@@ -207,6 +207,36 @@ test('hole forms add catalog thread callouts with the tap drill as the bore',asy
 });
 
 
+test('sheet-metal forms add a part with its flat blank and edit both',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
+ try{
+ const host=new Element('div'),calls=[];
+ const saved={id:'tray',operation:{sheet_metal:{definition:{origin:{literal:{x:{value:0,dimension:'length',unit:'millimeter'},y:{value:0,dimension:'length',unit:'millimeter'},z:{value:0,dimension:'length',unit:'millimeter'}}},width_axis:{parameter:'across'},start_direction:{parameter:'along'},width:{parameter:'w'},thickness:{parameter:'t'},flanges:[{parameter:'a'}],bends:[]}}}};
+ const blank={id:'tray-blank',operation:{sheet_metal_flat:{input:'tray',neutral_factor:{parameter:'k'}}}};
+ const features=[...base,saved,blank];
+ createSolidEditor({host,instance:()=> 'part',preview:async()=>{},applied:async()=>{},restore:async()=>{},request:async(path,options)=>{
+  if(!options)return {version:1,features,output:'body',parameters:[]};
+  calls.push(JSON.parse(options.body));return {can_apply:true};
+ }});
+ await button(host,'Sketch to solid').onclick();
+ control(host,'Solid feature').value='sheet_metal';control(host,'Solid feature').onchange();
+ assert.equal(control(host,'Sketch / planar profile'),undefined);
+ control(host,'Result feature name').value='bracket';control(host,'Result feature name').oninput();
+ await button(host,'Add edge flange').onclick();
+ control(host,'Edge flange 1 height (mm)').value='12';control(host,'Edge flange 1 height (mm)').oninput();
+ await button(host,'Preview solid').onclick();
+ assert.deepEqual(calls[0].features.map(f=>f.id),['bracket-flat','bracket']);
+ assert.equal(calls[0].output,'bracket');
+ const definition=calls[0].features[1].operation.sheet_metal.definition;
+ assert.equal(definition.edge_flanges[0].height.literal.value,12);
+ // Editing a saved part replaces it and its blank, formulas intact.
+ await button(host,'Edit sheet-metal part tray').onclick();
+ await button(host,'Preview solid').onclick();
+ assert.equal(calls[1].action,'replace');assert.deepEqual(calls[1].features,[blank,saved]);
+ }finally{delete globalThis.document;delete globalThis.Option;}
+});
+
+
 test('loft definitions validate ordered outer sections, distinct complete hole tracks and limits',()=>{
  const features=['a','b','c','ha','hb','hc'].map(id=>({id})),definition={profiles:['a','b','c'],holes:[['ha','hb','hc']],ruled:true};
  assert.deepEqual(loftDefinition(features,definition),definition);
