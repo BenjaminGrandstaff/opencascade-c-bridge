@@ -2,8 +2,58 @@
 
 A small, stable C ABI over Open Cascade (OCCT), designed to be wrapped safely
 from Rust and other languages. Open Cascade C++ objects never cross the ABI.
+On top of it sits a parametric CAD engine: versioned JSON documents for
+sketches, solids, sheet metal, assemblies and drawings, a local studio for
+editing them, and an AI authoring loop (`occt-model` and its MCP server).
 
-The current C ABI version is **74**.
+The current C ABI version is **84** and the document schema is **178**.
+
+## Status
+
+| Layer | Version | State |
+|---|---|---|
+| C ABI (`src/`, `include/`) | ABI 84 | Stable; exact version match required |
+| `occt-bridge` (safe Rust wrapper) | ABI 84 | Covers the full ABI |
+| `occt-parametric-core` (kernel-free) | Schema 178 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 178 | Active development |
+| Sketch studio and viewer (`occt-view --serve`) | — | Edits the same documents; adds no capability of its own |
+
+Tests: C 7/7, bridge 175, parametric core 57, kernel 791, view command 98,
+model command 95, viewer Node 472 and MCP Python 14, all passing. The scale
+benchmark suite (199 Rust cases plus model-command and matcher cases) runs
+within budget. Formatting and Clippy are clean across all crates. Full
+gate results and history live in [the roadmap](ROADMAP.md#current-status).
+
+Recently landed:
+
+- **Sheet metal:** edge flanges with bend reliefs, closed and teardrop hems,
+  and cutouts that run across bends, all unfolding into a flat pattern at
+  the neutral factor K ([docs](docs/SHEET_METAL.md)).
+- **Advanced sweeps:** twist and scale laws, guide rails and intermediate
+  sections on constrained sketch paths, plus planes placed normal to a path
+  ([docs](docs/ADVANCED_SWEEPS.md)).
+- **Studio solid editing:** shells, drafts, mirrors, linear and circular
+  patterns, catalog-tapped holes with cut threads, and a sheet-metal part
+  editor ([docs](docs/SKETCH_STUDIO.md)).
+- **Product definition:** size dimensions drawn in 3D annotation views and
+  per-view part visibility.
+
+Next on [the roadmap](ROADMAP.md#next): drawing conventions and
+manufacturing sheets from the ASME Y14 family.
+
+## Screenshots
+
+Captured from `occt-view --serve` (classic viewer at `/`, sketch studio at
+`/studio`).
+
+| | |
+|---|---|
+| ![Sheet-metal tray in the viewer](docs/images/tray-viewer.jpg) | ![Sheet-metal editor in the studio](docs/images/tray-studio.jpg) |
+| A sheet-metal tray: two 90° bends, edge flanges with reliefs, a teardrop hem, a closed hem, and cutouts, with measured spans. | The same part in the studio's sheet-metal editor: stock, flanges and bends, and hems are form fields; Preview checks every instance before apply. |
+| ![Swept duct in the viewer](docs/images/duct-viewer.jpg) | ![Sweep path and path planes in the studio](docs/images/duct-studio.jpg) |
+| An advanced sweep: a square duct that blends from an 8 mm inlet section to a 14 mm outlet section with a smooth quarter-turn twist along a line-and-arc route, all driven by family parameters. | The duct's fully constrained path sketch, with inlet and outlet section planes placed normal to the path. |
+| ![Tapped block in the viewer](docs/images/tapped-viewer.jpg) | ![Hole thread editor in the studio](docs/images/tapped-studio.jpg) |
+| Four M6x1 tapped holes with cut ISO thread forms, then shelled from the bottom face. | Editing a hole: catalog tap size with its tap drill, thread hand, and modeled thread length. |
 
 ## Current API
 
