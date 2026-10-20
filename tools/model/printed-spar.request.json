@@ -1,0 +1,352 @@
+{
+  "schema": "occb-model-request-v1",
+  "model": {
+    "schema_version": 179,
+    "family": {
+      "id": "printed-spar",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "wall",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 1.6,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 0.8,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 5,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "assumptions": [
+        {
+          "id": "tip-load",
+          "statement": "A 20 N lift load at the 300 mm tip gives 6,000 N*mm at the root; the part sees at most 45 C in a closed car.",
+          "provenance": "example; demonstration assumptions"
+        }
+      ],
+      "requirements": [
+        {
+          "id": "valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "the spar is a valid solid",
+          "rule": {
+            "shape_valid": {
+              "output": "spar"
+            }
+          },
+          "provenance": "example; load case and limits are demonstration assumptions",
+          "traces": [
+            {
+              "feature": "spar"
+            },
+            {
+              "assumption": "tip-load"
+            }
+          ]
+        },
+        {
+          "id": "mass",
+          "version": 1,
+          "kind": "functional",
+          "priority": "required",
+          "statement": "the printed spar weighs at most 50 g",
+          "rule": {
+            "mass_range": {
+              "output": "spar",
+              "material": "pla_printed",
+              "minimum_kilograms": 0,
+              "maximum_kilograms": 0.05
+            }
+          },
+          "provenance": "example; load case and limits are demonstration assumptions",
+          "traces": [
+            {
+              "feature": "spar"
+            },
+            {
+              "assumption": "tip-load"
+            }
+          ]
+        },
+        {
+          "id": "heat",
+          "version": 1,
+          "kind": "functional",
+          "priority": "required",
+          "statement": "printed PLA keeps 5 C of margin to its heat deflection temperature at 45 C",
+          "rule": {
+            "temperature_limit": {
+              "output": "spar",
+              "material": "pla_printed",
+              "limit": "heat_deflection_0_45_mpa",
+              "service_temperature_c": 45,
+              "minimum_margin_c": 5
+            }
+          },
+          "provenance": "example; load case and limits are demonstration assumptions",
+          "traces": [
+            {
+              "feature": "spar"
+            },
+            {
+              "assumption": "tip-load"
+            }
+          ]
+        },
+        {
+          "id": "root-bending",
+          "version": 1,
+          "kind": "functional",
+          "priority": "required",
+          "statement": "the root section carries the tip load with a safety factor of 2 against printed yield",
+          "rule": {
+            "bending_stress": {
+              "output": "spar",
+              "material": "pla_printed",
+              "section_origin": {
+                "x": {
+                  "value": 1,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                },
+                "y": {
+                  "value": 10,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                },
+                "z": {
+                  "value": 6,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "beam_axis": {
+                "x": {
+                  "value": 1,
+                  "dimension": "scalar",
+                  "unit": null
+                },
+                "y": {
+                  "value": 0,
+                  "dimension": "scalar",
+                  "unit": null
+                },
+                "z": {
+                  "value": 0,
+                  "dimension": "scalar",
+                  "unit": null
+                }
+              },
+              "bending_axis": {
+                "x": {
+                  "value": 0,
+                  "dimension": "scalar",
+                  "unit": null
+                },
+                "y": {
+                  "value": 1,
+                  "dimension": "scalar",
+                  "unit": null
+                },
+                "z": {
+                  "value": 0,
+                  "dimension": "scalar",
+                  "unit": null
+                }
+              },
+              "moment_newton_millimeters": 6000,
+              "minimum_safety_factor": 2
+            }
+          },
+          "provenance": "example; load case and limits are demonstration assumptions",
+          "traces": [
+            {
+              "feature": "spar"
+            },
+            {
+              "assumption": "tip-load"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "outer",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 300,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 20,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 12,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "cavity",
+          "operation": {
+            "box": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": -1,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "parameter": "wall"
+                  },
+                  "z": {
+                    "parameter": "wall"
+                  }
+                }
+              },
+              "size": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 302,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "subtract": [
+                      {
+                        "literal": {
+                          "value": 20,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 2,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "wall"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "z": {
+                    "subtract": [
+                      {
+                        "literal": {
+                          "value": 12,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      },
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 2,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "wall"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "spar",
+          "operation": {
+            "cut": {
+              "object": "outer",
+              "tool": "cavity"
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "spar",
+          "overrides": {},
+          "provenance": "example; dimensions are demonstration assumptions"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "spar",
+      "output": "spar"
+    }
+  ],
+  "step": true,
+  "stl": false,
+  "preview": true
+}

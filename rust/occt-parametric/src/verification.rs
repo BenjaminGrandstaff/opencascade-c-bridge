@@ -8,6 +8,8 @@ pub use occt_parametric_core::verification::*;
 
 mod manufacturing;
 pub(crate) use manufacturing::{Screen, screen, undercut};
+mod materials;
+pub(crate) use materials::{Bending, bending_stress, mass_range, temperature_limit};
 
 /// O(topology) time and transient handles: each solid's subshapes are mapped
 /// to the output's unique topology indices once, then released.

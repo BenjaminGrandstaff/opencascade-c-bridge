@@ -180,5 +180,57 @@ pub(crate) fn verify_requirement(
                 maximum_radians: *maximum_radians,
             },
         )?,
+        VerificationRule::MassRange {
+            output,
+            material,
+            minimum_kilograms,
+            maximum_kilograms,
+        } => mass_range(
+            session,
+            id,
+            shape(shapes, output)?,
+            *material,
+            *minimum_kilograms,
+            *maximum_kilograms,
+        )?,
+        VerificationRule::TemperatureLimit {
+            output,
+            material,
+            limit,
+            service_temperature_c,
+            minimum_margin_c,
+        } => {
+            shape(shapes, output)?;
+            temperature_limit(
+                id,
+                *material,
+                *limit,
+                *service_temperature_c,
+                *minimum_margin_c,
+            )?
+        }
+        VerificationRule::BendingStress {
+            output,
+            material,
+            section_origin,
+            beam_axis,
+            bending_axis,
+            moment_newton_millimeters,
+            minimum_safety_factor,
+            strength,
+        } => bending_stress(
+            session,
+            id,
+            shape(shapes, output)?,
+            &Bending {
+                material: *material,
+                section_origin: *section_origin,
+                beam_axis: *beam_axis,
+                bending_axis: *bending_axis,
+                moment_newton_millimeters: *moment_newton_millimeters,
+                minimum_safety_factor: *minimum_safety_factor,
+                strength: *strength,
+            },
+        )?,
     })
 }

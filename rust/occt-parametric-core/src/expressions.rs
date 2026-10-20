@@ -188,6 +188,9 @@ pub fn evaluate_derived_expression(
                 evaluate_derived_expression(nominal_diameter, definitions, resolved, visiting)?;
             crate::hole_sizes::socket_scalar(*system, nominal, *dimension)
         }
+        ScalarExpr::MaterialPropertyV1 { material, property } => {
+            material_scalar(*material, *property)
+        }
         ScalarExpr::Parameter(name) => {
             resolve_derived_parameter(name, definitions, resolved, visiting)
         }
@@ -783,6 +786,9 @@ pub fn evaluate_resolved_expression(
             evaluate_resolved_expression(nominal_diameter, parameters)?,
             *dimension,
         ),
+        ScalarExpr::MaterialPropertyV1 { material, property } => {
+            material_scalar(*material, *property)
+        }
         ScalarExpr::Parameter(name) => parameters
             .get(name)
             .ok_or_else(|| ModelError::new(format!("unknown parameter '{name}'")))
@@ -1040,4 +1046,12 @@ pub fn evaluate_function(
         ))),
         Err(error) => Some(Err(error)),
     }
+}
+
+/// A catalog material property as a dimensionless value.
+fn material_scalar(
+    material: crate::materials::MaterialGrade,
+    property: crate::materials::MaterialProperty,
+) -> Result<EvaluatedScalar, ModelError> {
+    EvaluatedScalar::from_quantity(Quantity::scalar(material.property(property)?))
 }

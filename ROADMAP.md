@@ -12,12 +12,12 @@ tracks status and order.
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 178 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 178 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 179 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 179 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 175 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 791 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 100 + viewer Node 473 + branch command 2 + model command 102, MCP Python 25, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 175 + first-use integration 1 (+1 doc test), recipes 3, parametric core 59 + kernel 794 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 100 + viewer Node 473 + branch command 2 + model command 102, MCP Python 25, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,20 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases (199 with the parallel glTF, 1,000-part view, advanced sweep, tray and bend-cutout cases) plus 7 model-command cases (including 256 renders in one build) and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Material catalog and material requirements (schema 179, no ABI change).
+  The frozen `occb_materials_v1` catalog holds 13 materials. Eleven come from Proto Labs
+  2026 CNC data sheets and two (PLA, PETG, as horizontal prints) from
+  Prusament data sheets, kept in printed units with conservative ends of
+  ranges. Missing values are errors, never guesses. The
+  `material_property_v1` expression reads density, modulus, yield,
+  ultimate, heat-deflection, service and layer-bond values. The new requirements
+  are `mass_range` (exact), `temperature_limit` (exact) and
+  `bending_stress`. The bending check takes section I from the kernel's
+  exact inertia of a thin slab and samples the extreme fiber. Tests match
+  bh³/12, πd⁴/64 and hollow tubes to 1e-6. Example
+  [`printed-spar`](tools/model/printed-spar.request.json). See
+  [Materials](docs/MATERIALS.md).
 
 - Shared studio sessions for an AI client and a person (no schema or ABI
   change). `occt-view --serve` gains `GET /api/session`, which returns the
@@ -3479,11 +3493,12 @@ ordered by priority; the catalog/documentation foundation is complete.
    hash it read, and the studio names the change and can undo it. Remaining:
    a client cannot yet watch for the person's changes without polling, and
    only whole accepted models are applied (no merge of concurrent edits).
-6. **Design knowledge** — expressions cannot look up catalogs or materials
-   (see Later), there is no standard-part library (fasteners, bearings, dowel
-   pins), wall thickness is sampled rather than exact, and draft is not
-   checked on freeform faces. Strength and manufacturability are not proven;
-   strength still needs an external solver.
+6. **Design knowledge** — materials are done (schema 179): a frozen, sourced
+   catalog readable in expressions, with mass, temperature-limit and
+   beam-bending requirements. Remaining: a standard-part library (fasteners,
+   bearings, dowel pins), exact rather than sampled wall thickness, and
+   exact draft on freeform faces. Stress beyond beam theory still needs an
+   external solver.
 7. **Design starting points** — turning a functional need into features is
    left entirely to the AI client. Add parameterized templates (brackets,
    enclosures, shafts, sheet-metal trays) whose requirements and assumptions
@@ -3500,9 +3515,9 @@ ordered by priority; the catalog/documentation foundation is complete.
 - Wing structure beyond solid printed segments: hollow shells with internal
   ribs, alignment pins independent of the spar, twist-exact hinge lines, and
   print-bed fit in arbitrary orientations.
-- Material property sheets with sources (stiffness, softening temperature),
-  service-temperature and manufacturing-step temperature checks, and a beam
-  theory spar bending check; stress analysis still needs an external solver.
+- Manufacturing-step temperature checks (sourced material sheets, service
+  temperature limits and a beam-theory bending check exist, schema 179);
+  stress analysis beyond beam theory still needs an external solver.
 
 - Advanced ribs with general support-following and nonuniform closure.
 - Complete linkage branch enumeration, broader connected assembly solving, and

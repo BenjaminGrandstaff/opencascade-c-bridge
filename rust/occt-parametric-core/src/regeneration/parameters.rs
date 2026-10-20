@@ -391,7 +391,7 @@ pub fn collect_scalar_parameters<'a>(expression: &'a ScalarExpr, names: &mut Has
             collect_scalar_parameters(when_true, names);
             collect_scalar_parameters(when_false, names);
         }
-        ScalarExpr::Literal(_) => {}
+        ScalarExpr::Literal(_) | ScalarExpr::MaterialPropertyV1 { .. } => {}
     }
 }
 

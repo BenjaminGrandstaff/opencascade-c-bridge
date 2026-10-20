@@ -53,6 +53,13 @@ pub enum ScalarExpr {
         system: HoleCatalogSystem,
         dimension: SocketHeadDimension,
     },
+    /// A value from the frozen `occb_materials_v1` catalog (schema 179): a
+    /// dimensionless number in the unit the property names, such as
+    /// `yield_strength_mpa`. A property the source does not print is an error.
+    MaterialPropertyV1 {
+        material: crate::materials::MaterialGrade,
+        property: crate::materials::MaterialProperty,
+    },
     Negate(Box<ScalarExpr>),
     Absolute(Box<ScalarExpr>),
     Add(Box<ScalarExpr>, Box<ScalarExpr>),

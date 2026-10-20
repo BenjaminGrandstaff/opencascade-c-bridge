@@ -23,6 +23,7 @@ mod hollow_sweeps;
 mod inspection;
 mod linkage;
 mod loft;
+mod material_requirements;
 mod math_functions;
 mod merge_regeneration;
 mod mesh;

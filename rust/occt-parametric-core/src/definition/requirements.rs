@@ -1,6 +1,7 @@
 //! Requirements, verification rules, traceability targets, and assumptions.
 
 use super::*;
+use crate::materials::{MaterialGrade, MaterialStrength, MaterialTemperatureLimit};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -129,6 +130,51 @@ pub enum VerificationRule {
         #[serde(default, skip_serializing_if = "MeshSettings::is_default")]
         mesh: MeshSettings,
     },
+    /// Exact: the output's mass in `material` (exact volume times the
+    /// catalog density) lies in `minimum_kilograms..=maximum_kilograms`
+    /// (schema 179).
+    MassRange {
+        output: String,
+        material: MaterialGrade,
+        minimum_kilograms: f64,
+        maximum_kilograms: f64,
+    },
+    /// Exact: `material`'s catalog `limit` exceeds `service_temperature_c` by
+    /// at least `minimum_margin_c` (schema 179). The output is the part made
+    /// of it; its geometry is not used.
+    TemperatureLimit {
+        output: String,
+        material: MaterialGrade,
+        limit: MaterialTemperatureLimit,
+        service_temperature_c: f64,
+        #[serde(default)]
+        minimum_margin_c: f64,
+    },
+    /// Beam bending at one section (schema 179): the output is cut by the
+    /// plane through the length-valued `section_origin` normal to the
+    /// dimensionless `beam_axis`. The section's area moment about its
+    /// centroidal axis along `bending_axis` (projected into the plane) comes
+    /// from the kernel's exact inertia of a thin slab of the section, and
+    /// the extreme-fiber distance from samples of its edges. The peak stress
+    /// M·c/I under `moment_newton_millimeters` must leave a safety factor of
+    /// at least `minimum_safety_factor` against the catalog `strength`.
+    /// Euler–Bernoulli beam theory: no stress concentrations, shear or
+    /// buckling.
+    BendingStress {
+        output: String,
+        material: MaterialGrade,
+        section_origin: VectorQuantity,
+        beam_axis: VectorQuantity,
+        bending_axis: VectorQuantity,
+        moment_newton_millimeters: f64,
+        minimum_safety_factor: f64,
+        #[serde(default, skip_serializing_if = "is_yield")]
+        strength: MaterialStrength,
+    },
+}
+
+fn is_yield(strength: &MaterialStrength) -> bool {
+    *strength == MaterialStrength::Yield
 }
 
 pub const DEFAULT_WALL_SAMPLES: usize = 1_000;
@@ -229,7 +275,10 @@ impl VerificationRule {
             | Self::DraftAngle { output, .. }
             | Self::Undercut { output, .. }
             | Self::FitsWithin { output, .. }
-            | Self::Overhang { output, .. } => output,
+            | Self::Overhang { output, .. }
+            | Self::MassRange { output, .. }
+            | Self::TemperatureLimit { output, .. }
+            | Self::BendingStress { output, .. } => output,
         }
     }
 }

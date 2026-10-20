@@ -26,6 +26,9 @@ pub enum MeasurementUnit {
     CubicMillimeter,
     Kilogram,
     Radian,
+    DegreeCelsius,
+    /// A dimensionless ratio, such as a safety factor.
+    Ratio,
 }
 
 /// The value a rule measured and the limits it was compared against, in
