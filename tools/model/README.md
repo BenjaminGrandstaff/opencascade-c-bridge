@@ -239,3 +239,12 @@ Manufacturing build requests include [hemmed tray](hemmed-tray.request.json)
 thread declaration on its bottom-wall bore). Both export STEP and interactive
 viewers. Dimensions, bend allowances and thread engagement are example
 assumptions; see [the workflow](MCP.md#manufacturing-examples).
+
+## External AI design systems
+
+The model commands and MCP tools can serve a separate AI design harness that
+maintains domain references, construction recipes and a component knowledge
+graph. That caller chooses the design and detail; this project executes typed
+geometry and returns verification evidence, views and editable models. See
+[the responsibility boundary and furniture example](../../docs/AI_DESIGN_SYSTEMS.md).
+This usage pattern adds no agent runtime or knowledge-graph format to the engine.

@@ -954,14 +954,23 @@ Each invocation uses a new directory, preserving previous successful builds.
 A failed export removes its own directory where possible; the final report is
 the completion marker. Source metadata and review history persist, while
 transient generation-state records are cleared. SVG previews use bounded
-sampling and are for visual review. Required failures currently expose their
-error context rather than a full rejected measurement table.
+sampling and are for visual review. Requested raster views and sections support
+visual inspection. Required verification failures return the full verification
+table and output measurements with `accepted: false`.
 [The local MCP adapter](tools/model/MCP.md) provides schema/example discovery,
 build calls, accepted-artifact resources and design-command analysis resources.
 Optional companion binaries supply drawing export, measurement inspection,
 motion/collision studies, mass/balance reports, linkage branch discovery and
-semantic document merge. Concurrent revision-aware shared sessions remain
-future integration.
+semantic document merge. Guarded shared studio updates use session reads and
+accepted-build applies checked against the inspected model hash.
+
+An [external AI design system](docs/AI_DESIGN_SYSTEMS.md) can maintain domain
+references, a component knowledge graph, construction recipes and specialist
+agents above this interface. Those planning and context systems are consumers
+of the engine; this project retains responsibility for geometry, typed model
+state, native catalogs and verification evidence. A simple-looking generated
+object can reflect an incomplete design plan rather than a missing geometry
+operation.
 
 Focused CLI checks exercise the bracket edit/reject/repair loop and the four
 original smoke examples. A release 1,000-instance report with one shared geometry variant,

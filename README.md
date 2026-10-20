@@ -53,9 +53,9 @@ Recently landed:
   expressions ([docs](docs/STANDARD_PARTS.md)).
 
 Next on [the roadmap](ROADMAP.md#next): drawing conventions and
-manufacturing sheets from the ASME Y14 family. The next
-[AI authoring priority](ROADMAP.md#ai-design-tool) is bounded multi-view visual
-feedback so an AI can inspect generated parts.
+manufacturing sheets from the ASME Y14 family. See the
+[AI design tool roadmap](ROADMAP.md#ai-design-tool) for integration progress and
+remaining priorities.
 
 ## Screenshots
 
@@ -216,6 +216,19 @@ adds `acceptance: "fully_constrained"` to reject sketches with remaining local
 free degrees before generating geometry. Try
 [`strict-sketch-block`](tools/model/strict-sketch-block.request.json) and set
 `lift` to zero to inspect a solved sketch rejected by the policy.
+
+### Use as a backend for an AI design system
+
+A separate AI design system can supply research, construction recipes, a
+parts-and-relationships knowledge graph and optional specialist agents, then use
+this engine through MCP to build and verify its designs. For example, detailed
+dungeon furniture can be authored with existing sketches, solids, cuts, sweeps
+and patterns when the caller supplies a complete construction plan.
+
+The domain knowledge graph and agent harness belong in the consuming system;
+this project supplies geometry, model state, native catalogs, constraints,
+measurements, diagnostics and visualization. See
+[the usage pattern and furniture example](docs/AI_DESIGN_SYSTEMS.md).
 
 ### Start the AI tools
 

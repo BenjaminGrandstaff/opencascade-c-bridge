@@ -121,9 +121,12 @@ measured values, witnesses and output measurements in the failure, with
    parameter edits. Required failures preserve the preceding accepted build.
 6. Return STEP/STL artifacts and the editable model to the user.
 
-This adapter provides discovery, execution, and inspection. It does not perform
-natural-language planning, replace a client's approval policy, provide mutable
-shared sessions/revision locking, or prove unverified strength/manufacturability.
+This adapter provides discovery, execution, inspection and guarded shared studio
+updates. Natural-language design planning, research, domain knowledge graphs and
+specialist-agent coordination belong in the calling system. See
+[using the engine from an AI design system](../../docs/AI_DESIGN_SYSTEMS.md) for
+that usage pattern. The adapter does not replace a client's approval policy or
+prove unverified strength/manufacturability.
 
 ## Validation and scale
 
