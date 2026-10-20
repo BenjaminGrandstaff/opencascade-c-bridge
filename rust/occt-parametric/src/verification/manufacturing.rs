@@ -274,9 +274,11 @@ fn draft(
     }
     let mut faces = BTreeMap::new();
     let mut unmeasured = BTreeMap::new();
+    let mut refined = 0;
     for (face, range) in ranges.iter().enumerate() {
         match range {
             Some(range) => {
+                refined += usize::from(range.refined);
                 if let Some(draft) = exact_draft(range) {
                     faces.insert(face, draft);
                 }
@@ -286,7 +288,16 @@ fn draft(
             }
         }
     }
-    let mut evidence = Evidence::Exact;
+    // A refined face's extremes come from a lattice and local search: a
+    // narrow extreme between lattice points could be missed.
+    let mut evidence = if refined == 0 {
+        Evidence::Exact
+    } else {
+        Evidence::Sampled {
+            samples: refined,
+            unresolved: 0,
+        }
+    };
     if !unmeasured.is_empty() {
         let triangles = session.surface_mesh(shape, mesh.options()?)?;
         let samples = triangles
@@ -295,7 +306,7 @@ fn draft(
             .count();
         faces.extend(sampled_drafts(&triangles, pull, &unmeasured));
         evidence = Evidence::Sampled {
-            samples,
+            samples: samples + refined,
             unresolved: 0,
         };
     }
@@ -304,11 +315,13 @@ fn draft(
         .filter(|draft| draft.angle < minimum_radians)
         .count();
     let least = faces.iter().min_by(|a, b| a.1.angle.total_cmp(&b.1.angle));
-    let sampled_note = if unmeasured.is_empty() {
-        String::new()
-    } else {
-        format!("; {} face(s) sampled on the tessellation", unmeasured.len())
-    };
+    let mut sampled_note = String::new();
+    if refined > 0 {
+        sampled_note += &format!("; {refined} freeform face(s) refined on the surface");
+    }
+    if !unmeasured.is_empty() {
+        sampled_note += &format!("; {} face(s) sampled on the tessellation", unmeasured.len());
+    }
     let mut result = match least {
         None => VerificationResult::exact(id, true, "no face runs along the pull direction".into()),
         Some((face, least)) => {
@@ -361,8 +374,13 @@ fn half_release(
     origin: Vec3,
     sign: f64,
     tolerance: f64,
-) -> Result<(Vec<Release>, usize, usize), ModelError> {
+) -> Result<(Vec<Release>, usize, usize, usize), ModelError> {
     let ranges = session.face_pull_ranges(half, pull)?;
+    let refined = ranges
+        .iter()
+        .flatten()
+        .filter(|range| range.refined)
+        .count();
     let height = |point: Vec3| dot(subtract(point, origin), pull);
     let mut releases = Vec::new();
     let mut unmeasured = BTreeMap::new();
@@ -401,7 +419,7 @@ fn half_release(
             }
         }
     }
-    Ok((releases, unmeasured.len(), samples))
+    Ok((releases, unmeasured.len(), samples, refined))
 }
 
 /// Splits the output at the parting plane and checks each half's faces
@@ -440,12 +458,14 @@ pub(crate) fn undercut(
     let mut violations = 0;
     let mut sampled_faces = 0;
     let mut samples = 0;
+    let mut refined_faces = 0;
     for (side, keep_positive, sign) in [("above", true, 1.0), ("below", false, -1.0)] {
         let half = session.clip_by_plane(shape, origin, pull, keep_positive)?;
         let released = half_release(session, &half, mesh, pull, origin, sign, on_plane);
         let _ = session.remove(half);
-        let (releases, unmeasured, facets) = released?;
+        let (releases, unmeasured, facets, refined) = released?;
         sampled_faces += unmeasured;
+        refined_faces += refined;
         samples += facets;
         let mut bad_faces = std::collections::BTreeSet::new();
         for release in releases {
@@ -461,11 +481,13 @@ pub(crate) fn undercut(
         }
         violations += bad_faces.len();
     }
-    let sampled_note = if sampled_faces == 0 {
-        String::new()
-    } else {
-        format!("; {sampled_faces} face(s) sampled on the tessellation")
-    };
+    let mut sampled_note = String::new();
+    if refined_faces > 0 {
+        sampled_note += &format!("; {refined_faces} freeform face(s) refined on the surface");
+    }
+    if sampled_faces > 0 {
+        sampled_note += &format!("; {sampled_faces} face(s) sampled on the tessellation");
+    }
     let mut result = match worst {
         None => VerificationResult::exact(id, true, "no face to release".into()),
         Some((release, side)) => {
@@ -495,9 +517,9 @@ pub(crate) fn undercut(
             }
         }
     };
-    if sampled_faces != 0 {
+    if sampled_faces + refined_faces != 0 {
         result.evidence = Evidence::Sampled {
-            samples,
+            samples: samples + refined_faces,
             unresolved: 0,
         };
     }

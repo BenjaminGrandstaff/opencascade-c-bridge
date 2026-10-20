@@ -1126,8 +1126,8 @@ fn draft_is_exact_on_analytic_faces_and_sampled_on_freeform_ones() {
     let expected = 5.0 - point.z * degrees(3.0).tan();
     assert!((radius - expected).abs() < 1e-6, "{point:?}");
 
-    // The loft's freeform side tapers by atan(2 / 30), about 3.8 degrees,
-    // screened on the tessellation.
+    // The loft's freeform side tapers by about atan(2 / 30), 3.8 degrees,
+    // refined on the surface (ABI 85) rather than read from facets.
     for id in ["horn.under", "horn.over"] {
         let result = get(id);
         assert!(
@@ -1135,7 +1135,10 @@ fn draft_is_exact_on_analytic_faces_and_sampled_on_freeform_ones() {
             "{result:?}"
         );
         assert!(
-            result.message.contains("sampled on the tessellation"),
+            result
+                .message
+                .contains("freeform face(s) refined on the surface")
+                && !result.message.contains("tessellation"),
             "{}",
             result.message
         );
@@ -1235,7 +1238,11 @@ fn undercut_rules_sample_freeform_faces_and_validate() {
     let horn = find(&results, "horn");
     assert_eq!(horn.status, VerificationStatus::Passed, "{}", horn.message);
     assert!(matches!(horn.evidence, Evidence::Sampled { samples, .. } if samples > 0));
-    assert!(horn.message.contains("sampled on the tessellation"));
+    assert!(
+        horn.message.contains("refined on the surface"),
+        "{}",
+        horn.message
+    );
     for tolerance in [-0.1, std::f64::consts::FRAC_PI_2] {
         let error = verify(&family, vec![("bad", along_y(tolerance))]).unwrap_err();
         assert!(error.message.contains("[0, pi/2)"), "{}", error.message);

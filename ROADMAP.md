@@ -8,16 +8,16 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 84 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 85 | Stable; exact version match required |
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 180 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 180 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 181 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 181 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 175 + first-use integration 1 (+1 doc test), recipes 3, parametric core 61 + kernel 797 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 100 + viewer Node 473 + branch command 2 + model command 102, MCP Python 26, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 176 + first-use integration 1 (+1 doc test), recipes 3, parametric core 61 + kernel 800 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 100 + viewer Node 473 + branch command 2 + model command 102, MCP Python 26, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,20 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases (199 with the parallel glTF, 1,000-part view, advanced sweep, tray and bend-cutout cases) plus 7 model-command cases (including 256 renders in one build) and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Exact minimum wall and refined freeform draft (schema 181, ABI 85).
+  - `exact_minimum_wall` measures the thinnest wall between faces that share
+    no edge and face each other through material. It uses the kernel's exact
+    face extrema on box-swept candidate pairs, and a ray confirms the segment
+    stays in material. It matches plate, ligament, tube and cup walls to 1e-7,
+    and does not count gaps between bodies. A 400-hole plate took 1.2 s.
+  - Per-face pull ranges no longer leave freeform faces to facets. B-splines,
+    surfaces of extrusion and revolution, and trimmed spheres and tori are
+    refined on the surface: an on-face lattice plus boundary curves, then a
+    compass search, reported as `exact = 2` / `refined`. Draft and undercut
+    checks use them and say how many faces were refined. An elliptical prism
+    matches ±sin of the pull's tilt to 1e-9. 500 freeform faces took 2.3 s.
+  - See [Requirement rules](docs/REQUIREMENTS.md#exact-minimum-wall).
 
 - Metric standard parts (schema 180, no ABI change). The frozen
   `occb_standard_parts_v1` catalog holds ISO 4762 socket head cap screws,
@@ -3504,11 +3518,13 @@ ordered by priority; the catalog/documentation foundation is complete.
    hash it read, and the studio names the change and can undo it. Remaining:
    a client cannot yet watch for the person's changes without polling, and
    only whole accepted models are applied (no merge of concurrent edits).
-6. **Design knowledge** — materials (schema 179) and metric standard parts
-   (schema 180: socket head cap screws, nuts, washers, dowel pins) are done.
-   Remaining: rolling bearings and inch hardware, exact rather than sampled
-   wall thickness, and exact draft on freeform faces. Stress beyond beam
-   theory still needs an external solver.
+6. **Design knowledge — complete.** Materials (schema 179), metric standard
+   parts (schema 180), exact minimum wall (schema 181) and draft refined on
+   freeform surfaces (ABI 85). Remaining refinements: rolling bearings and
+   inch hardware (no machine-readable public table was reachable), walls
+   at knife edges between faces that share an edge, and proof that a refined
+   draft extreme is global. Stress beyond beam theory still needs an external
+   solver.
 7. **Design starting points** — turning a functional need into features is
    left entirely to the AI client. Add parameterized templates (brackets,
    enclosures, shafts, sheet-metal trays) whose requirements and assumptions

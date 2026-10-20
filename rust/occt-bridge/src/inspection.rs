@@ -344,9 +344,9 @@ impl Session {
 
     /// Range of each unique face's outward unit normal along
     /// `pull_direction` (the sine of its signed draft), in
-    /// [`Self::subshapes`] order. `None` for faces it cannot bound exactly:
-    /// freeform surfaces, and spheres or tori trimmed away from their
-    /// extremes. No handles are created.
+    /// [`Self::subshapes`] order: exact in closed form on analytic faces,
+    /// otherwise `refined` by a numerical search on the face (ABI 85).
+    /// `None` only for faces with no defined normal. No handles are created.
     pub fn face_pull_ranges(
         &self,
         shape: &Shape<'_>,
@@ -392,6 +392,7 @@ impl Session {
                 (range.exact != 0).then(|| FacePullRange {
                     minimum: (range.minimum, range.minimum_point.into()),
                     maximum: (range.maximum, range.maximum_point.into()),
+                    refined: range.exact == 2,
                 })
             })
             .collect())

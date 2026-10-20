@@ -31,6 +31,7 @@ use std::time::{Duration, Instant};
 mod continuous_motion;
 mod curve_edits;
 mod datum_planes;
+mod design_knowledge;
 mod draft;
 mod drawing;
 mod expressions;
@@ -154,6 +155,13 @@ fn main() -> ExitCode {
             pmi::view_parts_case(definition),
         ]);
     }
+    if std::env::args().any(|arg| arg == "--design-knowledge-only") {
+        return report(&[
+            design_knowledge::exact_wall_case(),
+            design_knowledge::freeform_draft_case(),
+            design_knowledge::standard_parts_case(),
+        ]);
+    }
     if std::env::args().any(|arg| arg == "--gltf-only") {
         return report(&[
             mesh::gltf_case(definition),
@@ -208,6 +216,9 @@ fn main() -> ExitCode {
     outcomes.push(requirements::radius_case());
     outcomes.push(loft::loft_case());
     outcomes.push(requirements::manufacturing_rules_case(definition));
+    outcomes.push(design_knowledge::exact_wall_case());
+    outcomes.push(design_knowledge::freeform_draft_case());
+    outcomes.push(design_knowledge::standard_parts_case());
     outcomes.push(drawing::drawing_case(definition));
     outcomes.push(drawing::assembly_drawing_case(definition));
     for variant in [

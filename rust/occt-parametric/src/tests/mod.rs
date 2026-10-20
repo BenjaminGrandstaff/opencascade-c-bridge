@@ -12,6 +12,7 @@ mod documents;
 mod draft;
 mod draw_view;
 mod drawing;
+mod exact_walls;
 mod expressions;
 mod face_colors;
 mod graph;

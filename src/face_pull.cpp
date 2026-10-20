@@ -1,7 +1,8 @@
 /*
  * Per-face range of the outward normal's component along a pull direction,
  * for draft checks. Exact on planes, cylinders, cones, spheres, and tori
- * where the extremes lie on the face; other faces are left to the caller.
+ * where the extremes lie on the face; other faces are refined numerically
+ * from a grid and their boundary curves (ABI 85).
  */
 
 #include "bridge_internal.hpp"
@@ -10,6 +11,9 @@
 #include <BRepClass_FaceClassifier.hxx>
 #include <BRepLProp_SLProps.hxx>
 #include <BRepTools.hxx>
+#include <BRep_Tool.hxx>
+#include <Geom2d_Curve.hxx>
+#include <TopExp_Explorer.hxx>
 #include <Precision.hxx>
 #include <TopoDS.hxx>
 #include <gp_Pnt2d.hxx>
@@ -155,6 +159,60 @@ public:
         finish(range, on_face(range.low.u, range.low.v) && on_face(range.high.u, range.high.v));
     }
 
+    // Freeform faces: every on-face point of a kGrid x kGrid lattice over
+    // the UV bounds and kEdgeSamples points on each boundary pcurve, then
+    // each extreme refined by a compass search that stays on the face,
+    // halving its step down to 1e-12 of the UV span. Finds the extremes of
+    // smooth faces to rounding, but a lattice can miss a narrow extreme, so
+    // the result is marked refined (2), not exact.
+    void freeform() {
+        constexpr int kGrid = 32;
+        constexpr int kEdgeSamples = 64;
+        constexpr double kInfinity = std::numeric_limits<double>::infinity();
+        Range range{{kInfinity, 0.0, 0.0}, {-kInfinity, 0.0, 0.0}};
+        const auto consider = [&](double u, double v) {
+            const double value = projection(u, v);
+            if (!std::isfinite(value)) {
+                return;
+            }
+            if (value < range.low.value) {
+                range.low = {value, u, v};
+            }
+            if (value > range.high.value) {
+                range.high = {value, u, v};
+            }
+        };
+        for (int i = 0; i <= kGrid; ++i) {
+            for (int j = 0; j <= kGrid; ++j) {
+                const double u = u_min_ + (u_max_ - u_min_) * i / kGrid;
+                const double v = v_min_ + (v_max_ - v_min_) * j / kGrid;
+                if (on_face(u, v)) {
+                    consider(u, v);
+                }
+            }
+        }
+        for (TopExp_Explorer edges(face_, TopAbs_EDGE); edges.More(); edges.Next()) {
+            double first = 0.0;
+            double last = 0.0;
+            const Handle(Geom2d_Curve) curve =
+                BRep_Tool::CurveOnSurface(TopoDS::Edge(edges.Current()), face_, first, last);
+            if (curve.IsNull() || !std::isfinite(first) || !std::isfinite(last)) {
+                continue;
+            }
+            for (int k = 0; k <= kEdgeSamples; ++k) {
+                const gp_Pnt2d uv = curve->Value(first + (last - first) * k / kEdgeSamples);
+                consider(uv.X(), uv.Y());
+            }
+        }
+        if (!std::isfinite(range.low.value) || !std::isfinite(range.high.value)) {
+            return;
+        }
+        refine(range.low, -1.0);
+        refine(range.high, 1.0);
+        finish(range, true);
+        result_.exact = 2;
+    }
+
     const occt_bridge_face_pull_range_t& result() const { return result_; }
 
 private:
@@ -192,6 +250,33 @@ private:
             const double value = projection(1.0, v);
             return std::isfinite(value) && std::abs(evaluate(a, b, c, 1.0, v) - value) > kFitTolerance;
         });
+    }
+
+    // Compass search: move to the best on-face neighbor at the current step
+    // while it improves sign * projection, else halve the step.
+    void refine(Extreme& extreme, double sign) const {
+        double step_u = (u_max_ - u_min_) / 32.0;
+        double step_v = (v_max_ - v_min_) / 32.0;
+        const double floor_u = 1e-12 * std::max(1.0, u_max_ - u_min_);
+        const double floor_v = 1e-12 * std::max(1.0, v_max_ - v_min_);
+        for (int iteration = 0; iteration < 400 && (step_u > floor_u || step_v > floor_v); ++iteration) {
+            Extreme best = extreme;
+            const std::array<std::array<double, 2>, 4> moves{{{step_u, 0.0}, {-step_u, 0.0}, {0.0, step_v}, {0.0, -step_v}}};
+            for (const auto& move : moves) {
+                const double u = std::clamp(extreme.u + move[0], u_min_, u_max_);
+                const double v = std::clamp(extreme.v + move[1], v_min_, v_max_);
+                const double value = projection(u, v);
+                if (std::isfinite(value) && sign * value > sign * best.value && on_face(u, v)) {
+                    best = {value, u, v};
+                }
+            }
+            if (best.u == extreme.u && best.v == extreme.v) {
+                step_u *= 0.5;
+                step_v *= 0.5;
+            } else {
+                extreme = best;
+            }
+        }
     }
 
     bool on_face(double u, double v) const {
@@ -248,6 +333,9 @@ occt_bridge_face_pull_range_t face_pull_range(const TopoDS_Face& face, const gp_
         case GeomAbs_Sphere:
         case GeomAbs_Torus: range.sphere_like(); break;
         default: break;
+    }
+    if (range.result().exact == 0) {
+        range.freeform();
     }
     return range.result();
 }

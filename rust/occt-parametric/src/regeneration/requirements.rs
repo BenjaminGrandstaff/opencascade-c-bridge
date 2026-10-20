@@ -180,6 +180,9 @@ pub(crate) fn verify_requirement(
                 maximum_radians: *maximum_radians,
             },
         )?,
+        VerificationRule::ExactMinimumWall { output, minimum } => {
+            exact_minimum_wall(session, id, shape(shapes, output)?, *minimum)?
+        }
         VerificationRule::MassRange {
             output,
             material,

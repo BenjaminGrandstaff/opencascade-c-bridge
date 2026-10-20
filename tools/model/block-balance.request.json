@@ -1,7 +1,7 @@
 {
   "schema": "occb-balance-report-request-v1",
   "model": {
-    "schema_version": 180,
+    "schema_version": 181,
     "family": {
       "id": "analysis-block",
       "version": 1,

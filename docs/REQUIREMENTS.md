@@ -22,8 +22,10 @@ samples do not evaluate them.
 | `MinimumRadius { output, minimum, side, sharp_edges, samples_per_direction }` (schema 47) | Every face radius on `side` is at least `minimum`. | Exact on planes, cylinders, cones, spheres, and tori; sampled on other surfaces |
 | `FitsWithin { output, envelope }` (schema 50) | The output's bounding box fits the length-valued envelope, such as a print bed, in some axis-aligned orientation. | Exact |
 | `MinimumWall { output, minimum, mesh, maximum_samples }` (schema 48) | No inward ray from a sampled facet crosses less than `minimum` of material. | Sampled |
-| `DraftAngle { output, pull_direction, minimum_radians, mesh }` (schema 48) | No face runs closer than `minimum_radians` to parallel with the pull. | Exact on analytic faces; freeform faces sampled |
-| `Undercut { output, pull_direction, parting_origin, tolerance_radians, mesh }` (schema 66) | No face above the parting plane turns against the pull, and none below turns along it, by more than `tolerance_radians`. | Exact on analytic faces; freeform faces sampled |
+| `ExactMinimumWall { output, minimum }` (schema 181) | No two faces that share no edge and face each other through material are closer than `minimum`. | Exact |
+| `DraftAngle { output, pull_direction, minimum_radians, mesh }` (schema 48) | No face runs closer than `minimum_radians` to parallel with the pull. | Exact on analytic faces; freeform faces refined on the surface (ABI 85) |
+| `Undercut { output, pull_direction, parting_origin, tolerance_radians, mesh }` (schema 66) | No face above the parting plane turns against the pull, and none below turns along it, by more than `tolerance_radians`. | Exact on analytic faces; freeform faces refined on the surface (ABI 85) |
+| `MassRange`, `TemperatureLimit`, `BendingStress` (schema 179) | Material checks against the frozen catalog. | See [Materials](MATERIALS.md) |
 | `Overhang { output, build_direction, maximum_radians, mesh }` (schema 48) | No downward facet above the build plate leans more than `maximum_radians` from vertical. | Sampled |
 
 Connectivity catches booleans that leave disjoint pieces, sewing that never
@@ -93,10 +95,16 @@ facet normals approximate curved surfaces to within the mesh deflection.
   between the surface and the pull direction, whichever way it leans. Planes,
   cylinders, cones, and spheres or tori whose extremes lie on the face are
   measured exactly from the BREP (ABI 43's per-face pull ranges); the result is
-  `Exact` when every face is. Other faces (B-splines, lofts, and spheres or tori
-  trimmed away from their extremes) use their smallest facet draft on the
-  tessellation within `mesh`, and the result is `Sampled`, counting those
-  faces' facets. Faces
+  `Exact` when every face is. Since ABI 85 other faces (B-splines, lofts,
+  surfaces of extrusion and revolution, and spheres or tori trimmed away from
+  their extremes) are refined on the surface itself: the extremes of the
+  normal's pull component over a 33 × 33 on-face lattice of the face's UV
+  bounds and 65 points on each boundary curve, each improved by a compass
+  search that stays on the face down to 1e-12 of the UV span. That matches
+  closed forms to 1e-9 (an elliptical prism's ±sin of the pull's tilt), but a
+  lattice can miss a narrow extreme between its points, so the result is
+  `Sampled`, counting refined faces, and its message says how many faces were
+  refined. Only a face with no defined normal falls back to its facets. Faces
   closer to parallel with the pull than `minimum_radians`, in [0, pi/2), "require
   draft". Facets normal to the pull (caps) are skipped, and faces leaning either
   way pass because they release from one mold half or the other. This is the
@@ -110,7 +118,8 @@ facet normals approximate curved surfaces to within the mesh deflection.
   parting surfaces and are skipped. Analytic faces use their exact pull
   ranges, so a release angle is measured exactly where it occurs (a rod
   parted 2 mm above its 5 mm axis releases at -asin(0.4), at the plane);
-  other faces use their facets, and the result is then `Sampled`. For a
+  other faces are refined on the surface as for draft, and the result is
+  then `Sampled`. For a
   planar parting and a straight pull the per-face test is complete, with no
   ray casting: if a line along the pull from a point above the plane met
   material again, it would enter it through a face turned against the pull,
@@ -126,8 +135,26 @@ facet normals approximate curved surfaces to within the mesh deflection.
   count, with a maximum of zero.
 
 Cost is one tessellation, O(T) for draft and overhang, and O(T log T) indexing
-plus one ray per wall sample, for T facets. Like other part rules they run once
-per shared parameter set.
+plus one ray per wall sample, for T facets; refined faces cost about 1,100
+classifications each (500 freeform faces took 2.3 s). Like other part rules
+they run once per shared parameter set.
+
+### Exact minimum wall
+
+**`ExactMinimumWall`** (schema 181) measures wall thickness without sampling.
+It compares every pair of faces whose bounding boxes come within `minimum`
+(found by a sort and sweep over the boxes) and that share no edge. For each
+pair it takes the kernel's exact closest points, and keeps the pair as a wall
+when both outward normals there point away along the segment between them
+(within 60°) and a ray along that segment stays in material until the far face.
+The thinnest such distance must be at least `minimum`; its witness is the
+pair's closest points. A plate's thickness, a ligament between a hole and an
+edge, a tube's wall and a pocketed cup's walls and floor are matched to 1e-7
+or better. Gaps between bodies face away from material and are not walls.
+Faces that share an edge are not compared, so a wedge thinning to a knife edge
+is not reported (`MinimumWall` samples it), and one face is not compared with
+itself. Outputs are limited to 20,000 faces and 20,000 candidate pairs; a
+plate with 400 holes (1,652 pairs) took 1.2 s.
 
 ## Assembly rules (`AssemblyVerificationRule`)
 

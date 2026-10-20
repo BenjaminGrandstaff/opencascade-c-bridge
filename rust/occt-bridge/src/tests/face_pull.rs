@@ -169,15 +169,17 @@ fn modeled_parts_agree_with_their_tessellation() {
 
     // A pocket under the sphere's south pole leaves its lowest point at one
     // corner of the trimmed face, which the closed form cannot place on the
-    // face: the sphere is left unmeasured and the pocket's planes are exact.
+    // face: the sphere is refined numerically (ABI 85), the planes are exact.
     let under = session
         .create_box(v(-1.0, -4.0, -4.0), v(5.0, 8.0, 2.0))
         .unwrap();
     let pocketed = session.cut(&ball, &under).unwrap();
     let faces = session.subshape_count(&pocketed, ShapeType::Face).unwrap();
-    assert_eq!(agrees_with_tessellation(&session, &pocketed, up), faces - 1);
+    assert_eq!(agrees_with_tessellation(&session, &pocketed, up), faces);
+    let ranges = session.face_pull_ranges(&pocketed, up).unwrap();
+    assert_eq!(ranges.iter().flatten().filter(|r| r.refined).count(), 1);
     // Pulled along x, the extreme at the -x pole is cut away, so the sphere
-    // is left unmeasured while the pocket's planes stay exact.
+    // is refined while the pocket's planes stay exact.
     let side = session
         .create_box(v(-4.0, -1.0, -1.0), v(2.0, 2.0, 2.0))
         .unwrap();
@@ -185,10 +187,10 @@ fn modeled_parts_agree_with_their_tessellation() {
     let ranges = session
         .face_pull_ranges(&notched, v(1.0, 0.0, 0.0))
         .unwrap();
-    assert_eq!(ranges.iter().filter(|range| range.is_none()).count(), 1);
+    assert!(ranges.iter().all(Option::is_some));
     assert_eq!(
         agrees_with_tessellation(&session, &notched, v(1.0, 0.0, 0.0)),
-        ranges.len() - 1
+        ranges.len()
     );
 
     assert!(session.face_pull_ranges(&ball, v(0.0, 0.0, 0.0)).is_err());
@@ -197,4 +199,50 @@ fn modeled_parts_agree_with_their_tessellation() {
             .face_pull_ranges(&ball, v(f64::NAN, 0.0, 1.0))
             .is_err()
     );
+}
+
+#[test]
+fn freeform_faces_are_refined_to_their_true_extremes() {
+    let session = Session::new().unwrap();
+    // An elliptical prism's side is a surface of extrusion, which has no
+    // closed form here. Its normal is horizontal and turns all the way
+    // round, so along a pull tilted by `a` from the axis it ranges over
+    // exactly ±sin a.
+    let up = v(0.0, 0.0, 1.0);
+    let ellipse = session
+        .create_ellipse_wire(v(0.0, 0.0, 0.0), up, 6.0, 3.0)
+        .unwrap();
+    let face = session.create_face_from_wire(&ellipse).unwrap();
+    let prism = session
+        .create_prism_from_face(&face, v(0.0, 0.0, 10.0))
+        .unwrap();
+    for angle in [0.0f64, 0.3, 1.0, std::f64::consts::FRAC_PI_2] {
+        let pull = v(angle.sin(), 0.0, angle.cos());
+        let ranges = session.face_pull_ranges(&prism, pull).unwrap();
+        let side: Vec<_> = ranges.iter().flatten().filter(|r| r.refined).collect();
+        assert_eq!(side.len(), 1, "{ranges:?}");
+        assert!(
+            (side[0].maximum.0 - angle.sin()).abs() < 1e-9,
+            "{angle}: {:?}",
+            side[0]
+        );
+        assert!(
+            (side[0].minimum.0 + angle.sin()).abs() < 1e-9,
+            "{angle}: {:?}",
+            side[0]
+        );
+        if angle > 0.0 {
+            // The extremes sit at the ends of the major axis, on the face.
+            let high = side[0].maximum.1;
+            assert!(
+                (high.x - 6.0).abs() < 1e-6 && high.y.abs() < 1e-6,
+                "{high:?}"
+            );
+            assert!((0.0..=10.0).contains(&high.z));
+        }
+        assert_eq!(
+            agrees_with_tessellation(&session, &prism, pull),
+            ranges.len()
+        );
+    }
 }

@@ -87,6 +87,18 @@ pub enum VerificationRule {
         )]
         maximum_samples: usize,
     },
+    /// Exact (schema 181): the least distance between two faces that share
+    /// no edge and whose closest points face each other through material
+    /// (outward normals within 60° of pointing away along the segment, which
+    /// the solid contains) is at least `minimum`. Distances are the kernel's
+    /// exact face extrema; pairs are found by bounding boxes within
+    /// `minimum`. Faces that share an edge are not compared, so a thin wedge
+    /// ending at an edge is not reported, and one face is not compared with
+    /// itself.
+    ExactMinimumWall {
+        output: String,
+        minimum: Quantity,
+    },
     /// Every face not perpendicular to the dimensionless `pull_direction`
     /// has draft of at least `minimum_radians`, in [0, pi/2), leaning either
     /// way. Exact on analytic faces (planes, cylinders, cones, and spheres or
@@ -272,6 +284,7 @@ impl VerificationRule {
             | Self::Connectivity { output, .. }
             | Self::MinimumRadius { output, .. }
             | Self::MinimumWall { output, .. }
+            | Self::ExactMinimumWall { output, .. }
             | Self::DraftAngle { output, .. }
             | Self::Undercut { output, .. }
             | Self::FitsWithin { output, .. }

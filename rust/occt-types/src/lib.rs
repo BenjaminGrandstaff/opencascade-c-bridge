@@ -644,6 +644,9 @@ pub struct FaceRadiusBounds {
 pub struct FacePullRange {
     pub minimum: (f64, Vec3),
     pub maximum: (f64, Vec3),
+    /// Found by a numerical search on a freeform face (ABI 85) rather than
+    /// in closed form.
+    pub refined: bool,
 }
 
 /// How the faces on either side of an edge meet.
