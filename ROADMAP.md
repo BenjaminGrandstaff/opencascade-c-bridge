@@ -26,6 +26,18 @@ tracks status and order.
 
 ## Done
 
+- Design templates (no schema or ABI change). `occb-model-template-v1`
+  files in `tools/model/templates/` are complete build requests whose values
+  come from typed, range-checked inputs (lengths, numbers, choices, allowed
+  catalog sizes). `$input`, `$product` and `$sum` placeholders fill
+  parameters, materials, loads and derived moments. There are four templates:
+  `l-bracket`, `printed-enclosure`, `shaft` and `sheet-metal-channel`. Each
+  carries its own checks (valid, exact wall, mass, bending, bed or stock fit,
+  heat margin). MCP adds `occt_list_templates` and `occt_instantiate_template`,
+  and `templates.py` does the same from a shell. Tests build every template
+  at its defaults with all checks passing, show inputs changing the
+  verdict, and refuse bad inputs. See [Templates](docs/TEMPLATES.md).
+
 - Exact minimum wall and refined freeform draft (schema 181, ABI 85).
   - `exact_minimum_wall` measures the thinnest wall between faces that share
     no edge and face each other through material. It uses the kernel's exact
@@ -3525,10 +3537,11 @@ ordered by priority; the catalog/documentation foundation is complete.
    at knife edges between faces that share an edge, and proof that a refined
    draft extreme is global. Stress beyond beam theory still needs an external
    solver.
-7. **Design starting points** — turning a functional need into features is
-   left entirely to the AI client. Add parameterized templates (brackets,
-   enclosures, shafts, sheet-metal trays) whose requirements and assumptions
-   an AI fills in, rather than authoring every feature from scratch.
+7. **Design starting points — complete.** Four templates (L-bracket,
+   printed enclosure, shaft, sheet-metal channel) with typed inputs and
+   checks wired to them, listed and instantiated over MCP. Remaining: more
+   templates (gussets, lids, hinges, spars), and templates that compose into
+   assemblies.
 
 ## Later
 

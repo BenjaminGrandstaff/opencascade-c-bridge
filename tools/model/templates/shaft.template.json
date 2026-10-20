@@ -1,0 +1,355 @@
+{
+  "schema": "occb-model-template-v1",
+  "id": "shaft",
+  "version": 1,
+  "title": "Simply supported round shaft",
+  "summary": "A plain round shaft checked as a simply supported beam with a load at mid-span.",
+  "use_when": "Pins, axles and spindles carried by two bearings or supports.",
+  "not_for": "Torsion, fatigue, keyways or shoulders (add features after instantiating).",
+  "checks": [
+    "valid solid",
+    "mass in the chosen material",
+    "bending at mid-span (moment = load_n x length / 4)"
+  ],
+  "inputs": [
+    {
+      "id": "diameter",
+      "kind": "length",
+      "default": 20,
+      "minimum": 2,
+      "maximum": 200,
+      "description": "Shaft diameter."
+    },
+    {
+      "id": "length",
+      "kind": "length",
+      "default": 200,
+      "minimum": 10,
+      "maximum": 2000,
+      "description": "Length between the two supports (the shaft's full length)."
+    },
+    {
+      "id": "material",
+      "kind": "choice",
+      "default": "stainless_steel_304",
+      "choices": [
+        "aluminum_6061_t6",
+        "stainless_steel_304",
+        "titanium_cnc",
+        "brass_c360",
+        "abs_cnc",
+        "polycarbonate_cnc",
+        "pom_acetal_copolymer",
+        "nylon_6_6",
+        "peek",
+        "pei_ultem_1000",
+        "pla_printed",
+        "petg_printed"
+      ],
+      "description": "Catalog material (docs/MATERIALS.md)."
+    },
+    {
+      "id": "load_n",
+      "kind": "number",
+      "default": 1000,
+      "minimum": 0,
+      "maximum": 1000000,
+      "description": "Load (N) at mid-span on a simply supported shaft: moment = load_n x length / 4."
+    },
+    {
+      "id": "safety_factor",
+      "kind": "number",
+      "default": 2,
+      "minimum": 1,
+      "maximum": 10,
+      "description": "Required safety factor against the material's yield at mid-span."
+    },
+    {
+      "id": "max_mass_kg",
+      "kind": "number",
+      "default": 1,
+      "minimum": 0.001,
+      "maximum": 1000,
+      "description": "Largest acceptable mass (kg)."
+    }
+  ],
+  "request": {
+    "schema": "occb-model-request-v1",
+    "model": {
+      "schema_version": 181,
+      "family": {
+        "id": "shaft",
+        "version": 1,
+        "parameters": [
+          {
+            "id": "diameter",
+            "parameter_type": {
+              "scalar": "length"
+            },
+            "default": {
+              "scalar": {
+                "$input": "diameter",
+                "as": "quantity"
+              }
+            },
+            "minimum": {
+              "value": 2,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "maximum": {
+              "value": 200,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          {
+            "id": "length",
+            "parameter_type": {
+              "scalar": "length"
+            },
+            "default": {
+              "scalar": {
+                "$input": "length",
+                "as": "quantity"
+              }
+            },
+            "minimum": {
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "maximum": {
+              "value": 2000,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          }
+        ],
+        "derived_parameters": [],
+        "derived_vector_parameters": [],
+        "constraints": [],
+        "requirements": [
+          {
+            "id": "valid",
+            "version": 1,
+            "kind": "validation",
+            "priority": "required",
+            "statement": "The shaft is a valid solid.",
+            "rule": {
+              "shape_valid": {
+                "output": "body"
+              }
+            },
+            "provenance": "template; limits come from the template inputs",
+            "traces": [
+              {
+                "feature": "body"
+              }
+            ]
+          },
+          {
+            "id": "mass",
+            "version": 1,
+            "kind": "functional",
+            "priority": "required",
+            "statement": "The shaft weighs at most max_mass_kg.",
+            "rule": {
+              "mass_range": {
+                "output": "body",
+                "material": {
+                  "$input": "material"
+                },
+                "minimum_kilograms": 0,
+                "maximum_kilograms": {
+                  "$input": "max_mass_kg"
+                }
+              }
+            },
+            "provenance": "template; limits come from the template inputs",
+            "traces": [
+              {
+                "feature": "body"
+              }
+            ]
+          },
+          {
+            "id": "mid-bending",
+            "version": 1,
+            "kind": "functional",
+            "priority": "required",
+            "statement": "Mid-span carries load_n with safety_factor against yield.",
+            "rule": {
+              "bending_stress": {
+                "output": "body",
+                "material": {
+                  "$input": "material"
+                },
+                "section_origin": {
+                  "x": {
+                    "$input": "length",
+                    "as": "quantity",
+                    "scale": 0.5
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                },
+                "beam_axis": {
+                  "x": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                },
+                "bending_axis": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                },
+                "moment_newton_millimeters": {
+                  "$product": [
+                    {
+                      "$input": "load_n"
+                    },
+                    {
+                      "$input": "length"
+                    },
+                    0.25
+                  ]
+                },
+                "minimum_safety_factor": {
+                  "$input": "safety_factor"
+                }
+              }
+            },
+            "provenance": "template; limits come from the template inputs",
+            "traces": [
+              {
+                "feature": "body"
+              }
+            ]
+          }
+        ],
+        "datums": [],
+        "features": [
+          {
+            "id": "body",
+            "operation": {
+              "cylinder": {
+                "origin": {
+                  "components": {
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "z": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                },
+                "axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "radius": {
+                  "divide": [
+                    {
+                      "parameter": "diameter"
+                    },
+                    {
+                      "literal": {
+                        "value": 2,
+                        "dimension": "scalar",
+                        "unit": null
+                      }
+                    }
+                  ]
+                },
+                "height": {
+                  "parameter": "length"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "instances": [
+        {
+          "base": {
+            "id": "shaft",
+            "overrides": {},
+            "provenance": "template instance"
+          }
+        }
+      ]
+    },
+    "outputs": [
+      {
+        "instance": "shaft",
+        "output": "body"
+      }
+    ],
+    "step": true,
+    "stl": false,
+    "preview": true
+  }
+}

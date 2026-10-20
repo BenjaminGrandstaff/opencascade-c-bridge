@@ -61,6 +61,8 @@ part tools.
 | `occt_joint_branches` | Model and explicit seed axes | Bounded search report and reloadable branch models |
 | `occt_merge_documents` | Base, current and other model snapshots | Merged model or complete semantic conflicts |
 | `occt_build` | The entire `occb-model-request-v1` object | Accepted report, build ID, local directory, and artifact resource URIs |
+| `occt_list_templates` | none | Design templates: purpose, checks and typed inputs |
+| `occt_instantiate_template` | `template` and optional `inputs` | A complete build request from the template, or a `template` failure for bad inputs |
 | `occt_session_read` | Optional local studio `url` | The studio's current model, `model_sha256`, version, unsaved state and last shared change |
 | `occt_session_apply` | Accepted `build_id`, `expected_model_sha256`, `message`, optional `author` and `url` | The model applied to the studio, or a `conflict` when the person changed it first |
 
@@ -110,7 +112,9 @@ measured values, witnesses and output measurements in the failure, with
 
 ## AI workflow
 
-1. Read `occt_get_schema` and an appropriate example.
+1. For a new design, `occt_list_templates` and instantiate one that fits
+   ([templates](../../docs/TEMPLATES.md)); otherwise read `occt_get_schema`
+   and an appropriate example.
 2. Describe the function/interfaces as requirements; record uncertain inputs as
    explicit assumptions with provenance, rather than inventing verified facts.
 3. Call `occt_build` with explicit units and selected final outputs.

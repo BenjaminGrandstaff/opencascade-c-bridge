@@ -19,6 +19,9 @@ import urllib.parse
 import urllib.request
 import uuid
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import templates as design_templates  # noqa: E402
+
 PROTOCOLS = ('2025-11-25', '2025-06-18')
 SCHEMAS = ('request', 'model', 'feature', 'parameter', 'sketch', 'requirement', 'inspection', 'face_selector', 'edge_selector', 'edit', 'change', 'sketch_change', 'view')
 EXAMPLES = tuple(sorted(path.name.removesuffix('.request.json') for path in pathlib.Path(__file__).resolve().parent.glob('*.request.json')))
@@ -121,6 +124,7 @@ class Server:
             self.schemas[suffix.replace('-', '_')] = generated
             self.commands[tool] = executable
         self.examples = {name: decode((ROOT / 'tools/model' / (name + '.request.json')).read_text()) for name in EXAMPLES}
+        self.templates = design_templates.load_templates()
         self.build_inspection_schema = copy.deepcopy(self.schemas['inspection'])
         for name in ('schema', 'model'):
             self.build_inspection_schema['properties'].pop(name)
@@ -140,8 +144,9 @@ class Server:
             'unavailable_tools': sorted(set(COMMANDS) - set(self.commands)),
             'feature_operations': sorted(next(iter(v['properties'])) for v in self.schemas['request']['$defs']['FeatureOperation']['oneOf']),
             'examples': {name: request['schema'] for name, request in self.examples.items()},
+            'templates': sorted(self.templates),
             'counts': {'tools': len(self.tools()), 'schemas': len(self.schemas), 'examples': len(self.examples),
-                       'resources': len(self.fixed_resources()),
+                       'resources': len(self.fixed_resources()), 'templates': len(self.templates),
                        'feature_operations': len(self.schemas['request']['$defs']['FeatureOperation']['oneOf']),
                        'request_definitions': len(self.schemas['request']['$defs'])},
         }
@@ -165,6 +170,10 @@ class Server:
                  inputSchema=self.build_edit_schema, annotations=dict(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)),
             dict(name='occt_build', description='Validate/migrate a model, apply typed parameter edits, verify requirements, and build selected parts into a new server-owned directory. Returns report and artifact resource URIs. Failed edits preserve previous builds. Set renders (for example {} or views plus section planes) to get shaded PNG views of each output; up to eight come back as image content and all stay readable as resources.',
                  inputSchema=self.schemas['request'], annotations=dict(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)),
+            dict(name='occt_list_templates', description='List parameterized design templates (brackets, enclosures, shafts, sheet-metal channels): what each is for and not for, the checks it carries, and its typed inputs with units, ranges, choices and defaults. Start a new design here when one fits.',
+                 inputSchema=object_schema({}, []), annotations=read),
+            dict(name='occt_instantiate_template', description='Fill a template\'s inputs (defaults for those omitted; lengths in millimeters) and return a complete, build-ready occb-model-request-v1. Out-of-range or unknown inputs are refused. Build the result with occt_build, then edit it like any model.',
+                 inputSchema=object_schema({'template': dict(type='string', enum=sorted(self.templates)), 'inputs': dict(type='object')}, ['template']), annotations=read),
             dict(name='occt_session_read', description='Read the model open in a local studio (occt-view --serve) with its model_sha256, version, unsaved state and last shared change. Build or edit that model to verify a change, then apply the accepted build with occt_session_apply.',
                  inputSchema=object_schema({'url': dict(type='string', description=f'Studio URL; default {self.studio}')}, []), annotations=read),
             dict(name='occt_session_apply', description='Apply an accepted build to the local studio session while the studio model still has expected_model_sha256 (from occt_session_read). A person editing meanwhile makes this fail with stage conflict: read again and rebase. The change joins the studio undo history and stays unsaved until the person saves.',
@@ -504,7 +513,7 @@ class Server:
             return dict(protocolVersion=params['protocolVersion'] if params['protocolVersion'] in PROTOCOLS else PROTOCOLS[0],
                         capabilities=dict(tools=dict(listChanged=False), resources=dict(listChanged=False)),
                         serverInfo=dict(name='occt-model', version='0.1.0'),
-                        instructions='Read occt://catalog for current capabilities, then a schema/example. Design command tools return analysis artifacts; build resulting models separately to verify requirements. Preserve requirements and explicit assumptions, then build. Inspect sketch_feature for solver/repair evidence or loft_feature for isolated correspondence diagnostics, preview guarded proposals with occt_preview_edit_build, then publish intended changes with occt_edit_build. Read model.json to continue from the accepted model. Preview SVGs are sampled; inspect requirement evidence. To work with a person in the studio, occt_session_read the shared model, build or edit it, then occt_session_apply the accepted build with the read model_sha256.')
+                        instructions='Read occt://catalog for current capabilities. For a new design, occt_list_templates and occt_instantiate_template when one fits; otherwise start from a schema/example. Design command tools return analysis artifacts; build resulting models separately to verify requirements. Preserve requirements and explicit assumptions, then build. Inspect sketch_feature for solver/repair evidence or loft_feature for isolated correspondence diagnostics, preview guarded proposals with occt_preview_edit_build, then publish intended changes with occt_edit_build. Read model.json to continue from the accepted model. Preview SVGs are sampled; inspect requirement evidence. To work with a person in the studio, occt_session_read the shared model, build or edit it, then occt_session_apply the accepted build with the read model_sha256.')
         if self.state != 'ready':
             raise RpcError(-32600, 'initialize and send notifications/initialized first')
         if method == 'tools/list':
@@ -531,6 +540,18 @@ class Server:
                 return await self.edit_build(arguments)
             if name == 'occt_build':
                 return await self.build(arguments)
+            if name == 'occt_list_templates':
+                if arguments not in ({}, None):
+                    raise RpcError(-32602, 'occt_list_templates takes no arguments')
+                return tool_result(dict(templates=[design_templates.summary(t) for t in self.templates.values()]))
+            if name == 'occt_instantiate_template':
+                if not isinstance(arguments, dict) or not set(arguments) <= {'template', 'inputs'} or arguments.get('template') not in self.templates:
+                    raise RpcError(-32602, f'expected template (one of {", ".join(sorted(self.templates))}) and optional inputs')
+                try:
+                    request = design_templates.instantiate(self.templates[arguments['template']], arguments.get('inputs', {}))
+                except design_templates.TemplateError as error:
+                    return tool_result(dict(status='failed', stage='template', message=str(error)), True)
+                return tool_result(dict(template=arguments['template'], request=request))
             if name == 'occt_session_read':
                 return await self.session_read(arguments)
             if name == 'occt_session_apply':

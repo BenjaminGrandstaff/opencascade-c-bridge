@@ -51,6 +51,9 @@ Recently landed:
 - **Standard parts:** metric socket head cap screws, nuts, washers and
   dowel pins placed from a frozen ISO catalog, with catalog dimensions in
   expressions ([docs](docs/STANDARD_PARTS.md)).
+- **Checks and starting points:** exact minimum wall, draft refined on
+  freeform faces, and design templates that an AI fills in and builds
+  ([templates](docs/TEMPLATES.md), [requirement rules](docs/REQUIREMENTS.md)).
 
 Next on [the roadmap](ROADMAP.md#next): drawing conventions and
 manufacturing sheets from the ASME Y14 family. See the

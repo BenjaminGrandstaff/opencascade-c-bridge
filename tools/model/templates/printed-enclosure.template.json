@@ -1,0 +1,509 @@
+{
+  "schema": "occb-model-template-v1",
+  "id": "printed-enclosure",
+  "version": 1,
+  "title": "Open-top printed enclosure",
+  "summary": "A rectangular box with uniform side walls and floor, sized from its inside dimensions, for 3D printing or machining.",
+  "use_when": "Housing electronics or parts that need a simple tray-like box checked against a print bed and service heat.",
+  "not_for": "Lids, bosses, ventilation or snap fits (add features after instantiating).",
+  "checks": [
+    "valid solid",
+    "exact minimum wall",
+    "fits the print bed",
+    "heat deflection margin at the service temperature"
+  ],
+  "inputs": [
+    {
+      "id": "inner_length",
+      "kind": "length",
+      "default": 80,
+      "minimum": 10,
+      "maximum": 300,
+      "description": "Inside length along x."
+    },
+    {
+      "id": "inner_width",
+      "kind": "length",
+      "default": 50,
+      "minimum": 10,
+      "maximum": 300,
+      "description": "Inside width along y."
+    },
+    {
+      "id": "inner_height",
+      "kind": "length",
+      "default": 30,
+      "minimum": 5,
+      "maximum": 300,
+      "description": "Inside depth along z."
+    },
+    {
+      "id": "wall",
+      "kind": "length",
+      "default": 2,
+      "minimum": 0.8,
+      "maximum": 10,
+      "description": "Side wall thickness."
+    },
+    {
+      "id": "floor",
+      "kind": "length",
+      "default": 2,
+      "minimum": 0.8,
+      "maximum": 10,
+      "description": "Floor thickness."
+    },
+    {
+      "id": "material",
+      "kind": "choice",
+      "default": "petg_printed",
+      "choices": [
+        "pla_printed",
+        "petg_printed",
+        "polycarbonate_cnc",
+        "pom_acetal_copolymer",
+        "nylon_6_6",
+        "peek",
+        "pei_ultem_1000"
+      ],
+      "description": "Catalog material with a heat deflection temperature (docs/MATERIALS.md)."
+    },
+    {
+      "id": "service_temperature_c",
+      "kind": "number",
+      "default": 40,
+      "minimum": -40,
+      "maximum": 250,
+      "description": "Hottest service temperature (C)."
+    },
+    {
+      "id": "margin_c",
+      "kind": "number",
+      "default": 10,
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Required margin below the heat deflection temperature at 1.80 MPa (C)."
+    },
+    {
+      "id": "bed_x",
+      "kind": "length",
+      "default": 250,
+      "minimum": 50,
+      "maximum": 2000,
+      "description": "Print bed or stock length along x."
+    },
+    {
+      "id": "bed_y",
+      "kind": "length",
+      "default": 210,
+      "minimum": 50,
+      "maximum": 2000,
+      "description": "Print bed or stock width along y."
+    },
+    {
+      "id": "bed_z",
+      "kind": "length",
+      "default": 220,
+      "minimum": 50,
+      "maximum": 2000,
+      "description": "Build height along z."
+    },
+    {
+      "id": "min_wall",
+      "kind": "length",
+      "default": 1.2,
+      "minimum": 0.4,
+      "maximum": 10,
+      "description": "Thinnest printable wall."
+    }
+  ],
+  "request": {
+    "schema": "occb-model-request-v1",
+    "model": {
+      "schema_version": 181,
+      "family": {
+        "id": "printed-enclosure",
+        "version": 1,
+        "parameters": [
+          {
+            "id": "inner_length",
+            "parameter_type": {
+              "scalar": "length"
+            },
+            "default": {
+              "scalar": {
+                "$input": "inner_length",
+                "as": "quantity"
+              }
+            },
+            "minimum": {
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "maximum": {
+              "value": 300,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          {
+            "id": "inner_width",
+            "parameter_type": {
+              "scalar": "length"
+            },
+            "default": {
+              "scalar": {
+                "$input": "inner_width",
+                "as": "quantity"
+              }
+            },
+            "minimum": {
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "maximum": {
+              "value": 300,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          {
+            "id": "inner_height",
+            "parameter_type": {
+              "scalar": "length"
+            },
+            "default": {
+              "scalar": {
+                "$input": "inner_height",
+                "as": "quantity"
+              }
+            },
+            "minimum": {
+              "value": 5,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "maximum": {
+              "value": 300,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          {
+            "id": "wall",
+            "parameter_type": {
+              "scalar": "length"
+            },
+            "default": {
+              "scalar": {
+                "$input": "wall",
+                "as": "quantity"
+              }
+            },
+            "minimum": {
+              "value": 0.8,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "maximum": {
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          {
+            "id": "floor",
+            "parameter_type": {
+              "scalar": "length"
+            },
+            "default": {
+              "scalar": {
+                "$input": "floor",
+                "as": "quantity"
+              }
+            },
+            "minimum": {
+              "value": 0.8,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "maximum": {
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          }
+        ],
+        "derived_parameters": [],
+        "derived_vector_parameters": [],
+        "constraints": [],
+        "requirements": [
+          {
+            "id": "valid",
+            "version": 1,
+            "kind": "validation",
+            "priority": "required",
+            "statement": "The enclosure is one valid solid.",
+            "rule": {
+              "shape_valid": {
+                "output": "body"
+              }
+            },
+            "provenance": "template; limits come from the template inputs",
+            "traces": [
+              {
+                "feature": "body"
+              }
+            ]
+          },
+          {
+            "id": "wall",
+            "version": 1,
+            "kind": "manufacturing",
+            "priority": "required",
+            "statement": "No wall or floor is thinner than min_wall.",
+            "rule": {
+              "exact_minimum_wall": {
+                "output": "body",
+                "minimum": {
+                  "$input": "min_wall",
+                  "as": "quantity"
+                }
+              }
+            },
+            "provenance": "template; limits come from the template inputs",
+            "traces": [
+              {
+                "feature": "body"
+              }
+            ]
+          },
+          {
+            "id": "bed",
+            "version": 1,
+            "kind": "manufacturing",
+            "priority": "required",
+            "statement": "The enclosure fits the print bed in some axis-aligned orientation.",
+            "rule": {
+              "fits_within": {
+                "output": "body",
+                "envelope": {
+                  "x": {
+                    "$input": "bed_x",
+                    "as": "quantity"
+                  },
+                  "y": {
+                    "$input": "bed_y",
+                    "as": "quantity"
+                  },
+                  "z": {
+                    "$input": "bed_z",
+                    "as": "quantity"
+                  }
+                }
+              }
+            },
+            "provenance": "template; limits come from the template inputs",
+            "traces": [
+              {
+                "feature": "body"
+              }
+            ]
+          },
+          {
+            "id": "heat",
+            "version": 1,
+            "kind": "functional",
+            "priority": "required",
+            "statement": "The material stays margin_c below its 1.80 MPa heat deflection temperature in service.",
+            "rule": {
+              "temperature_limit": {
+                "output": "body",
+                "material": {
+                  "$input": "material"
+                },
+                "limit": "heat_deflection_1_80_mpa",
+                "service_temperature_c": {
+                  "$input": "service_temperature_c"
+                },
+                "minimum_margin_c": {
+                  "$input": "margin_c"
+                }
+              }
+            },
+            "provenance": "template; limits come from the template inputs",
+            "traces": [
+              {
+                "feature": "body"
+              }
+            ]
+          }
+        ],
+        "datums": [],
+        "features": [
+          {
+            "id": "outer",
+            "operation": {
+              "box": {
+                "origin": {
+                  "components": {
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "z": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                },
+                "size": {
+                  "components": {
+                    "x": {
+                      "add": [
+                        {
+                          "parameter": "inner_length"
+                        },
+                        {
+                          "multiply": [
+                            {
+                              "literal": {
+                                "value": 2,
+                                "dimension": "scalar",
+                                "unit": null
+                              }
+                            },
+                            {
+                              "parameter": "wall"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    "y": {
+                      "add": [
+                        {
+                          "parameter": "inner_width"
+                        },
+                        {
+                          "multiply": [
+                            {
+                              "literal": {
+                                "value": 2,
+                                "dimension": "scalar",
+                                "unit": null
+                              }
+                            },
+                            {
+                              "parameter": "wall"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    "z": {
+                      "add": [
+                        {
+                          "parameter": "inner_height"
+                        },
+                        {
+                          "parameter": "floor"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "id": "cavity",
+            "operation": {
+              "box": {
+                "origin": {
+                  "components": {
+                    "x": {
+                      "parameter": "wall"
+                    },
+                    "y": {
+                      "parameter": "wall"
+                    },
+                    "z": {
+                      "parameter": "floor"
+                    }
+                  }
+                },
+                "size": {
+                  "components": {
+                    "x": {
+                      "parameter": "inner_length"
+                    },
+                    "y": {
+                      "parameter": "inner_width"
+                    },
+                    "z": {
+                      "add": [
+                        {
+                          "parameter": "inner_height"
+                        },
+                        {
+                          "literal": {
+                            "value": 1,
+                            "dimension": "length",
+                            "unit": "millimeter"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "id": "body",
+            "operation": {
+              "cut": {
+                "object": "outer",
+                "tool": "cavity"
+              }
+            }
+          }
+        ]
+      },
+      "instances": [
+        {
+          "base": {
+            "id": "enclosure",
+            "overrides": {},
+            "provenance": "template instance"
+          }
+        }
+      ]
+    },
+    "outputs": [
+      {
+        "instance": "enclosure",
+        "output": "body"
+      }
+    ],
+    "step": true,
+    "stl": false,
+    "preview": true
+  }
+}

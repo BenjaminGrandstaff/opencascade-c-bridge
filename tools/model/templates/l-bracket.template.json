@@ -1,0 +1,748 @@
+{
+  "schema": "occb-model-template-v1",
+  "id": "l-bracket",
+  "version": 1,
+  "title": "L-bracket with clearance holes",
+  "summary": "A right-angle bracket: base and upright legs of one thickness, an ISO 273 clearance hole through each leg, sized for a metric bolt.",
+  "use_when": "Mounting one part square to another with bolts; a load pushes on the top of the upright.",
+  "not_for": "Gussets, slotted holes, or loads along the bracket's width.",
+  "checks": [
+    "valid solid",
+    "exact minimum wall",
+    "mass in the chosen material",
+    "bending at the upright's root (moment = load_n x upright_height)"
+  ],
+  "inputs": [
+    {
+      "id": "width",
+      "kind": "length",
+      "default": 30,
+      "minimum": 10,
+      "maximum": 200,
+      "description": "Bracket width along y."
+    },
+    {
+      "id": "base_length",
+      "kind": "length",
+      "default": 60,
+      "minimum": 20,
+      "maximum": 400,
+      "description": "Base leg length along x, including the upright's thickness."
+    },
+    {
+      "id": "upright_height",
+      "kind": "length",
+      "default": 50,
+      "minimum": 20,
+      "maximum": 400,
+      "description": "Upright leg height along z, including the base's thickness."
+    },
+    {
+      "id": "thickness",
+      "kind": "length",
+      "default": 5,
+      "minimum": 1,
+      "maximum": 30,
+      "description": "Thickness of both legs."
+    },
+    {
+      "id": "bolt",
+      "kind": "length",
+      "default": 6,
+      "minimum": 3,
+      "maximum": 12,
+      "description": "Metric bolt size for the two ISO 273 medium clearance holes.",
+      "allowed": [
+        3,
+        4,
+        5,
+        6,
+        8,
+        10,
+        12
+      ]
+    },
+    {
+      "id": "material",
+      "kind": "choice",
+      "default": "aluminum_6061_t6",
+      "choices": [
+        "aluminum_6061_t6",
+        "stainless_steel_304",
+        "titanium_cnc",
+        "brass_c360",
+        "abs_cnc",
+        "polycarbonate_cnc",
+        "pom_acetal_copolymer",
+        "nylon_6_6",
+        "peek",
+        "pei_ultem_1000",
+        "pla_printed",
+        "petg_printed"
+      ],
+      "description": "Catalog material (docs/MATERIALS.md)."
+    },
+    {
+      "id": "load_n",
+      "kind": "number",
+      "default": 200,
+      "minimum": 0,
+      "maximum": 100000,
+      "description": "Horizontal load (N) at the top of the upright, bending it about y."
+    },
+    {
+      "id": "safety_factor",
+      "kind": "number",
+      "default": 2,
+      "minimum": 1,
+      "maximum": 10,
+      "description": "Required safety factor against the material's yield at the upright's root."
+    },
+    {
+      "id": "max_mass_kg",
+      "kind": "number",
+      "default": 0.5,
+      "minimum": 0.001,
+      "maximum": 100,
+      "description": "Largest acceptable mass (kg)."
+    },
+    {
+      "id": "min_wall",
+      "kind": "length",
+      "default": 2,
+      "minimum": 0.5,
+      "maximum": 20,
+      "description": "Thinnest acceptable wall, including the material around the holes."
+    }
+  ],
+  "request": {
+    "schema": "occb-model-request-v1",
+    "model": {
+      "schema_version": 181,
+      "family": {
+        "id": "l-bracket",
+        "version": 1,
+        "parameters": [
+          {
+            "id": "width",
+            "parameter_type": {
+              "scalar": "length"
+            },
+            "default": {
+              "scalar": {
+                "$input": "width",
+                "as": "quantity"
+              }
+            },
+            "minimum": {
+              "value": 10,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "maximum": {
+              "value": 200,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          {
+            "id": "base_length",
+            "parameter_type": {
+              "scalar": "length"
+            },
+            "default": {
+              "scalar": {
+                "$input": "base_length",
+                "as": "quantity"
+              }
+            },
+            "minimum": {
+              "value": 20,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "maximum": {
+              "value": 400,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          {
+            "id": "upright_height",
+            "parameter_type": {
+              "scalar": "length"
+            },
+            "default": {
+              "scalar": {
+                "$input": "upright_height",
+                "as": "quantity"
+              }
+            },
+            "minimum": {
+              "value": 20,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "maximum": {
+              "value": 400,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          {
+            "id": "thickness",
+            "parameter_type": {
+              "scalar": "length"
+            },
+            "default": {
+              "scalar": {
+                "$input": "thickness",
+                "as": "quantity"
+              }
+            },
+            "minimum": {
+              "value": 1,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "maximum": {
+              "value": 30,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          {
+            "id": "bolt",
+            "parameter_type": {
+              "scalar": "length"
+            },
+            "default": {
+              "scalar": {
+                "$input": "bolt",
+                "as": "quantity"
+              }
+            },
+            "minimum": {
+              "value": 3,
+              "dimension": "length",
+              "unit": "millimeter"
+            },
+            "maximum": {
+              "value": 12,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          }
+        ],
+        "derived_parameters": [],
+        "derived_vector_parameters": [],
+        "constraints": [],
+        "requirements": [
+          {
+            "id": "valid",
+            "version": 1,
+            "kind": "validation",
+            "priority": "required",
+            "statement": "The bracket is one valid solid.",
+            "rule": {
+              "shape_valid": {
+                "output": "body"
+              }
+            },
+            "provenance": "template; limits come from the template inputs",
+            "traces": [
+              {
+                "feature": "body"
+              }
+            ]
+          },
+          {
+            "id": "wall",
+            "version": 1,
+            "kind": "manufacturing",
+            "priority": "required",
+            "statement": "No wall is thinner than min_wall.",
+            "rule": {
+              "exact_minimum_wall": {
+                "output": "body",
+                "minimum": {
+                  "$input": "min_wall",
+                  "as": "quantity"
+                }
+              }
+            },
+            "provenance": "template; limits come from the template inputs",
+            "traces": [
+              {
+                "feature": "body"
+              }
+            ]
+          },
+          {
+            "id": "mass",
+            "version": 1,
+            "kind": "functional",
+            "priority": "required",
+            "statement": "The bracket weighs at most max_mass_kg in the chosen material.",
+            "rule": {
+              "mass_range": {
+                "output": "body",
+                "material": {
+                  "$input": "material"
+                },
+                "minimum_kilograms": 0,
+                "maximum_kilograms": {
+                  "$input": "max_mass_kg"
+                }
+              }
+            },
+            "provenance": "template; limits come from the template inputs",
+            "traces": [
+              {
+                "feature": "body"
+              }
+            ]
+          },
+          {
+            "id": "root-bending",
+            "version": 1,
+            "kind": "functional",
+            "priority": "required",
+            "statement": "The upright's root carries load_n at its top with safety_factor against yield.",
+            "rule": {
+              "bending_stress": {
+                "output": "body",
+                "material": {
+                  "$input": "material"
+                },
+                "section_origin": {
+                  "x": {
+                    "$input": "thickness",
+                    "as": "quantity",
+                    "scale": 0.5
+                  },
+                  "y": {
+                    "$input": "width",
+                    "as": "quantity",
+                    "scale": 0.5
+                  },
+                  "z": {
+                    "$sum": [
+                      {
+                        "$input": "thickness"
+                      },
+                      0.5
+                    ],
+                    "kind": "length",
+                    "as": "quantity"
+                  }
+                },
+                "beam_axis": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                },
+                "bending_axis": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                },
+                "moment_newton_millimeters": {
+                  "$product": [
+                    {
+                      "$input": "load_n"
+                    },
+                    {
+                      "$input": "upright_height"
+                    }
+                  ]
+                },
+                "minimum_safety_factor": {
+                  "$input": "safety_factor"
+                }
+              }
+            },
+            "provenance": "template; limits come from the template inputs",
+            "traces": [
+              {
+                "feature": "body"
+              }
+            ]
+          }
+        ],
+        "datums": [],
+        "features": [
+          {
+            "id": "base",
+            "operation": {
+              "box": {
+                "origin": {
+                  "components": {
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "z": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                },
+                "size": {
+                  "components": {
+                    "x": {
+                      "parameter": "base_length"
+                    },
+                    "y": {
+                      "parameter": "width"
+                    },
+                    "z": {
+                      "parameter": "thickness"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "id": "upright",
+            "operation": {
+              "box": {
+                "origin": {
+                  "components": {
+                    "x": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "z": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                },
+                "size": {
+                  "components": {
+                    "x": {
+                      "parameter": "thickness"
+                    },
+                    "y": {
+                      "parameter": "width"
+                    },
+                    "z": {
+                      "parameter": "upright_height"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "id": "angle",
+            "operation": {
+              "fuse": {
+                "left": "base",
+                "right": "upright"
+              }
+            }
+          },
+          {
+            "id": "base_hole",
+            "operation": {
+              "cylinder": {
+                "origin": {
+                  "components": {
+                    "x": {
+                      "divide": [
+                        {
+                          "add": [
+                            {
+                              "parameter": "thickness"
+                            },
+                            {
+                              "parameter": "base_length"
+                            }
+                          ]
+                        },
+                        {
+                          "literal": {
+                            "value": 2,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "y": {
+                      "divide": [
+                        {
+                          "parameter": "width"
+                        },
+                        {
+                          "literal": {
+                            "value": 2,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "z": {
+                      "literal": {
+                        "value": -1,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                },
+                "axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "radius": {
+                  "divide": [
+                    {
+                      "iso273_clearance_v1": {
+                        "nominal_diameter": {
+                          "parameter": "bolt"
+                        },
+                        "series": "medium"
+                      }
+                    },
+                    {
+                      "literal": {
+                        "value": 2,
+                        "dimension": "scalar",
+                        "unit": null
+                      }
+                    }
+                  ]
+                },
+                "height": {
+                  "add": [
+                    {
+                      "parameter": "thickness"
+                    },
+                    {
+                      "literal": {
+                        "value": 2,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "id": "upright_hole",
+            "operation": {
+              "cylinder": {
+                "origin": {
+                  "components": {
+                    "x": {
+                      "literal": {
+                        "value": -1,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "divide": [
+                        {
+                          "parameter": "width"
+                        },
+                        {
+                          "literal": {
+                            "value": 2,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    },
+                    "z": {
+                      "divide": [
+                        {
+                          "add": [
+                            {
+                              "parameter": "thickness"
+                            },
+                            {
+                              "parameter": "upright_height"
+                            }
+                          ]
+                        },
+                        {
+                          "literal": {
+                            "value": 2,
+                            "dimension": "scalar",
+                            "unit": null
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
+                "axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "radius": {
+                  "divide": [
+                    {
+                      "iso273_clearance_v1": {
+                        "nominal_diameter": {
+                          "parameter": "bolt"
+                        },
+                        "series": "medium"
+                      }
+                    },
+                    {
+                      "literal": {
+                        "value": 2,
+                        "dimension": "scalar",
+                        "unit": null
+                      }
+                    }
+                  ]
+                },
+                "height": {
+                  "add": [
+                    {
+                      "parameter": "thickness"
+                    },
+                    {
+                      "literal": {
+                        "value": 2,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "id": "drilled",
+            "operation": {
+              "cut": {
+                "object": "angle",
+                "tool": "base_hole"
+              }
+            }
+          },
+          {
+            "id": "body",
+            "operation": {
+              "cut": {
+                "object": "drilled",
+                "tool": "upright_hole"
+              }
+            }
+          }
+        ]
+      },
+      "instances": [
+        {
+          "base": {
+            "id": "bracket",
+            "overrides": {},
+            "provenance": "template instance"
+          }
+        }
+      ]
+    },
+    "outputs": [
+      {
+        "instance": "bracket",
+        "output": "body"
+      }
+    ],
+    "step": true,
+    "stl": false,
+    "preview": true
+  }
+}

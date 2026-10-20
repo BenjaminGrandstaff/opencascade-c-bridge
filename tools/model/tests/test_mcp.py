@@ -38,7 +38,7 @@ class McpTests(unittest.TestCase):
         self.assertEqual(result['result']['protocolVersion'], '2025-06-18')
         self.assertEqual(self.client.call('tools/list')['error']['code'], -32600)
         self.client.send(dict(jsonrpc='2.0', method='notifications/initialized'))
-        self.assertEqual(len(self.client.call('tools/list')['result']['tools']), 16)
+        self.assertEqual(len(self.client.call('tools/list')['result']['tools']), 18)
         self.assertEqual(self.client.call('initialize')['error']['code'], -32600)
 
     def test_loft_diagnosis_inspection_schema_and_failed_loft_sources(self):
@@ -97,7 +97,7 @@ class McpTests(unittest.TestCase):
 
     def test_discovery_schemas_and_complete_examples(self):
         tools = self.client.call('tools/list')['result']['tools']
-        self.assertEqual({tool['name'] for tool in tools}, {'occt_get_schema', 'occt_get_example', 'occt_build', 'occt_inspect_model', 'occt_inspect_build', 'occt_edit_build', 'occt_preview_edit_build', 'occt_visualize_model', 'occt_export_drawings', 'occt_inspection_report', 'occt_motion_study', 'occt_balance_report', 'occt_joint_branches', 'occt_merge_documents', 'occt_session_read', 'occt_session_apply'})
+        self.assertEqual({tool['name'] for tool in tools}, {'occt_get_schema', 'occt_get_example', 'occt_build', 'occt_inspect_model', 'occt_inspect_build', 'occt_edit_build', 'occt_preview_edit_build', 'occt_visualize_model', 'occt_export_drawings', 'occt_inspection_report', 'occt_motion_study', 'occt_balance_report', 'occt_joint_branches', 'occt_merge_documents', 'occt_session_read', 'occt_session_apply', 'occt_list_templates', 'occt_instantiate_template'})
         schema = next(tool['inputSchema'] for tool in tools if tool['name'] == 'occt_build')
         jsonschema.Draft202012Validator.check_schema(schema)
         self.assertEqual(schema['properties']['model']['$ref'], '#/$defs/ModelDocument')
@@ -1200,6 +1200,43 @@ class McpTests(unittest.TestCase):
         self.assertTrue(missing['isError'])
         self.assertEqual(missing['structuredContent']['stage'], 'connection')
 
+    def test_templates_instantiate_build_ready_requests(self):
+        listed = self.client.tool('occt_list_templates', {})['structuredContent']['templates']
+        names = [t['id'] for t in listed]
+        self.assertEqual(names, ['l-bracket', 'printed-enclosure', 'shaft', 'sheet-metal-channel'])
+        catalog = json.loads(self.client.call('resources/read', dict(uri='occt://catalog'))['result']['contents'][0]['text'])
+        self.assertEqual(catalog['templates'], names)
+        schema = self.client.tool('occt_get_schema', dict(name='request'))['structuredContent']
+        for template in listed:
+            self.assertTrue(template['inputs'] and template['checks'] and template['use_when'])
+            result = self.client.tool('occt_instantiate_template', dict(template=template['id']))
+            self.assertFalse(result['isError'], result)
+            request = result['structuredContent']['request']
+            jsonschema.validate(request, schema)
+            self.assertIn('template-inputs', [a['id'] for a in request['model']['family']['assumptions']])
+            built = self.client.tool('occt_build', dict(request, step=False, preview=False))
+            self.assertFalse(built['isError'], built)
+            rows = built['structuredContent']['report']['verification']
+            self.assertTrue(rows and all(r['status'] == 'passed' for r in rows), rows)
+        # Inputs change the design and its checks: 50 kN on the default shaft
+        # is far past yield, and the rejection carries the bending row.
+        shaft = self.client.tool('occt_instantiate_template', dict(template='shaft', inputs=dict(load_n=50000)))['structuredContent']['request']
+        rejected = self.client.tool('occt_build', dict(shaft, step=False, preview=False))
+        self.assertTrue(rejected['isError'])
+        self.assertIn('shaft/mid-bending', rejected['structuredContent']['required_failures'])
+        thicker = self.client.tool('occt_instantiate_template', dict(template='shaft', inputs=dict(load_n=50000, diameter=60, max_mass_kg=10)))['structuredContent']['request']
+        self.assertFalse(self.client.tool('occt_build', dict(thicker, step=False, preview=False))['isError'])
+        # Bad inputs are refused before anything is built.
+        for inputs, expected in [(dict(width=5), 'width must be in 10..200'), (dict(bolt=7), 'bolt must be one of'),
+                                 (dict(material='unobtainium'), 'material must be one of'), (dict(colour='red'), 'unknown input'),
+                                 (dict(thickness='5'), 'finite number')]:
+            refused = self.client.tool('occt_instantiate_template', dict(template='l-bracket', inputs=inputs))
+            self.assertTrue(refused['isError'], inputs)
+            self.assertEqual(refused['structuredContent']['stage'], 'template')
+            self.assertIn(expected, refused['structuredContent']['message'])
+        response = self.client.call('tools/call', dict(name='occt_instantiate_template', arguments=dict(template='teapot')))
+        self.assertEqual(response['error']['code'], -32602)
+
     def command_example(self, name):
         return self.client.tool('occt_get_example', dict(name=name))['structuredContent']
 
@@ -1336,7 +1373,7 @@ class McpTests(unittest.TestCase):
         self.client.close()
         self.client = Client(self.root / 'minimal', commands_dir=commands)
         catalog = json.loads(self.client.call('resources/read', dict(uri='occt://catalog'))['result']['contents'][0]['text'])
-        self.assertEqual(catalog['counts']['tools'], 10)
+        self.assertEqual(catalog['counts']['tools'], 12)
         self.assertEqual(len(catalog['unavailable_tools']), 6)
         self.client.close()
         executable = commands / 'occt-drawing-export'
