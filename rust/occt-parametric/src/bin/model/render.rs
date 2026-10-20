@@ -171,12 +171,15 @@ impl RenderOptions {
 
 /// Writes the requested images for output `index` into `destination` and
 /// returns their report entries.
+/// `bend_lines` are drawn dashed over the standard views where visible: a
+/// sheet-metal flat blank's bend lines, in model coordinates.
 pub fn write(
     session: &Session,
     shape: &Shape<'_>,
     options: &RenderOptions,
     index: usize,
     destination: &Path,
+    bend_lines: &[[Vec3; 2]],
 ) -> Result<Vec<Value>, Box<dyn Error>> {
     let bounds = session.exact_bounds(shape)?;
     let (lo, hi) = (
@@ -198,12 +201,15 @@ pub fn write(
         let triangles = session.surface_mesh(shape, mesh_options)?;
         for &view in &options.views {
             let (direction, up) = view.camera();
-            let image = draw(&triangles, None, direction, up, size)?;
+            let image = draw(&triangles, None, direction, up, size, bend_lines)?;
             let file = format!("{:04}-{}.png", index + 1, view.name());
             std::fs::write(destination.join(&file), &image)?;
-            entries.push(
-                json!({"view": view.name(), "file": file, "width_px": size, "height_px": size}),
-            );
+            let mut entry =
+                json!({"view": view.name(), "file": file, "width_px": size, "height_px": size});
+            if !bend_lines.is_empty() {
+                entry["bend_lines"] = json!(bend_lines.len());
+            }
+            entries.push(entry);
         }
     }
     for section in &options.sections {
@@ -232,6 +238,7 @@ pub fn write(
                 direction,
                 up,
                 size,
+                &[],
             )?)
         };
         let mut entry = json!({"section": section.id, "width_px": size, "height_px": size});
@@ -286,6 +293,9 @@ const BODY: [f32; 3] = [150.0, 172.0, 204.0];
 const CAP: [u8; 3] = [214, 104, 74];
 const CAP_STRIPE: [u8; 3] = [176, 72, 52];
 const EDGE: [u8; 3] = [34, 40, 52];
+const BEND: [u8; 3] = [24, 92, 214];
+/// Dash and gap length of bend lines, in output pixels.
+const DASH_PX: f64 = 6.0;
 
 /// Rasterizes oriented triangles into a PNG. `section` marks triangles on
 /// the cut plane as cap faces.
@@ -295,6 +305,7 @@ fn draw(
     direction: [f64; 3],
     up_hint: [f64; 3],
     size: usize,
+    overlays: &[[Vec3; 2]],
 ) -> Result<Vec<u8>, Box<dyn Error>> {
     let view = unit(direction).ok_or("zero view direction")?;
     let right = unit(cross(view, up_hint)).ok_or("view direction parallel to up")?;
@@ -416,6 +427,40 @@ fn draw(
             }
         }
     }
+    // Dashed overlay lines where they lie on visible surface; two
+    // supersampled pixels wide, stepped at half a pixel. O(line length).
+    let mut overlay = vec![false; n * n];
+    let screen = |p: Vec3| {
+        let q = project(p);
+        [
+            q[0] * scale + offset[0],
+            -q[1] * scale + offset[1],
+            (q[2] - lo[2]) / depth_span,
+        ]
+    };
+    for [a, b] in overlays {
+        let (a, b) = (screen(*a), screen(*b));
+        let length = (b[0] - a[0]).hypot(b[1] - a[1]);
+        let steps = (length * 2.0).ceil().clamp(1.0, 1e6) as usize;
+        for k in 0..=steps {
+            let t = k as f64 / steps as f64;
+            if ((t * length) / (DASH_PX * SS as f64)) as usize % 2 == 1 {
+                continue;
+            }
+            let p = [0, 1, 2].map(|i| a[i] + (b[i] - a[i]) * t);
+            for (dx, dy) in [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)] {
+                let (x, y) = ((p[0] + dx - 0.5).floor(), (p[1] + dy - 0.5).floor());
+                if x < 0.0 || y < 0.0 || x >= n as f64 || y >= n as f64 {
+                    continue;
+                }
+                let at = y as usize * n + x as usize;
+                // Only over the part, and not behind its surface.
+                if face[at] != 0 && p[2] as f32 <= depth[at] + 2e-3 {
+                    overlay[at] = true;
+                }
+            }
+        }
+    }
     // Outlines where the B-rep face changes or depth jumps (silhouettes).
     let jump = 0.02f32;
     let mut outline = vec![false; n * n];
@@ -444,7 +489,13 @@ fn draw(
             for sy in 0..SS {
                 for sx in 0..SS {
                     let at = (y * SS + sy) * n + x * SS + sx;
-                    let c = if outline[at] { EDGE } else { color[at] };
+                    let c = if overlay[at] {
+                        BEND
+                    } else if outline[at] {
+                        EDGE
+                    } else {
+                        color[at]
+                    };
                     for k in 0..3 {
                         sum[k] += f32::from(c[k]);
                     }

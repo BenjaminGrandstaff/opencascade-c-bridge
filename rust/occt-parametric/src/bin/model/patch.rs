@@ -255,6 +255,7 @@ fn edit(request: PatchRequest, destination: &Path, preview: bool) -> Result<Valu
                     .map_err(|e| model_failure("regeneration", e))?;
                 render_outputs(
                     &session,
+                    &graph,
                     &generation,
                     &request.outputs,
                     options,

@@ -629,3 +629,43 @@ fn allowance_tables_can_cover_hems() {
     assert!((bend - 6.0).abs() < 1e-9 && (hem - 4.1).abs() < 1e-9);
     assert!((metrics.length_mm - 60.1).abs() < 1e-9);
 }
+
+#[test]
+fn flat_bend_lines_lie_across_the_blank_on_both_faces() {
+    let half_turn = std::f64::consts::FRAC_PI_2;
+    let sheet = spec(&[half_turn, half_turn]);
+    let family = definition(sheet.clone());
+    let session = Session::new().unwrap();
+    let part = PartInstance {
+        id: "part".into(),
+        definition: &family,
+        overrides: HashMap::new(),
+        provenance: "test".into(),
+    };
+    let generated = part.regenerate(&session).unwrap();
+    let flat = session
+        .exact_bounds(generated.shape("flat").unwrap())
+        .unwrap();
+    let metrics = sheet.flat_pattern(&HashMap::new(), 0.5).unwrap();
+    let lines = sheet.flat_bend_lines(&HashMap::new(), 0.5, None).unwrap();
+    // Two bends, each on the top and bottom face.
+    assert_eq!(lines.len(), 4);
+    for (index, [a, b]) in lines.iter().enumerate() {
+        let along = metrics.bend_lines_mm[index % 2];
+        for p in [a, b] {
+            assert!((p.x - along).abs() < 1e-9, "{p:?} vs {along}");
+            let on_face = (p.z - flat.min.z).abs() < 1e-9 || (p.z - flat.max.z).abs() < 1e-9;
+            assert!(on_face, "{p:?} not on {flat:?}");
+        }
+        // Across the full width.
+        assert!((a.y - flat.min.y).abs() < 1e-9 && (b.y - flat.max.y).abs() < 1e-9);
+    }
+    assert!(lines[0][0].z != lines[2][0].z);
+    // No bends, no lines.
+    assert!(
+        spec(&[])
+            .flat_bend_lines(&HashMap::new(), 0.5, None)
+            .unwrap()
+            .is_empty()
+    );
+}

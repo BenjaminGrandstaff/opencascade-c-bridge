@@ -135,3 +135,36 @@ fn render_options_are_validated_before_building() {
     assert!(plain["outputs"][0].get("renders").is_none());
     assert!(plain.get("render_quality").is_none());
 }
+
+#[test]
+fn flat_pattern_renders_show_dashed_bend_lines() {
+    let dir = Directory::new();
+    let mut value: Value = serde_json::from_str(include_str!(
+        "../../../../../../tools/model/hemmed-tray.request.json"
+    ))
+    .unwrap();
+    value["step"] = json!(false);
+    value["preview"] = json!(false);
+    value["renders"] = json!({"views": ["top", "iso"], "size_px": 256});
+    let built = invoke(&dir, value, "tray").unwrap();
+    let outputs = built["outputs"].as_array().unwrap();
+    // The folded part has no bend-line overlay; the flat blank lists its
+    // lines (two bends, three edge-tab bends, the closed hem; both faces).
+    assert!(outputs[0]["renders"][0].get("bend_lines").is_none());
+    let flat = &outputs[1]["renders"];
+    assert_eq!(flat[0]["bend_lines"], json!(10));
+    // Bend-line blue, outside the lower-left corner's axis triad.
+    let blue = |file: &str| {
+        let (w, h, rgb) = image(&dir, "tray", file);
+        rgb.chunks(3)
+            .enumerate()
+            .filter(|(i, _)| !(i % w < w / 4 && i / w > h * 3 / 4))
+            .filter(|(_, c)| c[2] > 150 && c[0] < 110 && i32::from(c[2]) > i32::from(c[1]) + 60)
+            .count()
+    };
+    let (top, iso) = (blue("0002-top.png"), blue("0002-iso.png"));
+    assert!(top > 150, "{top} bend pixels in the top view");
+    assert!(iso > 50, "{iso} bend pixels in the iso view");
+    // The folded part's renders carry none.
+    assert_eq!(blue("0001-top.png"), 0);
+}

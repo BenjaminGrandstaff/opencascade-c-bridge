@@ -414,7 +414,15 @@ fn publish(
         }
     }
     if let Some(options) = renders {
-        render_outputs(session, generation, outputs, options, destination, value)?;
+        render_outputs(
+            session,
+            graph,
+            generation,
+            outputs,
+            options,
+            destination,
+            value,
+        )?;
     }
     fs::write(destination.join("model.json"), persisted).map_err(|e| failure("publication", e))?;
     if write_report {
@@ -429,6 +437,7 @@ fn publish(
 /// Writes each output's renders and lists them under `outputs[i].renders`.
 fn render_outputs(
     session: &Session,
+    graph: &InstanceGraph<'_>,
     generation: &GraphRegeneration<'_>,
     outputs: &[InstanceOutputRef],
     options: &render::RenderOptions,
@@ -440,12 +449,54 @@ fn render_outputs(
             .result(&output.instance)
             .and_then(|r| r.shape(&output.output))
             .ok_or_else(|| failure("render", "missing generated output"))?;
-        let images = render::write(session, shape, options, index, destination)
+        let bend_lines = flat_bend_lines(graph, output).map_err(|e| model_failure("render", e))?;
+        let images = render::write(session, shape, options, index, destination, &bend_lines)
             .map_err(|e| failure("render", e))?;
         value["outputs"][index]["renders"] = json!(images);
     }
     value["render_quality"] = json!("tessellated; visual review only");
     Ok(())
+}
+/// The bend lines of a sheet-metal flat-pattern output, placed like its
+/// instance; empty for any other output.
+fn flat_bend_lines(
+    graph: &InstanceGraph<'_>,
+    output: &InstanceOutputRef,
+) -> Result<Vec<[occt_bridge::Vec3; 2]>, ModelError> {
+    let instance = graph.resolve(&output.instance)?;
+    let features = &instance.definition.features;
+    let find = |id: &str| features.iter().find(|f| f.id == id);
+    let Some(FeatureDefinition {
+        operation:
+            FeatureOperation::SheetMetalFlat {
+                input,
+                neutral_factor,
+                bend_table,
+            },
+        ..
+    }) = find(&output.output)
+    else {
+        return Ok(Vec::new());
+    };
+    let Some(FeatureDefinition {
+        operation: FeatureOperation::SheetMetal { definition },
+        ..
+    }) = find(input)
+    else {
+        return Ok(Vec::new());
+    };
+    let parameters = instance.resolved_parameters()?;
+    let factor = evaluate_resolved_expression(neutral_factor, &parameters)?.value;
+    definition
+        .flat_bend_lines(&parameters, factor, bend_table.as_deref())?
+        .into_iter()
+        .map(|[a, b]| {
+            Ok([
+                graph.instance_point(&output.instance, a)?,
+                graph.instance_point(&output.instance, b)?,
+            ])
+        })
+        .collect()
 }
 #[cfg(test)]
 #[path = "model/tests/mod.rs"]

@@ -73,7 +73,10 @@ normal, which shows wall thickness, bores and hems in profile. A plane that
 removes the whole part reports `"empty": true` instead of an image. Faces are
 flat-shaded with their B-rep boundaries and silhouettes outlined, and a
 corner triad shows X (red), Y (green) and Z (blue). Sheet-metal flat patterns
-are ordinary outputs, so a `top` render of the flat output shows the blank.
+are ordinary outputs, so a `top` render of the flat output shows the blank,
+with its bend lines dashed in blue: each bend zone's center line, each edge
+tab's bend and hem folds, drawn where they lie on visible material. Their
+view entries give `bend_lines`, the number of line segments (both faces).
 
 Each output's `renders` lists `{view|section, file, width_px, height_px}` in
 request order, and files are named `NNNN-<view>.png` or

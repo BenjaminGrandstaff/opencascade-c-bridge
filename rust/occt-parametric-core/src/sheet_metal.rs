@@ -1348,6 +1348,57 @@ impl SheetMetalDefinition {
         self.evaluate(parameters)?.metrics(neutral_factor)
     }
 
+    /// Bend lines on the flat blank in family coordinates: each bend zone's
+    /// center line across the width, and each edge tab's along its length,
+    /// on both faces of the blank. O(bends + edge flanges).
+    pub fn flat_bend_lines(
+        &self,
+        parameters: &HashMap<String, ParameterValue>,
+        neutral_factor: f64,
+        table: Option<&BendTable>,
+    ) -> Result<Vec<[Vec3; 2]>, ModelError> {
+        let sheet = self.evaluate(parameters)?;
+        let metrics = sheet.metrics_with(neutral_factor, table)?;
+        let at = |along: f64, across: f64, side: f64| {
+            let p = |o: f64, t: f64, w: f64, n: f64| {
+                o + t * along + w * across + n * side * sheet.thickness * 0.5
+            };
+            Vec3::new(
+                p(
+                    sheet.origin.x,
+                    sheet.tangent.x,
+                    sheet.width_axis.x,
+                    sheet.normal.x,
+                ),
+                p(
+                    sheet.origin.y,
+                    sheet.tangent.y,
+                    sheet.width_axis.y,
+                    sheet.normal.y,
+                ),
+                p(
+                    sheet.origin.z,
+                    sheet.tangent.z,
+                    sheet.width_axis.z,
+                    sheet.normal.z,
+                ),
+            )
+        };
+        let mut lines = Vec::new();
+        for side in [1.0, -1.0] {
+            for &line in &metrics.bend_lines_mm {
+                lines.push([at(line, 0.0, side), at(line, sheet.width, side)]);
+            }
+            for tab in &metrics.edge_tabs {
+                lines.push([
+                    at(tab.along_mm[0], tab.bend_line_mm, side),
+                    at(tab.along_mm[1], tab.bend_line_mm, side),
+                ]);
+            }
+        }
+        Ok(lines)
+    }
+
     /// The blank with each bend's allowance from `table` (schema 161).
     pub fn flat_pattern_with_table(
         &self,
