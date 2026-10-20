@@ -104,6 +104,7 @@
     <a href="/studio" title="Sketch on planes in the 3D view with a toolbar and automatic constraints">Sketch studio</a>
   </div>
   <div class="muted" id="status"></div>
+  <div class="muted" id="change"></div>
   <div id="requirements"></div>
   <div class="scope">
     <label class="muted" for="scope">Editing</label>
@@ -125,6 +126,7 @@
 <script src="/annotations.js"></script>
 <script type="module">
 import { drawAssemblyAnnotations } from "./assembly_annotations.mjs";
+import { changeNotice } from "./session-notice.mjs";
 import { createSketchCreator } from "./sketch-create.mjs";
 import { createSolidEditor } from "./solid-editor.mjs";
 import { createSketchEditor } from "./sketch-editor.mjs";
@@ -821,6 +823,7 @@ async function apply(next) {
   $("revert").disabled = !next.dirty;
   $("save").textContent = next.dirty ? "Save" : "Saved";
   $("error").textContent = next.error ?? editError ?? "";
+  $("change").textContent = changeNotice(next);
   if (next.version !== version) {
     version = next.version;
     await Promise.all([

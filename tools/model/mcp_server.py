@@ -11,8 +11,12 @@ import math
 import pathlib
 import re
 import shutil
+import os
 import subprocess
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
 
 PROTOCOLS = ('2025-11-25', '2025-06-18')
@@ -36,6 +40,8 @@ COMMAND_DESCRIPTIONS = {
     'occt_merge_documents': 'Three-way semantic merge of base, current and other model snapshots. Returns a merged model or complete conflict report. Inputs and accepted builds remain unchanged; build a merged model separately to verify geometry and requirements.',
 }
 MAX_MESSAGE = 64 * 1024 * 1024
+DEFAULT_STUDIO = 'http://127.0.0.1:37391'
+
 MAX_RESOURCE = 32 * 1024 * 1024
 # Renders attached to a build result as image content; the rest stay resources.
 MAX_INLINE_IMAGES = 8
@@ -61,6 +67,18 @@ def tool_result(value, error=False, images=()):
     content.extend({'type': 'image', 'mimeType': 'image/png', 'data': base64.b64encode(data).decode('ascii')} for data in images)
     return {'content': content, 'structuredContent': value, 'isError': error}
 
+def studio_base(url):
+    """The base URL of a local studio (occt-view --serve); other hosts are refused."""
+    try:
+        parts = urllib.parse.urlsplit(url) if isinstance(url, str) else None
+        port = parts.port if parts else None
+    except ValueError:
+        parts = port = None
+    if not parts or parts.scheme != 'http' or parts.hostname not in ('127.0.0.1', 'localhost') or port is None \
+            or parts.path not in ('', '/') or parts.query or parts.fragment or parts.username or parts.password:
+        raise RpcError(-32602, 'studio url must be http://127.0.0.1:PORT or http://localhost:PORT')
+    return f'http://{parts.hostname}:{port}'
+
 def output_files(report):
     """Per-output artifact filenames a build report lists."""
     files = set()
@@ -73,7 +91,8 @@ def object_schema(properties, required):
     return dict(type='object', properties=properties, required=required, additionalProperties=False)
 
 class Server:
-    def __init__(self, binary, output_root, timeout=120, commands_dir=None):
+    def __init__(self, binary, output_root, timeout=120, commands_dir=None, studio_url=None):
+        self.studio = studio_base(studio_url or os.environ.get('OCCT_STUDIO_URL') or DEFAULT_STUDIO)
         self.binary = pathlib.Path(binary).resolve(strict=True)
         self.output_root = pathlib.Path(output_root).resolve()
         self.output_root.mkdir(parents=True, exist_ok=True)
@@ -146,6 +165,13 @@ class Server:
                  inputSchema=self.build_edit_schema, annotations=dict(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)),
             dict(name='occt_build', description='Validate/migrate a model, apply typed parameter edits, verify requirements, and build selected parts into a new server-owned directory. Returns report and artifact resource URIs. Failed edits preserve previous builds. Set renders (for example {} or views plus section planes) to get shaded PNG views of each output; up to eight come back as image content and all stay readable as resources.',
                  inputSchema=self.schemas['request'], annotations=dict(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)),
+            dict(name='occt_session_read', description='Read the model open in a local studio (occt-view --serve) with its model_sha256, version, unsaved state and last shared change. Build or edit that model to verify a change, then apply the accepted build with occt_session_apply.',
+                 inputSchema=object_schema({'url': dict(type='string', description=f'Studio URL; default {self.studio}')}, []), annotations=read),
+            dict(name='occt_session_apply', description='Apply an accepted build to the local studio session while the studio model still has expected_model_sha256 (from occt_session_read). A person editing meanwhile makes this fail with stage conflict: read again and rebase. The change joins the studio undo history and stays unsaved until the person saves.',
+                 inputSchema=object_schema({'build_id': dict(type='string', pattern='^[0-9a-f]{32}$'), 'expected_model_sha256': dict(type='string', pattern='^[0-9a-f]{64}$'),
+                     'message': dict(type='string', minLength=1, maxLength=200), 'author': dict(type='string', minLength=1, maxLength=200), 'url': dict(type='string')},
+                     ['build_id', 'expected_model_sha256', 'message']),
+                 annotations=dict(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)),
         ] + [dict(name=name, description=COMMAND_DESCRIPTIONS[name],
                   inputSchema=self.schemas[COMMANDS[name][0].replace('-', '_')],
                   annotations=dict(readOnlyHint=True, destructiveHint=False, idempotentHint=False, openWorldHint=False))
@@ -335,6 +361,61 @@ class Server:
             if not accepted:
                 shutil.rmtree(work)
 
+    def studio_url(self, arguments, allowed):
+        if not isinstance(arguments, dict) or not set(arguments).issubset(allowed):
+            raise RpcError(-32602, f'expected only {", ".join(sorted(allowed))}')
+        return studio_base(arguments['url']) if 'url' in arguments else self.studio
+
+    async def studio_request(self, base, path, body=None):
+        """(status, JSON reply) from the studio, or None when it cannot be reached."""
+        def call():
+            data = None if body is None else encode(body).encode('utf-8')
+            request = urllib.request.Request(base + path, data=data, method='GET' if body is None else 'POST',
+                headers={'Content-Type': 'application/json', 'X-OCCT-View': '1'})
+            try:
+                with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                    return response.status, decode(response.read(MAX_RESOURCE + 1))
+            except urllib.error.HTTPError as error:
+                try:
+                    return error.code, decode(error.read(1024 * 1024))
+                except ValueError:
+                    return error.code, dict(error=error.reason)
+            except (urllib.error.URLError, OSError, ValueError):
+                return None
+        return await asyncio.to_thread(call)
+
+    def studio_failure(self, base, reply):
+        if reply is None:
+            return tool_result(dict(status='failed', stage='connection', message=f'no studio session at {base}; start occt-view MODEL --serve'), True)
+        status, value = reply
+        stage = {409: 'conflict', 400: 'request', 422: 'studio'}.get(status, 'studio')
+        return tool_result(dict(status='failed', stage=stage, message=str(value.get('error', 'studio request failed')) if isinstance(value, dict) else 'studio request failed'), True)
+
+    async def session_read(self, arguments):
+        base = self.studio_url(arguments, {'url'})
+        reply = await self.studio_request(base, '/api/session')
+        if reply is None or reply[0] != 200:
+            return self.studio_failure(base, reply)
+        value = reply[1]
+        value['url'] = base
+        return tool_result(value)
+
+    async def session_apply(self, arguments):
+        base = self.studio_url(arguments, {'build_id', 'expected_model_sha256', 'message', 'author', 'url'})
+        if not isinstance(arguments.get('build_id'), str) or not re.fullmatch(r'[0-9a-f]{32}', arguments['build_id']) \
+                or not isinstance(arguments.get('expected_model_sha256'), str) or not re.fullmatch(r'[0-9a-f]{64}', arguments['expected_model_sha256']) \
+                or not isinstance(arguments.get('message'), str) or not isinstance(arguments.get('author', 'AI assistant'), str):
+            raise RpcError(-32602, 'expected build_id, expected_model_sha256 and message')
+        # Only accepted (verified) builds reach the studio.
+        model = decode(self.accepted_model(arguments['build_id']))
+        reply = await self.studio_request(base, '/api/session/apply', dict(expected_model_sha256=arguments['expected_model_sha256'],
+            model=model, author=arguments.get('author', 'AI assistant'), message=arguments['message']))
+        if reply is None or reply[0] != 200:
+            return self.studio_failure(base, reply)
+        value = reply[1]
+        value.update(url=base, build_id=arguments['build_id'])
+        return tool_result(value)
+
     async def command_worker(self, name, request):
         suffix, report_name, single_file = COMMANDS[name]
         merging = suffix == 'document-merge'
@@ -423,7 +504,7 @@ class Server:
             return dict(protocolVersion=params['protocolVersion'] if params['protocolVersion'] in PROTOCOLS else PROTOCOLS[0],
                         capabilities=dict(tools=dict(listChanged=False), resources=dict(listChanged=False)),
                         serverInfo=dict(name='occt-model', version='0.1.0'),
-                        instructions='Read occt://catalog for current capabilities, then a schema/example. Design command tools return analysis artifacts; build resulting models separately to verify requirements. Preserve requirements and explicit assumptions, then build. Inspect sketch_feature for solver/repair evidence or loft_feature for isolated correspondence diagnostics, preview guarded proposals with occt_preview_edit_build, then publish intended changes with occt_edit_build. Read model.json to continue from the accepted model. Preview SVGs are sampled; inspect requirement evidence.')
+                        instructions='Read occt://catalog for current capabilities, then a schema/example. Design command tools return analysis artifacts; build resulting models separately to verify requirements. Preserve requirements and explicit assumptions, then build. Inspect sketch_feature for solver/repair evidence or loft_feature for isolated correspondence diagnostics, preview guarded proposals with occt_preview_edit_build, then publish intended changes with occt_edit_build. Read model.json to continue from the accepted model. Preview SVGs are sampled; inspect requirement evidence. To work with a person in the studio, occt_session_read the shared model, build or edit it, then occt_session_apply the accepted build with the read model_sha256.')
         if self.state != 'ready':
             raise RpcError(-32600, 'initialize and send notifications/initialized first')
         if method == 'tools/list':
@@ -450,6 +531,10 @@ class Server:
                 return await self.edit_build(arguments)
             if name == 'occt_build':
                 return await self.build(arguments)
+            if name == 'occt_session_read':
+                return await self.session_read(arguments)
+            if name == 'occt_session_apply':
+                return await self.session_apply(arguments)
             raise RpcError(-32602, 'unknown tool')
         if method == 'resources/list':
             return dict(resources=self.fixed_resources())
@@ -536,10 +621,11 @@ def main():
     parser.add_argument('--output-root', required=True, help='directory for persistent server-owned build artifacts')
     parser.add_argument('--timeout', type=float, default=120, help='per-worker timeout in seconds (default 120)')
     parser.add_argument('--commands-dir', help='directory of optional design command binaries (default: model binary directory)')
+    parser.add_argument('--studio-url', help=f'local studio for shared sessions (default: $OCCT_STUDIO_URL or {DEFAULT_STUDIO})')
     args = parser.parse_args()
     if not math.isfinite(args.timeout) or args.timeout <= 0:
         parser.error('--timeout must be finite and positive')
-    asyncio.run(Server(args.binary, args.output_root, args.timeout, args.commands_dir).serve())
+    asyncio.run(Server(args.binary, args.output_root, args.timeout, args.commands_dir, args.studio_url).serve())
 
 if __name__ == '__main__':
     main()

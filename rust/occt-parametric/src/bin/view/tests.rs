@@ -7567,3 +7567,6 @@ fn studio_previews_sheet_metal_parts_with_linked_blanks() {
         false
     );
 }
+
+#[path = "tests_session.rs"]
+mod session;

@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 175 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 791 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 98 + viewer Node 472 + branch command 2 + model command 102, MCP Python 24, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 175 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 791 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 100 + viewer Node 473 + branch command 2 + model command 102, MCP Python 25, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,19 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases (199 with the parallel glTF, 1,000-part view, advanced sweep, tray and bend-cutout cases) plus 7 model-command cases (including 256 renders in one build) and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Shared studio sessions for an AI client and a person (no schema or ABI
+  change). `occt-view --serve` gains `GET /api/session`, which returns the
+  in-memory model with its SHA-256, and `POST /api/session/apply`, which
+  replaces the model only while that hash is current (409 otherwise), after
+  validating and regenerating it. MCP adds `occt_session_read` and
+  `occt_session_apply`. Apply takes only accepted builds and only loopback
+  studio URLs. Applied changes join the studio's undo history, stay unsaved,
+  and both studio pages show the author and message. Tests cover the
+  guarded apply, conflicts from either side, undo, validation and limits in
+  the server, the notice in the pages, and a full MCP-to-studio round trip
+  against a running `occt-view`. A 1,000-instance model read in 0.011 s and
+  applied in 0.033 s. See [shared studio sessions](tools/model/MCP.md#shared-studio-sessions).
 
 - Complete failure reports for rejected builds (no schema or ABI change).
   `regenerate_all_reporting` regenerates every instance and keeps failed
@@ -3461,10 +3474,11 @@ ordered by priority; the catalog/documentation foundation is complete.
    values, evidence and witnesses, plus output measurements, bounded at 500
    rows. Renders of rejected geometry are not written; use
    `occt_visualize_model` to see failed witnesses on the geometry.
-5. **Shared sessions with the studio** — studio and MCP edits are separate,
-   with no shared live session or revision locking, so a person and an AI
-   cannot edit one model at once. Add a session both can join, with guarded
-   edits checked against the accepted revision.
+5. **Shared sessions with the studio — complete.** MCP reads the model open
+   in a local studio and applies accepted builds to it, guarded by the model
+   hash it read, and the studio names the change and can undo it. Remaining:
+   a client cannot yet watch for the person's changes without polling, and
+   only whole accepted models are applied (no merge of concurrent edits).
 6. **Design knowledge** — expressions cannot look up catalogs or materials
    (see Later), there is no standard-part library (fasteners, bearings, dowel
    pins), wall thickness is sampled rather than exact, and draft is not

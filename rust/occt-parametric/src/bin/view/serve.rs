@@ -10,6 +10,8 @@ mod features;
 mod history;
 #[path = "serve_loft_pick.rs"]
 mod loft_pick;
+#[path = "serve_session.rs"]
+mod session;
 #[path = "serve_sketch.rs"]
 mod sketch;
 #[path = "serve_sketch_create.rs"]
@@ -50,6 +52,8 @@ const ANNOTATION_BRIDGE: &str = include_str!("web/annotations.mjs");
 const ANNOTATION_STYLE: &str = include_str!("../../../../../tools/model/viewer/viewer.css");
 const MAX_HEADER_BYTES: usize = 16 * 1024;
 const MAX_BODY_BYTES: usize = 1024 * 1024;
+/// A shared-session change carries a whole model, bounded like MCP resources.
+const MAX_SESSION_BODY_BYTES: usize = 32 * 1024 * 1024;
 
 pub(super) struct Response {
     pub status: u16,
@@ -100,6 +104,8 @@ pub(super) struct Studio {
     seen: Option<(SystemTime, u64)>,
     pending: Option<(SystemTime, u64)>,
     last_check: Option<Instant>,
+    /// Who applied the current version through a shared session, if anyone.
+    last_change: Option<session::SessionChange>,
 }
 
 impl Studio {
@@ -124,6 +130,7 @@ impl Studio {
             seen,
             pending: None,
             last_check: None,
+            last_change: None,
         })
     }
 
@@ -170,6 +177,7 @@ impl Studio {
         self.version += 1;
         self.dirty = false;
         self.error = None;
+        self.last_change = None;
         Ok(())
     }
 
@@ -347,6 +355,8 @@ impl Studio {
             "datums": self.document.family.datums,
             "undo_count": self.history.undo.len(),
             "redo_count": self.history.redo.len(),
+            // Only while it describes the version shown.
+            "last_change": self.last_change.as_ref().filter(|c| c.version == self.version),
         })
     }
 
@@ -674,6 +684,11 @@ impl Studio {
                 "text/javascript",
                 include_str!("web/solid-hole-threads.mjs"),
             ),
+            ("GET", "/session-notice.mjs") => Response::text(
+                200,
+                "text/javascript",
+                include_str!("web/session-notice.mjs"),
+            ),
             ("GET", "/solid-sheet-metal.mjs") => Response::text(
                 200,
                 "text/javascript",
@@ -861,6 +876,14 @@ impl Studio {
                 Err(error) => Response::error(422, &error),
             },
             ("GET", "/api/state") => Response::json(200, &self.state()),
+            ("GET", "/api/session") => match self.session(true) {
+                Ok(value) => Response::json(200, &value),
+                Err(error) => Response::error(500, &error),
+            },
+            ("POST", "/api/session/apply") => match self.session_apply(body) {
+                Ok(value) => Response::json(200, &value),
+                Err((status, error)) => Response::error(status, &error),
+            },
             ("GET", "/api/model.gltf") => Response::text(200, "model/gltf+json", &self.gltf),
             ("GET", "/api/model.glb") => {
                 if self
@@ -1304,7 +1327,12 @@ fn read_request(stream: &mut TcpStream, port: u16) -> Result<(String, String, Ve
     if method == "POST" && !marked {
         return Err(Response::error(403, "missing X-OCCT-View header"));
     }
-    if length > MAX_BODY_BYTES {
+    let limit = if path == "/api/session/apply" {
+        MAX_SESSION_BODY_BYTES
+    } else {
+        MAX_BODY_BYTES
+    };
+    if length > limit {
         return Err(Response::error(413, "request too large"));
     }
     let mut body = vec![0; length];
@@ -1319,6 +1347,7 @@ fn write_response(stream: &mut TcpStream, response: &Response) -> std::io::Resul
         403 => "Forbidden",
         404 => "Not Found",
         405 => "Method Not Allowed",
+        409 => "Conflict",
         413 => "Payload Too Large",
         422 => "Unprocessable Content",
         _ => "Internal Server Error",

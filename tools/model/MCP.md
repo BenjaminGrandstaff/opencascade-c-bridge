@@ -61,6 +61,8 @@ part tools.
 | `occt_joint_branches` | Model and explicit seed axes | Bounded search report and reloadable branch models |
 | `occt_merge_documents` | Base, current and other model snapshots | Merged model or complete semantic conflicts |
 | `occt_build` | The entire `occb-model-request-v1` object | Accepted report, build ID, local directory, and artifact resource URIs |
+| `occt_session_read` | Optional local studio `url` | The studio's current model, `model_sha256`, version, unsaved state and last shared change |
+| `occt_session_apply` | Accepted `build_id`, `expected_model_sha256`, `message`, optional `author` and `url` | The model applied to the studio, or a `conflict` when the person changed it first |
 
 `tools/list` provides the generated complete request schema as `occt_build`'s
 input schema. All feature operations and their nested request-schema definitions are
@@ -722,6 +724,36 @@ Retrieve either with `occt_get_example`, then pass the complete request to
 examples retain required shape-validity checks and export STEP plus annotated
 viewer artifacts. Wire tests build them, compare exact volumes, and rebuild
 a changed tap drill without modifying the original accepted build.
+
+## Shared studio sessions
+
+An AI client and a person can edit one model together. The person runs the
+studio (`occt-view MODEL.json --serve`, by default on port 37391); the MCP
+server talks to it at `--studio-url`, `$OCCT_STUDIO_URL` or
+`http://127.0.0.1:37391`, or at a tool call's `url`. Only
+`http://127.0.0.1:PORT` and `http://localhost:PORT` are accepted.
+
+1. `occt_session_read` returns the studio's in-memory model (including the
+   person's unsaved edits) and its `model_sha256`.
+2. Build or edit that model with `occt_build`, `occt_edit_build` or
+   `occt_preview_edit_build` and review the evidence and renders.
+3. `occt_session_apply` sends the accepted build's model with the read hash
+   and a short `message`. The studio applies it only if its model still has
+   that hash; otherwise the result is `isError` with stage `conflict`, and the
+   client reads the session again and rebases its change. Builds that were not
+   accepted (previews, visualizations, unknown IDs) are refused.
+
+The studio validates and regenerates the model before showing it. An applied
+change enters the studio's undo history, so the person can undo it in one step, and
+it stays unsaved until they save. Both studio pages name the author and
+message (`AI assistant changed the model: …`) while that change is the
+version on screen. There is no lock: a person's edit or an undo simply changes the
+hash and makes the client's next apply fail with a conflict. Session replies
+come from the studio's single request loop, so an apply is atomic.
+Stages are `connection` (no studio at the URL), `conflict`, `request` and
+`studio` (the studio's validation or regeneration error). Reads and applies are
+O(model size): a 1,000-instance model (0.32 MB) read in 0.011 s and applied,
+validated and regenerated in 0.033 s.
 
 ## Drawing, inspection and mechanism workflow
 

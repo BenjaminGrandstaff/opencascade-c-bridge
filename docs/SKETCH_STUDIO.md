@@ -1049,6 +1049,17 @@ removes an existing pattern and names it; Delete also removes a pattern
 with its copies. Building the pattern and guide for
 1,000 hole sources takes about 10 ms (500 ms budget in the Node tests).
 
+## Shared sessions with an AI client
+
+An AI client connected through MCP can read the model open in the studio and
+apply a verified change to it ([shared studio sessions](../tools/model/MCP.md#shared-studio-sessions)).
+The change arrives like an edit from the classic viewer: the canvas reloads,
+the status bar says `AI assistant changed the model: <message>`, Undo takes
+it back in one step, and Save writes it. The client must name the model hash
+it read, so a change made from the page in the meantime is never overwritten;
+the client gets a conflict and reads again instead. `GET /api/session` and
+`POST /api/session/apply` are the endpoints; applies accept up to 32 MiB.
+
 ## Instances
 
 When the model has more than one instance of its family, an instance menu

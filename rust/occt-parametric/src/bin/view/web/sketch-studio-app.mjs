@@ -7,6 +7,7 @@ import {
 import { PALETTE, layersFrom, nextFeatureName, planeLabel } from './sketch-studio-layers.mjs';
 import { localBounds, pathData, planeGrid, sketchPaths, sketchPoints } from './sketch-studio-overlay.mjs';
 import {captureGeneratedPoints, bindGeneratedPoints} from './generated-points.mjs';
+import { changeNotice } from './session-notice.mjs';
 import { installDrawing } from './sketch-studio-draw.mjs';
 import { installConstraints } from './sketch-studio-constrain.mjs';
 import { layoutLabels, sketchLabels } from './sketch-studio-labels.mjs';
@@ -112,6 +113,12 @@ export function startStudio(document) {
     const first = studio.parsed === null;
     studio.version = state.version;
     studio.modelState = state;
+    // Say once when a shared-session client (an AI over MCP) made this version.
+    const notice = changeNotice(state);
+    if (notice && studio.announced !== state.version) {
+      studio.announced = state.version;
+      say(notice);
+    }
     studio.parsed = parseGlb(gltf);
     studio.solidPreview = null;
     renderer?.setModel(studio.parsed, {retain: true});

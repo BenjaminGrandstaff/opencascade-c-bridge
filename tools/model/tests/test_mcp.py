@@ -5,6 +5,7 @@ import math
 import os
 import pathlib
 import struct
+import subprocess
 import sys
 import tempfile
 import time
@@ -37,7 +38,7 @@ class McpTests(unittest.TestCase):
         self.assertEqual(result['result']['protocolVersion'], '2025-06-18')
         self.assertEqual(self.client.call('tools/list')['error']['code'], -32600)
         self.client.send(dict(jsonrpc='2.0', method='notifications/initialized'))
-        self.assertEqual(len(self.client.call('tools/list')['result']['tools']), 14)
+        self.assertEqual(len(self.client.call('tools/list')['result']['tools']), 16)
         self.assertEqual(self.client.call('initialize')['error']['code'], -32600)
 
     def test_loft_diagnosis_inspection_schema_and_failed_loft_sources(self):
@@ -96,7 +97,7 @@ class McpTests(unittest.TestCase):
 
     def test_discovery_schemas_and_complete_examples(self):
         tools = self.client.call('tools/list')['result']['tools']
-        self.assertEqual({tool['name'] for tool in tools}, {'occt_get_schema', 'occt_get_example', 'occt_build', 'occt_inspect_model', 'occt_inspect_build', 'occt_edit_build', 'occt_preview_edit_build', 'occt_visualize_model', 'occt_export_drawings', 'occt_inspection_report', 'occt_motion_study', 'occt_balance_report', 'occt_joint_branches', 'occt_merge_documents'})
+        self.assertEqual({tool['name'] for tool in tools}, {'occt_get_schema', 'occt_get_example', 'occt_build', 'occt_inspect_model', 'occt_inspect_build', 'occt_edit_build', 'occt_preview_edit_build', 'occt_visualize_model', 'occt_export_drawings', 'occt_inspection_report', 'occt_motion_study', 'occt_balance_report', 'occt_joint_branches', 'occt_merge_documents', 'occt_session_read', 'occt_session_apply'})
         schema = next(tool['inputSchema'] for tool in tools if tool['name'] == 'occt_build')
         jsonschema.Draft202012Validator.check_schema(schema)
         self.assertEqual(schema['properties']['model']['$ref'], '#/$defs/ModelDocument')
@@ -1127,6 +1128,78 @@ class McpTests(unittest.TestCase):
         self.assertEqual(preview['structuredContent']['inline_images'], ['0001-section-bore.png'])
         self.assertEqual(sum(item['type'] == 'image' for item in preview['content']), 1)
 
+    def start_studio(self, model):
+        """occt-view --serve on a free local port for `model`; stopped on cleanup."""
+        import socket, urllib.request
+        path = self.root / 'studio-model.json'
+        path.write_text(json.dumps(model))
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0))
+            port = probe.getsockname()[1]
+        viewer = pathlib.Path(os.environ.get('OCCT_MODEL_BINARY', '')).resolve().parent / 'occt-view'
+        process = subprocess.Popen([str(viewer), str(path), '--serve', '--port', str(port), '--output', 'body', '--no-open'],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(lambda: (process.terminate(), process.wait()))
+        url = f'http://127.0.0.1:{port}'
+        for _ in range(200):
+            try:
+                urllib.request.urlopen(url + '/api/state', timeout=1).close()
+                return url, path
+            except OSError:
+                time.sleep(0.05)
+        self.fail('studio did not start')
+
+    def test_shared_studio_sessions_apply_verified_builds_with_guards(self):
+        import urllib.request
+        bracket = self.client.tool('occt_get_example', dict(name='bracket'))['structuredContent']
+        url, path = self.start_studio(bracket['model'])
+        session = self.client.tool('occt_session_read', dict(url=url))
+        self.assertFalse(session['isError'], session)
+        read = session['structuredContent']
+        self.assertEqual((read['schema'], read['url'], read['dirty']), ('occb-studio-session-v1', url, False))
+        # Verify a change to the shared model, then apply the accepted build.
+        request = dict(schema='occb-model-request-v1', model=read['model'], outputs=bracket['outputs'], step=False, preview=False,
+                       edits=[dict(instance='bracket', parameter='hole_spacing', value=dict(scalar=dict(value=35, dimension='length', unit='millimeter')))])
+        built = self.client.tool('occt_build', request)['structuredContent']
+        applied = self.client.tool('occt_session_apply', dict(url=url, build_id=built['build_id'], expected_model_sha256=read['model_sha256'], message='Wider hole spacing'))
+        self.assertFalse(applied['isError'], applied)
+        value = applied['structuredContent']
+        self.assertEqual((value['changed'], value['dirty'], value['build_id']), (True, True, built['build_id']))
+        state = json.loads(urllib.request.urlopen(url + '/api/state').read())
+        self.assertEqual(state['last_change'], dict(author='AI assistant', message='Wider hole spacing', version=value['version']))
+        self.assertEqual(json.loads(path.read_text()), bracket['model'])
+        now = self.client.tool('occt_session_read', dict(url=url))['structuredContent']
+        self.assertEqual(now['model_sha256'], value['model_sha256'])
+        self.assertEqual(now['model']['instances'], json.loads(pathlib.Path(built['directory'], 'model.json').read_text())['instances'])
+        # A stale hash is a conflict and changes nothing.
+        stale = self.client.tool('occt_session_apply', dict(url=url, build_id=built['build_id'], expected_model_sha256=read['model_sha256'], message='Again', author='other agent'))
+        self.assertTrue(stale['isError'])
+        self.assertEqual(stale['structuredContent']['stage'], 'conflict')
+        self.assertEqual(self.client.tool('occt_session_read', dict(url=url))['structuredContent']['version'], value['version'])
+        # Only accepted builds, local studios and known fields are accepted.
+        shell = self.client.tool('occt_get_example', dict(name='bracket'))['structuredContent']
+        preview = self.client.tool('occt_preview_edit_build', dict(build_id=built['build_id'], expected_model_sha256=built['model_sha256'], changes=[], outputs=shell['outputs'],
+            edits=[dict(instance='bracket', parameter='hole_spacing', value=dict(scalar=dict(value=36, dimension='length', unit='millimeter')))],
+            revision=dict(id='p-1', author='test', recorded_at='test-time', message='Preview')))
+        self.assertFalse(preview['isError'], preview)
+        response = self.client.call('tools/call', dict(name='occt_session_apply', arguments=dict(url=url, build_id=preview['structuredContent']['visualization_id'], expected_model_sha256=value['model_sha256'], message='Preview')))
+        self.assertEqual(response['error']['code'], -32602)
+        response = self.client.call('tools/call', dict(name='occt_session_apply', arguments=dict(url=url, build_id='0' * 32, expected_model_sha256=value['model_sha256'], message='Unknown')))
+        self.assertEqual(response['error']['code'], -32002)
+        for bad in ['http://example.com:80', 'https://127.0.0.1:1', 'http://127.0.0.1', 'http://127.0.0.1:1/api', 'file:///etc/passwd']:
+            response = self.client.call('tools/call', dict(name='occt_session_read', arguments=dict(url=bad)))
+            self.assertEqual(response['error']['code'], -32602, bad)
+        response = self.client.call('tools/call', dict(name='occt_session_read', arguments=dict(url=url, extra=1)))
+        self.assertEqual(response['error']['code'], -32602)
+        # No studio listening is a structured connection failure.
+        import socket
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0))
+            closed = probe.getsockname()[1]
+        missing = self.client.tool('occt_session_read', dict(url=f'http://127.0.0.1:{closed}'))
+        self.assertTrue(missing['isError'])
+        self.assertEqual(missing['structuredContent']['stage'], 'connection')
+
     def command_example(self, name):
         return self.client.tool('occt_get_example', dict(name=name))['structuredContent']
 
@@ -1263,7 +1336,7 @@ class McpTests(unittest.TestCase):
         self.client.close()
         self.client = Client(self.root / 'minimal', commands_dir=commands)
         catalog = json.loads(self.client.call('resources/read', dict(uri='occt://catalog'))['result']['contents'][0]['text'])
-        self.assertEqual(catalog['counts']['tools'], 8)
+        self.assertEqual(catalog['counts']['tools'], 10)
         self.assertEqual(len(catalog['unavailable_tools']), 6)
         self.client.close()
         executable = commands / 'occt-drawing-export'

@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { drawAssemblyAnnotations } from './assembly_annotations.mjs';
 import { createAnnotationController, editableControls } from './annotations.mjs';
+import { changeNotice } from './session-notice.mjs';
 
 class Element {
   constructor(tag='div') { this.tagName=tag;this.children=[];this.handlers={};this.dataset={};this.attributes={};this.value='';this.style={};this.clientWidth=900;this.clientHeight=600;this.classList={toggle(){}}; }
@@ -62,7 +63,7 @@ const settle=async check=>{for(let i=0;i<40;i++){if(check())return;await new Pro
   };
   const renderer={draw(){},setSelection(){},setModel(){},setMarkers(){}};
   const context={document,fetch,console,URL,Option:class extends Element{constructor(label,value){super('option');this.textContent=label;this.value=value;}},ResizeObserver:class{observe(){}},setTimeout:()=>1,clearTimeout(){},requestAnimationFrame:()=>1,
-    createSketchCreator:()=>{},createSolidEditor:()=>{},createSketchEditor:()=>({selectGeometry(){},selectConstraint(){},clearSelection(){}}),createAnnotationController,editableControls,drawAssemblyAnnotations,createRenderer:()=>renderer,fitCamera:()=>({}),modelToGltf:v=>v,pan:()=>({}),parseGltf:g=>({...g,bounds:null}),parseGlb:()=>({nodes:[{name:'block'},{name:'copy'}],meshes:[],bounds:null}),pick:()=>-1,ray:()=>({}),
+    createSketchCreator:()=>{},createSolidEditor:()=>{},createSketchEditor:()=>({selectGeometry(){},selectConstraint(){},clearSelection(){}}),createAnnotationController,editableControls,drawAssemblyAnnotations,changeNotice,createRenderer:()=>renderer,fitCamera:()=>({}),modelToGltf:v=>v,pan:()=>({}),parseGltf:g=>({...g,bounds:null}),parseGlb:()=>({nodes:[{name:'block'},{name:'copy'}],meshes:[],bounds:null}),pick:()=>-1,ray:()=>({}),
     window:{createOcctAnnotatedViewer:(root,data,select)=>{onSelect=select;component={data,fit(){},update(next){this.data=next;if(selectedAnnotation){selectedScene=next.scenes[0];selectedAnnotation=selectedScene.annotations[0];root.getElementById('selection').replaceChildren();select(selectedAnnotation,selectedScene);}}};return component;}}};
   vm.createContext(context);
   const page=fs.readFileSync(new URL('./index.html',import.meta.url),'utf8').split('<script type="module">')[1].split('</script>')[0].replace(/^import .*;$/gm,'');
