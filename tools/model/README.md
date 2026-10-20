@@ -78,6 +78,17 @@ with its bend lines dashed in blue: each bend zone's center line, each edge
 tab's bend and hem folds, drawn where they lie on visible material. Their
 view entries give `bend_lines`, the number of line segments (both faces).
 
+Add `"scene": true` to also render every selected output together (at most
+64), from the same views and sections, into `scene-<view>.png` and
+`scene-section-<id>.png`. Each output gets its own color, and section cut
+faces are hatched in darker shades of it. Where two outputs share material,
+the shared volume is drawn in translucent red through everything, so a
+hidden clash still shows. The report's `scene` lists each output's color
+(`parts`), every interference as `{first, second, volume_mm3, bounds_mm}`
+(an exact boolean of each pair whose bounding boxes overlap; parts that only
+touch do not count), and the scene's `renders`. Scene images count toward
+the image limit. A 64-part scene with 63 interferences took 4.1 s.
+
 Each output's `renders` lists `{view|section, file, width_px, height_px}` in
 request order, and files are named `NNNN-<view>.png` or
 `NNNN-section-<id>.png`. Limits: 8 views and 4 sections per output, 64 to

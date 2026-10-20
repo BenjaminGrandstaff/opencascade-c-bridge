@@ -1117,6 +1117,20 @@ class McpTests(unittest.TestCase):
         self.assertTrue(rejected['isError'])
         self.assertEqual(rejected['structuredContent']['stage'], 'request')
 
+    def test_render_scenes_come_first_and_list_interference(self):
+        mating = self.client.tool('occt_get_example', dict(name='mating-parts'))['structuredContent']
+        mating.update(step=False, preview=False, stl=False, renders=dict(views=['iso'], size_px=96, scene=True))
+        result = self.client.tool('occt_build', mating)
+        self.assertFalse(result['isError'], result)
+        value = result['structuredContent']
+        scene = value['report']['scene']
+        self.assertEqual([p['output'] for p in scene['parts']], ['sleeve/body', 'shaft/body'])
+        # A clearance fit: the shaft and sleeve do not interfere.
+        self.assertEqual(scene['interferences'], [])
+        self.assertEqual(value['inline_images'], ['scene-iso.png', '0001-iso.png', '0002-iso.png'])
+        resource = self.client.call('resources/read', dict(uri=value['resources']['scene-iso.png']))['result']['contents'][0]
+        self.assertEqual(resource['mimeType'], 'image/png')
+
     def test_edit_previews_render_the_candidate(self):
         shell = self.client.tool('occt_get_example', dict(name='tapped-shell'))['structuredContent']
         shell.update(step=False)

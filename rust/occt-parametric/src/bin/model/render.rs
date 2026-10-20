@@ -16,8 +16,10 @@ pub mod png;
 pub const MAX_VIEWS: usize = 8;
 /// Most section planes per output.
 pub const MAX_SECTIONS: usize = 4;
-/// Most images in one build, across all outputs.
+/// Most images in one build, across all outputs and the scene.
 pub const MAX_IMAGES: usize = 256;
+/// Most outputs in one scene; interference checks are pairwise.
+pub const MAX_SCENE_PARTS: usize = 64;
 /// Most triangles tessellated for one output (the bridge's limit).
 const MAX_TRIANGLES: usize = 1_000_000;
 /// Supersampling factor per axis.
@@ -39,6 +41,12 @@ pub struct RenderOptions {
     /// Image width and height in pixels, 64 to 1024; default 512.
     #[serde(default = "default_size")]
     pub size_px: u32,
+    /// Also render every selected output together, at most 64, from the
+    /// same views and sections: each output in its own color, and any
+    /// volume two outputs share drawn in red through everything. The
+    /// report's `scene` lists each output's color and each interference.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub scene: bool,
 }
 
 impl Default for RenderOptions {
@@ -47,6 +55,7 @@ impl Default for RenderOptions {
             views: default_views(),
             sections: Vec::new(),
             size_px: default_size(),
+            scene: false,
         }
     }
 }
@@ -118,7 +127,14 @@ pub struct SectionPlane {
 impl RenderOptions {
     /// Checks the options for a build of `outputs` selected outputs.
     pub fn validate(&self, outputs: usize) -> Result<(), String> {
-        if outputs.saturating_mul(self.views.len() + self.sections.len()) > MAX_IMAGES {
+        if self.scene && outputs > MAX_SCENE_PARTS {
+            return Err(format!(
+                "a render scene holds at most {MAX_SCENE_PARTS} outputs"
+            ));
+        }
+        let images = (outputs + usize::from(self.scene))
+            .saturating_mul(self.views.len() + self.sections.len());
+        if images > MAX_IMAGES {
             return Err(format!(
                 "renders are limited to {MAX_IMAGES} images per build; select fewer outputs, views or sections"
             ));
@@ -201,7 +217,11 @@ pub fn write(
         let triangles = session.surface_mesh(shape, mesh_options)?;
         for &view in &options.views {
             let (direction, up) = view.camera();
-            let image = draw(&triangles, None, direction, up, size, bend_lines)?;
+            let layer = Layer {
+                triangles: &triangles,
+                color: BODY,
+            };
+            let image = draw(&[layer], &[], None, direction, up, size, bend_lines)?;
             let file = format!("{:04}-{}.png", index + 1, view.name());
             std::fs::write(destination.join(&file), &image)?;
             let mut entry =
@@ -232,8 +252,13 @@ pub fn write(
         let image = if triangles.is_empty() {
             None
         } else {
+            let layer = Layer {
+                triangles: &triangles,
+                color: BODY,
+            };
             Some(draw(
-                &triangles,
+                &[layer],
+                &[],
                 Some((section.origin_mm, normal)),
                 direction,
                 up,
@@ -252,6 +277,172 @@ pub fn write(
         entries.push(entry);
     }
     Ok(entries)
+}
+
+/// Renders `parts` (label and shape) together into `scene-<view>.png` and
+/// `scene-section-<id>.png`, with interference volumes in red, and returns
+/// the report's `scene`. Each pair of parts whose bounding boxes overlap is
+/// intersected once: O(parts² box tests + overlapping pairs' booleans).
+pub fn write_scene(
+    session: &Session,
+    parts: &[(String, &Shape<'_>)],
+    options: &RenderOptions,
+    destination: &Path,
+) -> Result<Value, Box<dyn Error>> {
+    let boxes = parts
+        .iter()
+        .map(|(_, shape)| session.exact_bounds(shape))
+        .collect::<Result<Vec<_>, _>>()?;
+    let lo = [0, 1, 2].map(|k| {
+        boxes
+            .iter()
+            .map(|b| [b.min.x, b.min.y, b.min.z][k])
+            .fold(f64::INFINITY, f64::min)
+    });
+    let hi = [0, 1, 2].map(|k| {
+        boxes
+            .iter()
+            .map(|b| [b.max.x, b.max.y, b.max.z][k])
+            .fold(f64::NEG_INFINITY, f64::max)
+    });
+    let span = (0..3).map(|k| hi[k] - lo[k]).fold(0.0, f64::max);
+    if !span.is_finite() || span <= 0.0 {
+        return Err("scene has no renderable extent".into());
+    }
+    let mesh_options = MeshOptions {
+        linear_deflection: span * 2e-3,
+        angular_deflection_radians: 0.25,
+        maximum_triangles: MAX_TRIANGLES,
+    };
+    let overlaps = |a: &occt_bridge::Bounds, b: &occt_bridge::Bounds| {
+        a.min.x <= b.max.x
+            && b.min.x <= a.max.x
+            && a.min.y <= b.max.y
+            && b.min.y <= a.max.y
+            && a.min.z <= b.max.z
+            && b.min.z <= a.max.z
+    };
+    let tolerance = (span.powi(3) * 1e-9).max(1e-6);
+    let mut clashes = Vec::new();
+    let mut interferences = Vec::new();
+    for i in 0..parts.len() {
+        for j in i + 1..parts.len() {
+            if !overlaps(&boxes[i], &boxes[j]) {
+                continue;
+            }
+            let shared = session.common(parts[i].1, parts[j].1)?;
+            // Disjoint or touching parts share no solid.
+            if session.subshapes(&shared, ShapeType::Solid)?.is_empty() {
+                continue;
+            }
+            let volume = session.volume(&shared)?;
+            if volume > tolerance {
+                let b = session.exact_bounds(&shared)?;
+                interferences.push(json!({
+                    "first": parts[i].0, "second": parts[j].0, "volume_mm3": volume,
+                    "bounds_mm": {"min": [b.min.x, b.min.y, b.min.z], "max": [b.max.x, b.max.y, b.max.z]},
+                }));
+                clashes.push(shared);
+            }
+        }
+    }
+    let size = options.size_px as usize;
+    let colors = |index: usize| PALETTE[index % PALETTE.len()];
+    let mut renders = Vec::new();
+    if !options.views.is_empty() {
+        let meshes = parts
+            .iter()
+            .map(|(_, shape)| session.surface_mesh(shape, mesh_options))
+            .collect::<Result<Vec<_>, _>>()?;
+        let xray = clashes
+            .iter()
+            .map(|shape| session.surface_mesh(shape, mesh_options))
+            .collect::<Result<Vec<_>, _>>()?
+            .concat();
+        let layers: Vec<Layer<'_>> = meshes
+            .iter()
+            .enumerate()
+            .map(|(index, triangles)| Layer {
+                triangles,
+                color: colors(index),
+            })
+            .collect();
+        for &view in &options.views {
+            let (direction, up) = view.camera();
+            let image = draw(&layers, &xray, None, direction, up, size, &[])?;
+            let file = format!("scene-{}.png", view.name());
+            std::fs::write(destination.join(&file), &image)?;
+            renders.push(
+                json!({"view": view.name(), "file": file, "width_px": size, "height_px": size}),
+            );
+        }
+    }
+    for section in &options.sections {
+        let normal = unit(section.normal).ok_or("section normal is zero")?;
+        let cut = half_space(session, section.origin_mm, normal, lo, hi)?;
+        let mesh_kept = |shape: &Shape<'_>| -> Result<Vec<MeshTriangle>, Box<dyn Error>> {
+            let kept = session.cut(shape, &cut)?;
+            Ok(if session.subshapes(&kept, ShapeType::Face)?.is_empty() {
+                Vec::new()
+            } else {
+                session.surface_mesh(&kept, mesh_options)?
+            })
+        };
+        let meshes = parts
+            .iter()
+            .map(|(_, shape)| mesh_kept(shape))
+            .collect::<Result<Vec<_>, _>>()?;
+        let xray = clashes
+            .iter()
+            .map(mesh_kept)
+            .collect::<Result<Vec<_>, _>>()?
+            .concat();
+        let mut entry = json!({"section": section.id, "width_px": size, "height_px": size});
+        if meshes.iter().all(Vec::is_empty) {
+            entry["empty"] = json!(true);
+        } else {
+            let layers: Vec<Layer<'_>> = meshes
+                .iter()
+                .enumerate()
+                .map(|(index, triangles)| Layer {
+                    triangles,
+                    color: colors(index),
+                })
+                .collect();
+            let up = if normal[2].abs() > 0.9 {
+                [0.0, 1.0, 0.0]
+            } else {
+                [0.0, 0.0, 1.0]
+            };
+            let image = draw(
+                &layers,
+                &xray,
+                Some((section.origin_mm, normal)),
+                normal.map(|v| -v),
+                up,
+                size,
+                &[],
+            )?;
+            let file = format!("scene-section-{}.png", section.id);
+            std::fs::write(destination.join(&file), &image)?;
+            entry["file"] = json!(file);
+        }
+        renders.push(entry);
+    }
+    let legend: Vec<Value> = parts
+        .iter()
+        .enumerate()
+        .map(|(index, (label, _))| {
+            let c = colors(index);
+            json!({"output": label, "color": format!("#{:02x}{:02x}{:02x}", c[0] as u8, c[1] as u8, c[2] as u8)})
+        })
+        .collect();
+    Ok(json!({
+        "parts": legend,
+        "interferences": interferences,
+        "interference_color": "#e41e24",
+        "renders": renders,
+    }))
 }
 
 /// A prism covering the half of the bounding box the normal points into,
@@ -294,13 +485,79 @@ const CAP: [u8; 3] = [214, 104, 74];
 const CAP_STRIPE: [u8; 3] = [176, 72, 52];
 const EDGE: [u8; 3] = [34, 40, 52];
 const BEND: [u8; 3] = [24, 92, 214];
+const CLASH: [u8; 3] = [228, 30, 36];
+const CLASH_EDGE: [u8; 3] = [110, 0, 8];
+/// Base colors of scene parts, in output order (cycled).
+pub const PALETTE: [[f32; 3]; 6] = [
+    [150.0, 172.0, 204.0],
+    [148.0, 196.0, 150.0],
+    [214.0, 190.0, 120.0],
+    [186.0, 160.0, 206.0],
+    [120.0, 190.0, 196.0],
+    [200.0, 160.0, 140.0],
+];
 /// Dash and gap length of bend lines, in output pixels.
 const DASH_PX: f64 = 6.0;
 
-/// Rasterizes oriented triangles into a PNG. `section` marks triangles on
-/// the cut plane as cap faces.
+/// One part of a scene: its triangles and base color.
+pub struct Layer<'a> {
+    pub triangles: &'a [MeshTriangle],
+    pub color: [f32; 3],
+}
+
+/// Calls `pixel(x, y, depth)` for each supersampled pixel center the screen
+/// triangle `s` covers, with depth interpolated. O(bounding box).
+fn fill(s: [[f64; 3]; 3], n: usize, mut pixel: impl FnMut(usize, usize, f32)) {
+    let area = edge(s[0], s[1], s[2]);
+    if area.abs() < 1e-12 {
+        return;
+    }
+    let (mut x0, mut x1, mut y0, mut y1) = (
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+    );
+    for q in &s {
+        (x0, x1, y0, y1) = (x0.min(q[0]), x1.max(q[0]), y0.min(q[1]), y1.max(q[1]));
+    }
+    if !(x0.is_finite() && x1.is_finite() && y0.is_finite() && y1.is_finite())
+        || x1 < 0.0
+        || y1 < 0.0
+    {
+        return;
+    }
+    let (x0, y0) = (x0.floor().max(0.0) as usize, y0.floor().max(0.0) as usize);
+    let (x1, y1) = (
+        (x1.ceil() as usize).min(n - 1),
+        (y1.ceil() as usize).min(n - 1),
+    );
+    for y in y0..=y1 {
+        for x in x0..=x1 {
+            let c = [x as f64 + 0.5, y as f64 + 0.5, 0.0];
+            let w = [
+                edge(s[1], s[2], c) / area,
+                edge(s[2], s[0], c) / area,
+                edge(s[0], s[1], c) / area,
+            ];
+            if w.iter().all(|&w| w >= -1e-9) {
+                pixel(
+                    x,
+                    y,
+                    (w[0] * s[0][2] + w[1] * s[1][2] + w[2] * s[2][2]) as f32,
+                );
+            }
+        }
+    }
+}
+
+/// Rasterizes oriented triangles into a PNG: each layer in its color with
+/// B-rep faces outlined, `xray` triangles (interference volumes) tinted red
+/// through everything, and `overlays` dashed where they lie on visible
+/// surface. `section` marks triangles on the cut plane as hatched caps.
 fn draw(
-    triangles: &[MeshTriangle],
+    parts: &[Layer<'_>],
+    xray: &[MeshTriangle],
     section: Option<([f64; 3], [f64; 3])>,
     direction: [f64; 3],
     up_hint: [f64; 3],
@@ -315,7 +572,7 @@ fn draw(
         [dot(p, right), dot(p, up), dot(p, view)]
     };
     let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
-    for t in triangles {
+    for t in parts.iter().flat_map(|layer| layer.triangles) {
         for &p in &t.points {
             let q = project(p);
             for k in 0..3 {
@@ -335,101 +592,6 @@ fn draw(
         n as f64 / 2.0 + (lo[1] + hi[1]) / 2.0 * scale,
     ];
     let depth_span = (hi[2] - lo[2]).max(extent * 1e-6);
-    // Toward the light: from the viewer, up and to the left.
-    let light = unit([-0.35, 0.55, -0.75])
-        .map(|l| [0, 1, 2].map(|k| l[0] * right[k] + l[1] * up[k] + l[2] * view[k]))
-        .unwrap();
-    let mut depth = vec![f32::INFINITY; n * n];
-    // Face id + 1 per pixel; 0 is background, u32::MAX a section cap.
-    let mut face = vec![0u32; n * n];
-    let mut color = vec![BACKGROUND; n * n];
-    let plane_tolerance = extent * 1e-5;
-    for t in triangles {
-        let p = t.points.map(|p| [p.x, p.y, p.z]);
-        let Some(normal) = unit(cross(sub(p[1], p[0]), sub(p[2], p[0]))) else {
-            continue;
-        };
-        let cap = section.is_some_and(|(origin, plane)| {
-            p.iter()
-                .all(|&q| dot(sub(q, origin), plane).abs() <= plane_tolerance)
-        });
-        let facing = -dot(normal, view);
-        let shade = if cap {
-            None
-        } else {
-            let lambert = dot(normal, light).abs() as f32;
-            let base = if facing >= 0.0 { 1.0 } else { 0.6 };
-            Some(BODY.map(|c| (c * base * (0.45 + 0.55 * lambert)).round() as u8))
-        };
-        let id = if cap {
-            u32::MAX
-        } else {
-            t.face_index as u32 + 1
-        };
-        let s = t.points.map(|q| {
-            let q = project(q);
-            [
-                q[0] * scale + offset[0],
-                -q[1] * scale + offset[1],
-                (q[2] - lo[2]) / depth_span,
-            ]
-        });
-        let area = edge(s[0], s[1], s[2]);
-        if area.abs() < 1e-12 {
-            continue;
-        }
-        let x0 = s
-            .iter()
-            .map(|q| q[0])
-            .fold(f64::INFINITY, f64::min)
-            .floor()
-            .max(0.0) as usize;
-        let x1 = (s
-            .iter()
-            .map(|q| q[0])
-            .fold(f64::NEG_INFINITY, f64::max)
-            .ceil() as usize)
-            .min(n - 1);
-        let y0 = s
-            .iter()
-            .map(|q| q[1])
-            .fold(f64::INFINITY, f64::min)
-            .floor()
-            .max(0.0) as usize;
-        let y1 = (s
-            .iter()
-            .map(|q| q[1])
-            .fold(f64::NEG_INFINITY, f64::max)
-            .ceil() as usize)
-            .min(n - 1);
-        for y in y0..=y1 {
-            for x in x0..=x1 {
-                let c = [x as f64 + 0.5, y as f64 + 0.5, 0.0];
-                let w = [
-                    edge(s[1], s[2], c) / area,
-                    edge(s[2], s[0], c) / area,
-                    edge(s[0], s[1], c) / area,
-                ];
-                if w.iter().any(|&w| w < -1e-9) {
-                    continue;
-                }
-                let z = (w[0] * s[0][2] + w[1] * s[1][2] + w[2] * s[2][2]) as f32;
-                let at = y * n + x;
-                if z < depth[at] {
-                    depth[at] = z;
-                    face[at] = id;
-                    color[at] = match shade {
-                        Some(shade) => shade,
-                        None if ((x + y) / (6 * SS)).is_multiple_of(2) => CAP_STRIPE,
-                        None => CAP,
-                    };
-                }
-            }
-        }
-    }
-    // Dashed overlay lines where they lie on visible surface; two
-    // supersampled pixels wide, stepped at half a pixel. O(line length).
-    let mut overlay = vec![false; n * n];
     let screen = |p: Vec3| {
         let q = project(p);
         [
@@ -438,6 +600,79 @@ fn draw(
             (q[2] - lo[2]) / depth_span,
         ]
     };
+    // Toward the light: from the viewer, up and to the left.
+    let light = unit([-0.35, 0.55, -0.75])
+        .map(|l| [0, 1, 2].map(|k| l[0] * right[k] + l[1] * up[k] + l[2] * view[k]))
+        .unwrap();
+    let mut depth = vec![f32::INFINITY; n * n];
+    // Face id per pixel, unique across layers; 0 is background, u32::MAX a
+    // section cap.
+    let mut face = vec![0u32; n * n];
+    let mut color = vec![BACKGROUND; n * n];
+    let plane_tolerance = extent * 1e-5;
+    let mut first_id = 1u32;
+    for layer in parts {
+        // One part keeps the orange hatch; several hatch their caps in
+        // darker shades of their own color so the parts stay apart.
+        let (cap_light, cap_dark) = if parts.len() == 1 {
+            (CAP, CAP_STRIPE)
+        } else {
+            (
+                layer.color.map(|c| (c * 0.78) as u8),
+                layer.color.map(|c| (c * 0.56) as u8),
+            )
+        };
+        let mut next_id = first_id;
+        for t in layer.triangles {
+            let p = t.points.map(|p| [p.x, p.y, p.z]);
+            let Some(normal) = unit(cross(sub(p[1], p[0]), sub(p[2], p[0]))) else {
+                continue;
+            };
+            let cap = section.is_some_and(|(origin, plane)| {
+                p.iter()
+                    .all(|&q| dot(sub(q, origin), plane).abs() <= plane_tolerance)
+            });
+            let facing = -dot(normal, view);
+            let shade = if cap {
+                None
+            } else {
+                let lambert = dot(normal, light).abs() as f32;
+                let base = if facing >= 0.0 { 1.0 } else { 0.6 };
+                Some(
+                    layer
+                        .color
+                        .map(|c| (c * base * (0.45 + 0.55 * lambert)).round() as u8),
+                )
+            };
+            let id = if cap {
+                u32::MAX
+            } else {
+                first_id + t.face_index as u32
+            };
+            next_id = next_id.max(id.saturating_add(1).min(u32::MAX - 1));
+            fill(t.points.map(&screen), n, |x, y, z| {
+                let at = y * n + x;
+                if z < depth[at] {
+                    depth[at] = z;
+                    face[at] = id;
+                    color[at] = match shade {
+                        Some(shade) => shade,
+                        None if ((x + y) / (6 * SS)).is_multiple_of(2) => cap_dark,
+                        None => cap_light,
+                    };
+                }
+            });
+        }
+        first_id = next_id;
+    }
+    // Interference volumes seen through every part.
+    let mut clash = vec![false; n * n];
+    for t in xray {
+        fill(t.points.map(&screen), n, |x, y, _| clash[y * n + x] = true);
+    }
+    // Dashed overlay lines where they lie on visible surface; two
+    // supersampled pixels wide, stepped at half a pixel. O(line length).
+    let mut overlay = vec![false; n * n];
     for [a, b] in overlays {
         let (a, b) = (screen(*a), screen(*b));
         let length = (b[0] - a[0]).hypot(b[1] - a[1]);
@@ -464,6 +699,7 @@ fn draw(
     // Outlines where the B-rep face changes or depth jumps (silhouettes).
     let jump = 0.02f32;
     let mut outline = vec![false; n * n];
+    let mut clash_edge = vec![false; n * n];
     for y in 0..n {
         for x in 0..n {
             let at = y * n + x;
@@ -479,6 +715,10 @@ fn draw(
                     outline[at] = true;
                     outline[other] = true;
                 }
+                if clash[at] != clash[other] {
+                    clash_edge[at] = true;
+                    clash_edge[other] = true;
+                }
             }
         }
     }
@@ -489,13 +729,20 @@ fn draw(
             for sy in 0..SS {
                 for sx in 0..SS {
                     let at = (y * SS + sy) * n + x * SS + sx;
-                    let c = if overlay[at] {
+                    let mut c = if overlay[at] {
                         BEND
                     } else if outline[at] {
                         EDGE
                     } else {
                         color[at]
                     };
+                    if clash_edge[at] {
+                        c = CLASH_EDGE;
+                    } else if clash[at] {
+                        c = [0, 1, 2].map(|k| {
+                            (0.35 * f32::from(c[k]) + 0.65 * f32::from(CLASH[k])).round() as u8
+                        });
+                    }
                     for k in 0..3 {
                         sum[k] += f32::from(c[k]);
                     }

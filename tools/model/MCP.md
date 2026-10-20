@@ -100,8 +100,8 @@ Request files, worker logs, arbitrary paths, and incomplete builds are excluded.
 
 Tool results provide both `structuredContent` and equivalent JSON text content.
 When a build, edit or edit preview sets `renders`, the result also carries up
-to eight of its PNG renders as `image` content (at most 4 MiB together, in
-report order) and lists them in `inline_images`; every render stays readable
+to eight of its PNG renders as `image` content (at most 4 MiB together; a
+`scene`'s images first, then each output's in report order) and lists them in `inline_images`; every render stays readable
 as an `image/png` resource. See [rendered views and sections](README.md#rendered-views-and-sections).
 Build/verification failures return `isError: true` with the native structured
 failure report. Protocol errors use JSON-RPC errors. Native STEP progress stays

@@ -168,3 +168,113 @@ fn flat_pattern_renders_show_dashed_bend_lines() {
     // The folded part's renders carry none.
     assert_eq!(blue("0001-top.png"), 0);
 }
+
+/// Two 20 mm cubes, the second placed 15 mm along x: they share a
+/// 5 × 20 × 20 mm block. A third cube 100 mm away touches nothing.
+fn clashing_cubes() -> ModelDocument {
+    let family = FamilyDefinition {
+        id: "cube".into(),
+        version: 1,
+        references: vec![],
+        feature_colors: Default::default(),
+        assumptions: vec![],
+        parameters: vec![],
+        derived_parameters: vec![],
+        derived_vector_parameters: vec![],
+        constraints: vec![],
+        requirements: vec![],
+        datums: vec![],
+        features: vec![FeatureDefinition {
+            id: "body".into(),
+            operation: FeatureOperation::Box {
+                origin: point(0.0, 0.0, 0.0),
+                size: VectorExpr::Literal(VectorQuantity::lengths(
+                    20.0,
+                    20.0,
+                    20.0,
+                    LengthUnit::Millimeter,
+                )),
+            },
+        }],
+    };
+    let family: &'static FamilyDefinition = Box::leak(Box::new(family));
+    let mut graph = InstanceGraph::new(family);
+    for (id, x) in [("a", 0.0), ("b", 15.0), ("far", 100.0)] {
+        graph.add_base(id, HashMap::new(), "test").unwrap();
+        graph
+            .set_placement(
+                id,
+                Placement {
+                    translation: VectorQuantity::lengths(x, 0.0, 0.0, LengthUnit::Millimeter),
+                    rotation: None,
+                },
+            )
+            .unwrap();
+    }
+    ModelDocument::from_graph(&graph)
+}
+
+#[test]
+fn scenes_render_outputs_together_and_show_interference() {
+    let dir = Directory::new();
+    let model = clashing_cubes();
+    let mut value = request(&model, json!([]));
+    value["outputs"] = json!([
+        {"instance": "a", "output": "body"},
+        {"instance": "b", "output": "body"},
+        {"instance": "far", "output": "body"},
+    ]);
+    value["renders"] = json!({"views": ["top"], "size_px": 200, "scene": true,
+        "sections": [{"id": "mid", "origin_mm": [0, 10, 0], "normal": [0, 1, 0]}]});
+    let built = invoke(&dir, value, "scene").unwrap();
+    let scene = &built["scene"];
+    assert_eq!(
+        scene["parts"],
+        json!([
+            {"output": "a/body", "color": "#96accc"},
+            {"output": "b/body", "color": "#94c496"},
+            {"output": "far/body", "color": "#d6be78"},
+        ])
+    );
+    let clashes = scene["interferences"].as_array().unwrap();
+    assert_eq!(clashes.len(), 1, "{clashes:?}");
+    assert_eq!(
+        (&clashes[0]["first"], &clashes[0]["second"]),
+        (&json!("a/body"), &json!("b/body"))
+    );
+    assert!((clashes[0]["volume_mm3"].as_f64().unwrap() - 2000.0).abs() < 1e-6);
+    assert_eq!(clashes[0]["bounds_mm"]["min"][0], 15.0);
+    let files: Vec<_> = scene["renders"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["file"].as_str().unwrap())
+        .collect();
+    assert_eq!(files, ["scene-top.png", "scene-section-mid.png"]);
+    // The overlap shows red in the top view, between the two parts' colors.
+    let red = |file: &str| {
+        let (w, h, rgb) = image(&dir, "scene", file);
+        rgb.chunks(3)
+            .enumerate()
+            .filter(|(i, _)| !(i % w < w / 4 && i / w > h * 3 / 4))
+            .filter(|(_, c)| c[0] > 160 && c[1] < 120 && c[2] < 120)
+            .count()
+    };
+    assert!(red("scene-top.png") > 50);
+    assert!(red("scene-section-mid.png") > 50);
+    // Each output's own renders are unchanged and show no clash.
+    assert_eq!(built["outputs"][0]["renders"][0]["file"], "0001-top.png");
+    assert_eq!(red("0001-top.png"), 0);
+    // Scenes count toward the image limit.
+    let options: render::RenderOptions =
+        serde_json::from_value(json!({"views": ["iso", "front", "back", "top", "bottom", "left", "right"], "sections": [{"id": "z", "origin_mm": [0, 0, 0], "normal": [0, 0, 1]}], "scene": true})).unwrap();
+    assert!(options.validate(31).is_ok());
+    assert!(options.validate(32).is_err());
+    assert!(
+        serde_json::from_value::<render::RenderOptions>(json!({"scene": true}))
+            .unwrap()
+            .validate(65)
+            .unwrap_err()
+            .contains("at most 64")
+    );
+}

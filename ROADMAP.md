@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 176 + first-use integration 1 (+1 doc test), recipes 3, parametric core 61 + kernel 801 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 100 + viewer Node 473 + branch command 2 + model command 103, MCP Python 27, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 176 + first-use integration 1 (+1 doc test), recipes 3, parametric core 61 + kernel 801 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 100 + viewer Node 473 + branch command 2 + model command 104, MCP Python 28, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,17 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases (199 with the parallel glTF, 1,000-part view, advanced sweep, tray and bend-cutout cases) plus 7 model-command cases (including 256 renders in one build) and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Render scenes with interference (no schema or ABI change). With
+  `renders.scene`, a build also renders all its selected outputs together
+  (up to 64), each in its own color, with hatched cut faces in that color.
+  The volume any two outputs share is computed exactly, as a boolean of
+  each pair whose boxes overlap, and drawn in translucent red through every
+  part. The report's `scene` gives the color legend and each interference's
+  parts, volume and bounds; MCP attaches scene images first. Tests check an
+  exact 2,000 mm³ clash between placed cubes, red pixels in view and
+  section, a clearance fit with none, and limits. A 64-part scene with 63
+  interferences took 4.1 s.
 
 - Bend lines on flat-pattern renders (no schema or ABI change).
   `SheetMetalDefinition::flat_bend_lines` places each bend zone's center
@@ -3525,8 +3536,8 @@ ordered by priority; the catalog/documentation foundation is complete.
 3. **Visual feedback for the AI — complete.** Builds, edits and edit
    previews render shaded PNG views and hatched section planes on request,
    and MCP returns them as image content. Flat patterns render as ordinary
-   outputs, with dashed bend lines. Remaining refinements: several outputs
-   in one scene for checking interference, and dimension labels in the
+   outputs, with dashed bend lines, and scenes of several outputs with
+   their interference in red. Remaining refinement: dimension labels in the
    images.
 4. **Complete failure reports — complete.** Builds and edits rejected by
    required requirements return the whole verification table with measured

@@ -88,6 +88,7 @@ def output_files(report):
     for output in report['outputs']:
         files.update(output[key] for key in ('preview', 'stl') if key in output)
         files.update(image['file'] for image in output.get('renders', ()) if 'file' in image)
+    files.update(image['file'] for image in report.get('scene', {}).get('renders', ()) if 'file' in image)
     return files
 
 def object_schema(properties, required):
@@ -244,8 +245,10 @@ class Server:
     def inline_renders(self, directory, report):
         """Render PNGs to attach in report order, within the inline budget."""
         images, names, total = [], [], 0
-        for output in report['outputs']:
-            for image in output.get('renders', ()):
+        # The combined scene first: it shows how the outputs fit together.
+        groups = [report.get('scene', {}).get('renders', ())] + [output.get('renders', ()) for output in report['outputs']]
+        for renders in groups:
+            for image in renders:
                 name = image.get('file')
                 path = directory / name if isinstance(name, str) else None
                 if path is None or len(images) == MAX_INLINE_IMAGES or path.is_symlink() or not path.is_file():

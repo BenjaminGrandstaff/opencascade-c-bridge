@@ -86,3 +86,20 @@ with tempfile.TemporaryDirectory(prefix='occb-model-check-') as temporary:
     assert sum(len(output['renders']) for output in report['outputs']) == 16
     assert elapsed < 10
     print(f'PASS 16 renders at 1024 px of a hemmed sheet-metal tray and its flat pattern ({elapsed:.3f}s / 10s)')
+    # A full scene: 64 shafts 9 mm apart (Ø10, so each overlaps its
+    # neighbors), with exact interference between every overlapping pair.
+    request = json.loads((root / 'tools/model/shaft.request.json').read_text())
+    request.update(step=False, stl=False, preview=False)
+    base = request['model']['instances'][0]['base']
+    request['model']['instances'] = []
+    request['outputs'] = []
+    for i in range(64):
+        placed = dict(base, id=f'shaft-{i}', placement={'translation': {axis: {'value': 9.0 * i if axis == 'x' else 0, 'dimension': 'length', 'unit': 'millimeter'} for axis in 'xyz'}, 'rotation': None})
+        request['model']['instances'].append({'base': placed})
+        request['outputs'].append({'instance': f'shaft-{i}', 'output': 'body'})
+    request['renders'] = dict(views=['iso'], sections=[dict(id='axes', origin_mm=[0, 0, 30], normal=[0, 0, 1])], size_px=512, scene=True)
+    report, elapsed = build(request, folder / 'scene')
+    clashes = report['scene']['interferences']
+    assert len(clashes) == 63 and all(c['volume_mm3'] > 0 for c in clashes)
+    assert elapsed < 10
+    print(f'PASS 64-part scene: 63 exact interferences, 130 images ({elapsed:.3f}s / 10s)')

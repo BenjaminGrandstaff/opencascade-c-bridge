@@ -454,6 +454,20 @@ fn render_outputs(
             .map_err(|e| failure("render", e))?;
         value["outputs"][index]["renders"] = json!(images);
     }
+    if options.scene {
+        let parts = outputs
+            .iter()
+            .map(|output| {
+                generation
+                    .result(&output.instance)
+                    .and_then(|r| r.shape(&output.output))
+                    .map(|shape| (format!("{}/{}", output.instance, output.output), shape))
+                    .ok_or_else(|| failure("render", "missing generated output"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        value["scene"] = render::write_scene(session, &parts, options, destination)
+            .map_err(|e| failure("render", e))?;
+    }
     value["render_quality"] = json!("tessellated; visual review only");
     Ok(())
 }
