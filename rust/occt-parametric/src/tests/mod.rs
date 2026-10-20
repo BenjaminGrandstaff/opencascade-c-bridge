@@ -48,6 +48,7 @@ mod sheet_metal;
 mod sheet_metal_bend_cutouts;
 mod sheet_metal_edges;
 mod sheet_metal_hems;
+mod standard_parts;
 mod step_export;
 mod surface_texture;
 mod sweep;

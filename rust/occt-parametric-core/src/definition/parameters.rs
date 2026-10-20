@@ -60,6 +60,14 @@ pub enum ScalarExpr {
         material: crate::materials::MaterialGrade,
         property: crate::materials::MaterialProperty,
     },
+    /// A dimension from the frozen `occb_standard_parts_v1` catalog (schema
+    /// 180), such as a screw's head diameter for a counterbore; returns a
+    /// length. `nominal_diameter` must be a catalog size.
+    StandardPartDimensionV1 {
+        part: crate::standard_parts::StandardPartKind,
+        nominal_diameter: Box<ScalarExpr>,
+        dimension: crate::standard_parts::StandardPartDimension,
+    },
     Negate(Box<ScalarExpr>),
     Absolute(Box<ScalarExpr>),
     Add(Box<ScalarExpr>, Box<ScalarExpr>),

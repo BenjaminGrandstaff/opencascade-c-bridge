@@ -48,6 +48,7 @@ pub mod sketch;
 pub mod solve;
 #[doc(hidden)]
 pub mod sparse;
+pub mod standard_parts;
 #[doc(hidden)]
 pub mod verification;
 
@@ -95,6 +96,7 @@ pub use sketch::{
     SketchWeightedPointTerm,
 };
 pub use solve::PlacementSolution;
+pub use standard_parts::{StandardPartData, StandardPartDimension, StandardPartKind};
 
 pub use occt_types::DiagnosticKind;
 use occt_types::{BridgeError, Diagnostic, HistoryRelation, Vec3};

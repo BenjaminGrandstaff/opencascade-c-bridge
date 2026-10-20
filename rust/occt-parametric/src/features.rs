@@ -284,6 +284,25 @@ pub(crate) fn execute_feature<'session>(
             scalar(radius, parameters, Dimension::Length)?,
             scalar(height, parameters, Dimension::Length)?,
         ),
+        FeatureOperation::StandardPart {
+            part,
+            nominal_diameter,
+            length,
+            origin,
+            axis,
+        } => {
+            return primitives::standard_part(
+                session,
+                *part,
+                scalar(nominal_diameter, parameters, Dimension::Length)?,
+                length
+                    .as_ref()
+                    .map(|length| scalar(length, parameters, Dimension::Length))
+                    .transpose()?,
+                vector(origin, parameters, Dimension::Length)?,
+                vector(axis, parameters, Dimension::Scalar)?,
+            );
+        }
         FeatureOperation::Cone {
             origin,
             axis,

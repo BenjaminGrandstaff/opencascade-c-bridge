@@ -6,7 +6,7 @@ On top of it sits a parametric CAD engine: versioned JSON documents for
 sketches, solids, sheet metal, assemblies and drawings, a local studio for
 editing them, and an AI authoring loop (`occt-model` and its MCP server).
 
-The current C ABI version is **84** and the document schema is **179**.
+The current C ABI version is **84** and the document schema is **180**.
 
 ## Status
 
@@ -14,8 +14,8 @@ The current C ABI version is **84** and the document schema is **179**.
 |---|---|---|
 | C ABI (`src/`, `include/`) | ABI 84 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | ABI 84 | Covers the full ABI |
-| `occt-parametric-core` (kernel-free) | Schema 179 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 179 | Active development |
+| `occt-parametric-core` (kernel-free) | Schema 180 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 180 | Active development |
 | Sketch studio and viewer (`occt-view --serve`) | — | Edits the same documents; adds no capability of its own |
 
 Tests: C 7/7, bridge 175, parametric core 57, kernel 791, view command 98,
@@ -48,6 +48,9 @@ Recently landed:
 - **Materials:** a sourced material catalog readable in expressions, with
   mass, service-temperature and beam-bending requirements
   ([docs](docs/MATERIALS.md)).
+- **Standard parts:** metric socket head cap screws, nuts, washers and
+  dowel pins placed from a frozen ISO catalog, with catalog dimensions in
+  expressions ([docs](docs/STANDARD_PARTS.md)).
 
 Next on [the roadmap](ROADMAP.md#next): drawing conventions and
 manufacturing sheets from the ASME Y14 family. The next

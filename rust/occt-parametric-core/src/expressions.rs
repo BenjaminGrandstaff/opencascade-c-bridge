@@ -191,6 +191,15 @@ pub fn evaluate_derived_expression(
         ScalarExpr::MaterialPropertyV1 { material, property } => {
             material_scalar(*material, *property)
         }
+        ScalarExpr::StandardPartDimensionV1 {
+            part,
+            nominal_diameter,
+            dimension,
+        } => standard_part_scalar(
+            *part,
+            evaluate_derived_expression(nominal_diameter, definitions, resolved, visiting)?,
+            *dimension,
+        ),
         ScalarExpr::Parameter(name) => {
             resolve_derived_parameter(name, definitions, resolved, visiting)
         }
@@ -789,6 +798,15 @@ pub fn evaluate_resolved_expression(
         ScalarExpr::MaterialPropertyV1 { material, property } => {
             material_scalar(*material, *property)
         }
+        ScalarExpr::StandardPartDimensionV1 {
+            part,
+            nominal_diameter,
+            dimension,
+        } => standard_part_scalar(
+            *part,
+            evaluate_resolved_expression(nominal_diameter, parameters)?,
+            *dimension,
+        ),
         ScalarExpr::Parameter(name) => parameters
             .get(name)
             .ok_or_else(|| ModelError::new(format!("unknown parameter '{name}'")))
@@ -1054,4 +1072,19 @@ fn material_scalar(
     property: crate::materials::MaterialProperty,
 ) -> Result<EvaluatedScalar, ModelError> {
     EvaluatedScalar::from_quantity(Quantity::scalar(material.property(property)?))
+}
+
+/// A catalog standard-part dimension as a length in millimeters.
+fn standard_part_scalar(
+    part: crate::standard_parts::StandardPartKind,
+    nominal: EvaluatedScalar,
+    dimension: crate::standard_parts::StandardPartDimension,
+) -> Result<EvaluatedScalar, ModelError> {
+    if nominal.dimension != Dimension::Length {
+        return Err(ModelError::new(
+            "a standard part's nominal diameter is a length",
+        ));
+    }
+    let value = part.dimension(nominal.value, dimension)?;
+    EvaluatedScalar::from_quantity(Quantity::length(value, LengthUnit::Millimeter))
 }

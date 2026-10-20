@@ -66,6 +66,20 @@ pub fn collect_operation_parameters<'a>(
             collect_scalar_parameters(radius, names);
             collect_scalar_parameters(height, names);
         }
+        FeatureOperation::StandardPart {
+            nominal_diameter,
+            length,
+            origin,
+            axis,
+            ..
+        } => {
+            collect_vector_parameters(origin, names);
+            collect_vector_parameters(axis, names);
+            collect_scalar_parameters(nominal_diameter, names);
+            if let Some(length) = length {
+                collect_scalar_parameters(length, names);
+            }
+        }
         FeatureOperation::Cone {
             origin,
             axis,
@@ -331,6 +345,10 @@ pub fn collect_scalar_parameters<'a>(expression: &'a ScalarExpr, names: &mut Has
         | ScalarExpr::ArcSine(value)
         | ScalarExpr::ArcCosine(value)
         | ScalarExpr::CarrLaneSocketHeadV1 {
+            nominal_diameter: value,
+            ..
+        }
+        | ScalarExpr::StandardPartDimensionV1 {
             nominal_diameter: value,
             ..
         }

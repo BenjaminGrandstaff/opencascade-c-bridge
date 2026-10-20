@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 179,
+    "schema_version": 180,
     "family": {
       "id": "periodic-spline-point-links",
       "version": 1,

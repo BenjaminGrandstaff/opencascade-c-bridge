@@ -1,0 +1,609 @@
+{
+  "schema": "occb-model-request-v1",
+  "model": {
+    "schema_version": 180,
+    "family": {
+      "id": "bolted-joint",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "bolt",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 6,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 3,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "plate",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 8,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 2,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 40,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "screw_length",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 30,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 6,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 200,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "every part is a valid solid",
+          "rule": {
+            "shape_valid": {
+              "output": "joint"
+            }
+          },
+          "provenance": "example; demonstration assumptions",
+          "traces": [
+            {
+              "feature": "joint"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "lower",
+          "operation": {
+            "box": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "size": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 40,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 40,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "parameter": "plate"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "upper",
+          "operation": {
+            "box": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "parameter": "plate"
+                  }
+                }
+              },
+              "size": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 40,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 40,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "parameter": "plate"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "clearance",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 20,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 20,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "literal": {
+                      "value": -1,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "divide": [
+                  {
+                    "iso273_clearance_v1": {
+                      "nominal_diameter": {
+                        "parameter": "bolt"
+                      },
+                      "series": "medium"
+                    }
+                  },
+                  {
+                    "literal": {
+                      "value": 2,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                ]
+              },
+              "height": {
+                "add": [
+                  {
+                    "multiply": [
+                      {
+                        "literal": {
+                          "value": 2,
+                          "dimension": "scalar",
+                          "unit": null
+                        }
+                      },
+                      {
+                        "parameter": "plate"
+                      }
+                    ]
+                  },
+                  {
+                    "literal": {
+                      "value": 2,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "lower_drilled",
+          "operation": {
+            "cut": {
+              "object": "lower",
+              "tool": "clearance"
+            }
+          }
+        },
+        {
+          "id": "upper_drilled",
+          "operation": {
+            "cut": {
+              "object": "upper",
+              "tool": "clearance"
+            }
+          }
+        },
+        {
+          "id": "washer_top",
+          "operation": {
+            "standard_part": {
+              "part": "plain_washer_iso_7089",
+              "nominal_diameter": {
+                "parameter": "bolt"
+              },
+              "origin": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 20,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 20,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "multiply": [
+                      {
+                        "literal": {
+                          "value": 2,
+                          "dimension": "scalar",
+                          "unit": null
+                        }
+                      },
+                      {
+                        "parameter": "plate"
+                      }
+                    ]
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "screw",
+          "operation": {
+            "standard_part": {
+              "part": "socket_head_cap_screw_iso_4762",
+              "nominal_diameter": {
+                "parameter": "bolt"
+              },
+              "origin": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 20,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 20,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "add": [
+                      {
+                        "multiply": [
+                          {
+                            "literal": {
+                              "value": 2,
+                              "dimension": "scalar",
+                              "unit": null
+                            }
+                          },
+                          {
+                            "parameter": "plate"
+                          }
+                        ]
+                      },
+                      {
+                        "standard_part_dimension_v1": {
+                          "part": "plain_washer_iso_7089",
+                          "nominal_diameter": {
+                            "parameter": "bolt"
+                          },
+                          "dimension": "height"
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": -1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "length": {
+                "parameter": "screw_length"
+              }
+            }
+          }
+        },
+        {
+          "id": "washer_bottom",
+          "operation": {
+            "standard_part": {
+              "part": "plain_washer_iso_7089",
+              "nominal_diameter": {
+                "parameter": "bolt"
+              },
+              "origin": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 20,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 20,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": -1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "nut",
+          "operation": {
+            "standard_part": {
+              "part": "hex_nut_iso_4032",
+              "nominal_diameter": {
+                "parameter": "bolt"
+              },
+              "origin": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 20,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 20,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "negate": {
+                      "standard_part_dimension_v1": {
+                        "part": "plain_washer_iso_7089",
+                        "nominal_diameter": {
+                          "parameter": "bolt"
+                        },
+                        "dimension": "height"
+                      }
+                    }
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": -1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "joint",
+          "operation": {
+            "compound": {
+              "inputs": [
+                "lower_drilled",
+                "upper_drilled",
+                "washer_top",
+                "washer_bottom",
+                "nut",
+                "screw"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "joint",
+          "overrides": {},
+          "provenance": "example; dimensions are demonstration assumptions"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "joint",
+      "output": "joint"
+    }
+  ],
+  "step": true,
+  "stl": false,
+  "preview": true
+}

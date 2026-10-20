@@ -320,6 +320,22 @@ pub enum FeatureOperation {
         radius: ScalarExpr,
         height: ScalarExpr,
     },
+    /// A catalog part from `occb_standard_parts_v1` (schema 180) at its
+    /// nominal dimensions: `nominal_diameter` picks the size (an M size, or a
+    /// dowel diameter), and screws and dowel pins need a positive `length`
+    /// (under the head for screws). `origin` is the seat: the underside of a
+    /// screw head, or the bearing face of a nut, washer or pin end; the part
+    /// extends along the dimensionless `axis`, with a screw head behind it.
+    /// Threads are not modeled: shanks and bores are plain at the nominal
+    /// diameter.
+    StandardPart {
+        part: crate::standard_parts::StandardPartKind,
+        nominal_diameter: ScalarExpr,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        length: Option<ScalarExpr>,
+        origin: VectorExpr,
+        axis: VectorExpr,
+    },
     /// Full cone/frustum. Radii are nonnegative (not both zero), height positive.
     /// Equal radii produce a cylinder; origin is the base center.
     Cone {
@@ -749,6 +765,7 @@ impl FeatureOperation {
             | Self::Box { .. }
             | Self::Helix { .. }
             | Self::Cylinder { .. }
+            | Self::StandardPart { .. }
             | Self::Cone { .. }
             | Self::Sphere { .. } => Vec::new(),
         }

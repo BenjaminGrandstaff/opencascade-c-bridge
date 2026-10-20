@@ -24,7 +24,7 @@ explicitly selected.
 ```json
 {
   "schema": "occb-model-request-v1",
-  "model": { "schema_version": 179, "...": "complete ModelDocument" },
+  "model": { "schema_version": 180, "...": "complete ModelDocument" },
   "outputs": [{ "instance": "bracket", "output": "body" }],
   "edits": [{
     "instance": "bracket",
@@ -91,6 +91,8 @@ Use the complete examples here for valid model structure: [bracket](bracket.requ
 limits are demonstration assumptions, not manufacturing qualification.
 [`printed-spar`](printed-spar.request.json) checks mass, heat-deflection
 margin and root bending against the [material catalog](../../docs/MATERIALS.md).
+[`bolted-joint`](bolted-joint.request.json) stacks plates, washers, a nut and
+an ISO 4762 screw from the [standard-part catalog](../../docs/STANDARD_PARTS.md).
 
 The final **stderr line** is a JSON object with schema `occb-model-report-v1`.
 Exit status is zero for a completed build and nonzero for failure. Native STEP
