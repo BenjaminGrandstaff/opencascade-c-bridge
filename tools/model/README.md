@@ -248,3 +248,6 @@ graph. That caller chooses the design and detail; this project executes typed
 geometry and returns verification evidence, views and editable models. See
 [the responsibility boundary and furniture example](../../docs/AI_DESIGN_SYSTEMS.md).
 This usage pattern adds no agent runtime or knowledge-graph format to the engine.
+
+[Five printable dungeon maps](../../docs/PRINTABLE_MAPS.md) provide a complete
+MCP replay example with STL/STEP exports, mesh checks and an interactive gallery.

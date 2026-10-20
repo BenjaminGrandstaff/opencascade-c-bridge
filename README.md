@@ -19,7 +19,7 @@ The current C ABI version is **84** and the document schema is **180**.
 | Sketch studio and viewer (`occt-view --serve`) | — | Edits the same documents; adds no capability of its own |
 
 Tests: C 7/7, bridge 175, parametric core 57, kernel 791, view command 98,
-model command 95, viewer Node 472 and MCP Python 22, all passing. The scale
+model command 95, viewer Node 472 and MCP Python 26, all passing. The scale
 benchmark suite (199 Rust cases plus model-command and matcher cases) runs
 within budget. Formatting and Clippy are clean across all crates. Full
 gate results and history live in [the roadmap](ROADMAP.md#current-status).
@@ -229,6 +229,8 @@ The domain knowledge graph and agent harness belong in the consuming system;
 this project supplies geometry, model state, native catalogs, constraints,
 measurements, diagnostics and visualization. See
 [the usage pattern and furniture example](docs/AI_DESIGN_SYSTEMS.md).
+[Five printable dungeon maps](docs/PRINTABLE_MAPS.md) demonstrate the same MCP
+workflow with distinct layouts, a comparison gallery, and STL/STEP exports.
 
 ### Start the AI tools
 
@@ -251,6 +253,7 @@ examples, available tools and missing executables. Counts come from the code.
 
 | Task | MCP tool | Complete example |
 | --- | --- | --- |
+| Build printable tabletop maps | `occt_build` | [Five dungeon maps](docs/PRINTABLE_MAPS.md) |
 | Build folded and flat sheet metal | `occt_build` | [Hemmed tray](tools/model/hemmed-tray.request.json) |
 | Build a shell with a tapped bore | `occt_build` | [Tapped shell](tools/model/tapped-shell.request.json) |
 | Export dimensioned SVG/DXF drawings | `occt_export_drawings` | [Drawing sheet](tools/model/drawing-sheet.request.json) |

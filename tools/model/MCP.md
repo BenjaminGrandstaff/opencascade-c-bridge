@@ -128,6 +128,16 @@ specialist-agent coordination belong in the calling system. See
 that usage pattern. The adapter does not replace a client's approval policy or
 prove unverified strength/manufacturability.
 
+## Printable dungeon map examples
+
+The examples `map-crossroads`, `map-catacombs`, `map-shrine`, `map-bridge`, and
+`map-cavern` build five distinct tabletop maps with existing engine operations.
+Each exports one connected solid as STL and STEP, plus native top/isometric
+renders and an editable model. The replay script retrieves and builds every
+example through stdio MCP, checks exported mesh edges, and makes a colored
+interactive gallery. See [the five maps and reproducible workflow](../../docs/PRINTABLE_MAPS.md)
+for construction plans, downloads, verification and printing limits.
+
 ## Validation and scale
 
 Wire tests use the actual server and model executable. They independently check

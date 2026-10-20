@@ -1,0 +1,3937 @@
+{
+  "schema": "occb-model-request-v1",
+  "model": {
+    "schema_version": 180,
+    "family": {
+      "id": "map-crossroads",
+      "version": 1,
+      "parameters": [],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "Map must be valid geometry",
+          "rule": {
+            "shape_valid": {
+              "output": "map"
+            }
+          },
+          "provenance": "Demonstration tabletop terrain; physical print and fit trials remain necessary.",
+          "traces": [
+            {
+              "feature": "map"
+            }
+          ]
+        },
+        {
+          "id": "one-solid",
+          "version": 1,
+          "kind": "topological",
+          "priority": "required",
+          "statement": "Map must be one connected solid with no sealed voids",
+          "rule": {
+            "connectivity": {
+              "output": "map",
+              "solids": 1,
+              "allow_voids": false
+            }
+          },
+          "provenance": "Demonstration tabletop terrain; physical print and fit trials remain necessary.",
+          "traces": [
+            {
+              "feature": "map"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "g0000",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 157.99999999999997,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 157.99999999999997,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "base",
+          "operation": {
+            "compound": {
+              "inputs": [
+                "g0000"
+              ]
+            }
+          }
+        },
+        {
+          "id": "g0002",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 3.15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 53.949999999999996,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 1.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0003",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 3.15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 79.34999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 1.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0004",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 28.55,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 53.949999999999996,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 1.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0005",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 28.55,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 79.34999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 1.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0006",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 53.949999999999996,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 3.15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 1.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0007",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 53.949999999999996,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 28.55,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 1.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0008",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 53.949999999999996,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 53.949999999999996,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 1.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0009",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 53.949999999999996,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 79.34999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 1.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0010",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 53.949999999999996,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 104.74999999999999,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 1.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0011",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 53.949999999999996,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 130.15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 1.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0012",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 79.34999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 3.15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 1.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0013",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 79.34999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 28.55,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 1.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0014",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 79.34999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 53.949999999999996,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 1.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0015",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 79.34999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 79.34999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 1.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0016",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 79.34999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 104.74999999999999,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 1.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0017",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 79.34999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 130.15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 1.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0018",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 104.74999999999999,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 53.949999999999996,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 1.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0019",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 104.74999999999999,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 79.34999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 1.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0020",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 130.15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 53.949999999999996,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 1.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0021",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 130.15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 79.34999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 24.7,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 1.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0022",
+          "operation": {
+            "fuse": {
+              "left": "g0002",
+              "right": "g0003"
+            }
+          }
+        },
+        {
+          "id": "g0023",
+          "operation": {
+            "fuse": {
+              "left": "g0022",
+              "right": "g0004"
+            }
+          }
+        },
+        {
+          "id": "g0024",
+          "operation": {
+            "fuse": {
+              "left": "g0023",
+              "right": "g0005"
+            }
+          }
+        },
+        {
+          "id": "g0025",
+          "operation": {
+            "fuse": {
+              "left": "g0024",
+              "right": "g0006"
+            }
+          }
+        },
+        {
+          "id": "g0026",
+          "operation": {
+            "fuse": {
+              "left": "g0025",
+              "right": "g0007"
+            }
+          }
+        },
+        {
+          "id": "g0027",
+          "operation": {
+            "fuse": {
+              "left": "g0026",
+              "right": "g0008"
+            }
+          }
+        },
+        {
+          "id": "g0028",
+          "operation": {
+            "fuse": {
+              "left": "g0027",
+              "right": "g0009"
+            }
+          }
+        },
+        {
+          "id": "g0029",
+          "operation": {
+            "fuse": {
+              "left": "g0028",
+              "right": "g0010"
+            }
+          }
+        },
+        {
+          "id": "g0030",
+          "operation": {
+            "fuse": {
+              "left": "g0029",
+              "right": "g0011"
+            }
+          }
+        },
+        {
+          "id": "g0031",
+          "operation": {
+            "fuse": {
+              "left": "g0030",
+              "right": "g0012"
+            }
+          }
+        },
+        {
+          "id": "g0032",
+          "operation": {
+            "fuse": {
+              "left": "g0031",
+              "right": "g0013"
+            }
+          }
+        },
+        {
+          "id": "g0033",
+          "operation": {
+            "fuse": {
+              "left": "g0032",
+              "right": "g0014"
+            }
+          }
+        },
+        {
+          "id": "g0034",
+          "operation": {
+            "fuse": {
+              "left": "g0033",
+              "right": "g0015"
+            }
+          }
+        },
+        {
+          "id": "g0035",
+          "operation": {
+            "fuse": {
+              "left": "g0034",
+              "right": "g0016"
+            }
+          }
+        },
+        {
+          "id": "g0036",
+          "operation": {
+            "fuse": {
+              "left": "g0035",
+              "right": "g0017"
+            }
+          }
+        },
+        {
+          "id": "g0037",
+          "operation": {
+            "fuse": {
+              "left": "g0036",
+              "right": "g0018"
+            }
+          }
+        },
+        {
+          "id": "g0038",
+          "operation": {
+            "fuse": {
+              "left": "g0037",
+              "right": "g0019"
+            }
+          }
+        },
+        {
+          "id": "g0039",
+          "operation": {
+            "fuse": {
+              "left": "g0038",
+              "right": "g0020"
+            }
+          }
+        },
+        {
+          "id": "g0040",
+          "operation": {
+            "fuse": {
+              "left": "g0039",
+              "right": "g0021"
+            }
+          }
+        },
+        {
+          "id": "floor",
+          "operation": {
+            "compound": {
+              "inputs": [
+                "g0040"
+              ]
+            }
+          }
+        },
+        {
+          "id": "g0042",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 2.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 50.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 25.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 2.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 13.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0043",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 2.75,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 53.15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 8.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 25.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 0.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0.55,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0044",
+          "operation": {
+            "cut": {
+              "object": "g0042",
+              "tool": "g0043"
+            }
+          }
+        },
+        {
+          "id": "g0045",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 2.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 104.39999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 25.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 2.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 13.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0046",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 2.75,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 104.34999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 8.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 25.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 0.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0.55,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0047",
+          "operation": {
+            "cut": {
+              "object": "g0045",
+              "tool": "g0046"
+            }
+          }
+        },
+        {
+          "id": "g0048",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 28.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 50.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 25.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 2.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 13.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0049",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 28.15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 53.15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 8.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 25.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 0.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0.55,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0050",
+          "operation": {
+            "cut": {
+              "object": "g0048",
+              "tool": "g0049"
+            }
+          }
+        },
+        {
+          "id": "g0051",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 28.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 104.39999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 25.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 2.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 13.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0052",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 28.15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 104.34999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 8.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 25.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 0.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0.55,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0053",
+          "operation": {
+            "cut": {
+              "object": "g0051",
+              "tool": "g0052"
+            }
+          }
+        },
+        {
+          "id": "g0054",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 50.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 2.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 2.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 25.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 13.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0055",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 53.15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 2.75,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 8.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 0.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 25.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0.55,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0056",
+          "operation": {
+            "cut": {
+              "object": "g0054",
+              "tool": "g0055"
+            }
+          }
+        },
+        {
+          "id": "g0057",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 50.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 28.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 2.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 25.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 13.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0058",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 53.15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 28.15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 8.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 0.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 25.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0.55,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0059",
+          "operation": {
+            "cut": {
+              "object": "g0057",
+              "tool": "g0058"
+            }
+          }
+        },
+        {
+          "id": "g0060",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 50.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 104.39999999999999,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 2.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 25.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 13.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0061",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 53.15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 104.35,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 8.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 0.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 25.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0.55,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0062",
+          "operation": {
+            "cut": {
+              "object": "g0060",
+              "tool": "g0061"
+            }
+          }
+        },
+        {
+          "id": "g0063",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 50.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 129.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 2.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 25.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 13.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0064",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 53.15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 129.75,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 8.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 0.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 25.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0.55,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0065",
+          "operation": {
+            "cut": {
+              "object": "g0063",
+              "tool": "g0064"
+            }
+          }
+        },
+        {
+          "id": "g0066",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 104.39999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 2.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 2.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 25.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 13.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0067",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 104.34999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 2.75,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 8.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 0.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 25.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0.55,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0068",
+          "operation": {
+            "cut": {
+              "object": "g0066",
+              "tool": "g0067"
+            }
+          }
+        },
+        {
+          "id": "g0069",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 104.39999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 28.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 2.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 25.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 13.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0070",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 104.34999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 28.15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 8.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 0.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 25.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0.55,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0071",
+          "operation": {
+            "cut": {
+              "object": "g0069",
+              "tool": "g0070"
+            }
+          }
+        },
+        {
+          "id": "g0072",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 104.39999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 104.39999999999999,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 2.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 25.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 13.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0073",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 104.34999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 104.35,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 8.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 0.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 25.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0.55,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0074",
+          "operation": {
+            "cut": {
+              "object": "g0072",
+              "tool": "g0073"
+            }
+          }
+        },
+        {
+          "id": "g0075",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 104.39999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 129.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 2.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 25.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 13.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0076",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 104.34999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 129.75,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 8.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 0.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 25.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0.55,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0077",
+          "operation": {
+            "cut": {
+              "object": "g0075",
+              "tool": "g0076"
+            }
+          }
+        },
+        {
+          "id": "g0078",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 104.39999999999999,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 50.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 25.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 2.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 13.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0079",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 104.35,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 53.15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 8.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 25.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 0.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0.55,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0080",
+          "operation": {
+            "cut": {
+              "object": "g0078",
+              "tool": "g0079"
+            }
+          }
+        },
+        {
+          "id": "g0081",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 104.39999999999999,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 104.39999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 25.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 2.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 13.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0082",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 104.35,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 104.34999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 8.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 25.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 0.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0.55,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0083",
+          "operation": {
+            "cut": {
+              "object": "g0081",
+              "tool": "g0082"
+            }
+          }
+        },
+        {
+          "id": "g0084",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 129.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 50.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 25.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 2.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 13.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0085",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 129.75,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 53.15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 8.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 25.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 0.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0.55,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0086",
+          "operation": {
+            "cut": {
+              "object": "g0084",
+              "tool": "g0085"
+            }
+          }
+        },
+        {
+          "id": "g0087",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 129.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 104.39999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 25.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 2.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 13.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0088",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 129.75,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 104.34999999999998,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 8.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 25.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 0.5,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0.55,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0089",
+          "operation": {
+            "cut": {
+              "object": "g0087",
+              "tool": "g0088"
+            }
+          }
+        },
+        {
+          "id": "g0090",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 28.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 53.6,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "literal": {
+                  "value": 1.2,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "height": {
+                "literal": {
+                  "value": 13.8,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0091",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 28.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 104.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "literal": {
+                  "value": 1.2,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "height": {
+                "literal": {
+                  "value": 13.8,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0092",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 53.6,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 28.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "literal": {
+                  "value": 1.2,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "height": {
+                "literal": {
+                  "value": 13.8,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0093",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 53.6,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 53.6,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "literal": {
+                  "value": 1.2,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "height": {
+                "literal": {
+                  "value": 13.8,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0094",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 53.6,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 104.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "literal": {
+                  "value": 1.2,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "height": {
+                "literal": {
+                  "value": 13.8,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0095",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 53.6,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 129.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "literal": {
+                  "value": 1.2,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "height": {
+                "literal": {
+                  "value": 13.8,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0096",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 104.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 28.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "literal": {
+                  "value": 1.2,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "height": {
+                "literal": {
+                  "value": 13.8,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0097",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 104.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 53.6,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "literal": {
+                  "value": 1.2,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "height": {
+                "literal": {
+                  "value": 13.8,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0098",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 104.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 104.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "literal": {
+                  "value": 1.2,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "height": {
+                "literal": {
+                  "value": 13.8,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0099",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 104.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 129.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "literal": {
+                  "value": 1.2,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "height": {
+                "literal": {
+                  "value": 13.8,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0100",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 129.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 53.6,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "literal": {
+                  "value": 1.2,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "height": {
+                "literal": {
+                  "value": 13.8,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0101",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 129.8,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 104.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 2.2,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "literal": {
+                  "value": 1.2,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "height": {
+                "literal": {
+                  "value": 13.8,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0102",
+          "operation": {
+            "fuse": {
+              "left": "g0044",
+              "right": "g0047"
+            }
+          }
+        },
+        {
+          "id": "g0103",
+          "operation": {
+            "fuse": {
+              "left": "g0102",
+              "right": "g0050"
+            }
+          }
+        },
+        {
+          "id": "g0104",
+          "operation": {
+            "fuse": {
+              "left": "g0103",
+              "right": "g0053"
+            }
+          }
+        },
+        {
+          "id": "g0105",
+          "operation": {
+            "fuse": {
+              "left": "g0104",
+              "right": "g0056"
+            }
+          }
+        },
+        {
+          "id": "g0106",
+          "operation": {
+            "fuse": {
+              "left": "g0105",
+              "right": "g0059"
+            }
+          }
+        },
+        {
+          "id": "g0107",
+          "operation": {
+            "fuse": {
+              "left": "g0106",
+              "right": "g0062"
+            }
+          }
+        },
+        {
+          "id": "g0108",
+          "operation": {
+            "fuse": {
+              "left": "g0107",
+              "right": "g0065"
+            }
+          }
+        },
+        {
+          "id": "g0109",
+          "operation": {
+            "fuse": {
+              "left": "g0108",
+              "right": "g0068"
+            }
+          }
+        },
+        {
+          "id": "g0110",
+          "operation": {
+            "fuse": {
+              "left": "g0109",
+              "right": "g0071"
+            }
+          }
+        },
+        {
+          "id": "g0111",
+          "operation": {
+            "fuse": {
+              "left": "g0110",
+              "right": "g0074"
+            }
+          }
+        },
+        {
+          "id": "g0112",
+          "operation": {
+            "fuse": {
+              "left": "g0111",
+              "right": "g0077"
+            }
+          }
+        },
+        {
+          "id": "g0113",
+          "operation": {
+            "fuse": {
+              "left": "g0112",
+              "right": "g0080"
+            }
+          }
+        },
+        {
+          "id": "g0114",
+          "operation": {
+            "fuse": {
+              "left": "g0113",
+              "right": "g0083"
+            }
+          }
+        },
+        {
+          "id": "g0115",
+          "operation": {
+            "fuse": {
+              "left": "g0114",
+              "right": "g0086"
+            }
+          }
+        },
+        {
+          "id": "g0116",
+          "operation": {
+            "fuse": {
+              "left": "g0115",
+              "right": "g0089"
+            }
+          }
+        },
+        {
+          "id": "g0117",
+          "operation": {
+            "fuse": {
+              "left": "g0116",
+              "right": "g0090"
+            }
+          }
+        },
+        {
+          "id": "g0118",
+          "operation": {
+            "fuse": {
+              "left": "g0117",
+              "right": "g0091"
+            }
+          }
+        },
+        {
+          "id": "g0119",
+          "operation": {
+            "fuse": {
+              "left": "g0118",
+              "right": "g0092"
+            }
+          }
+        },
+        {
+          "id": "g0120",
+          "operation": {
+            "fuse": {
+              "left": "g0119",
+              "right": "g0093"
+            }
+          }
+        },
+        {
+          "id": "g0121",
+          "operation": {
+            "fuse": {
+              "left": "g0120",
+              "right": "g0094"
+            }
+          }
+        },
+        {
+          "id": "g0122",
+          "operation": {
+            "fuse": {
+              "left": "g0121",
+              "right": "g0095"
+            }
+          }
+        },
+        {
+          "id": "g0123",
+          "operation": {
+            "fuse": {
+              "left": "g0122",
+              "right": "g0096"
+            }
+          }
+        },
+        {
+          "id": "g0124",
+          "operation": {
+            "fuse": {
+              "left": "g0123",
+              "right": "g0097"
+            }
+          }
+        },
+        {
+          "id": "g0125",
+          "operation": {
+            "fuse": {
+              "left": "g0124",
+              "right": "g0098"
+            }
+          }
+        },
+        {
+          "id": "g0126",
+          "operation": {
+            "fuse": {
+              "left": "g0125",
+              "right": "g0099"
+            }
+          }
+        },
+        {
+          "id": "g0127",
+          "operation": {
+            "fuse": {
+              "left": "g0126",
+              "right": "g0100"
+            }
+          }
+        },
+        {
+          "id": "g0128",
+          "operation": {
+            "fuse": {
+              "left": "g0127",
+              "right": "g0101"
+            }
+          }
+        },
+        {
+          "id": "walls",
+          "operation": {
+            "compound": {
+              "inputs": [
+                "g0128"
+              ]
+            }
+          }
+        },
+        {
+          "id": "g0130",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 78.99999999999999,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 78.99999999999999,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 3.4,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "literal": {
+                  "value": 8,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "height": {
+                "literal": {
+                  "value": 4,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0131",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 78.99999999999999,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 78.99999999999999,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 3.9,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "literal": {
+                  "value": 5.7,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "height": {
+                "literal": {
+                  "value": 5,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "g0132",
+          "operation": {
+            "cut": {
+              "object": "g0130",
+              "tool": "g0131"
+            }
+          }
+        },
+        {
+          "id": "well",
+          "operation": {
+            "compound": {
+              "inputs": [
+                "g0132"
+              ]
+            }
+          }
+        },
+        {
+          "id": "g0134",
+          "operation": {
+            "fuse": {
+              "left": "base",
+              "right": "floor"
+            }
+          }
+        },
+        {
+          "id": "g0135",
+          "operation": {
+            "fuse": {
+              "left": "g0134",
+              "right": "walls"
+            }
+          }
+        },
+        {
+          "id": "g0136",
+          "operation": {
+            "fuse": {
+              "left": "g0135",
+              "right": "well"
+            }
+          }
+        },
+        {
+          "id": "map",
+          "operation": {
+            "compound": {
+              "inputs": [
+                "g0136"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "map",
+          "overrides": {},
+          "provenance": "Crossroads Keep; one-inch grid; dimensions in millimeters."
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "map",
+      "output": "map"
+    }
+  ],
+  "step": true,
+  "stl": true,
+  "preview": false,
+  "renders": {
+    "views": [
+      "iso",
+      "top"
+    ],
+    "size_px": 512
+  }
+}

@@ -103,3 +103,12 @@ and [design command workflows](../tools/model/MCP.md#drawing-inspection-and-mech
 The engine verifies the requirements actually declared and supported by its
 checks; it does not automatically certify historical accuracy, visual quality,
 printability or structural suitability from a natural-language brief.
+
+## Example: five printable dungeon maps
+
+[Five printable maps through MCP](PRINTABLE_MAPS.md) extend this usage pattern
+with crossroads, catacombs, a circular shrine, a bridge and a lava cavern.
+The external caller supplies explicit construction recipes; existing MCP tools
+build and verify each map, export STL/STEP, and supply native geometry for a
+comparison gallery. The example documents reproduction and the limits of
+geometric checks before physical printing.

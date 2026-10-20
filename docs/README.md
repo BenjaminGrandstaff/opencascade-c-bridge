@@ -47,6 +47,7 @@ examples. Project-wide status lives in [the roadmap](../ROADMAP.md) and
 ## AI authoring and local tools
 
 - [Using the engine from an external AI design system](AI_DESIGN_SYSTEMS.md)
+- [Five printable dungeon maps through MCP](PRINTABLE_MAPS.md)
 - [Model build, edit and repair requests](../tools/model/README.md)
 - [MCP setup, generated schemas and live capability catalog](../tools/model/MCP.md#launch-and-connect)
 - [Drawing, inspection and mechanism workflows](../tools/model/MCP.md#drawing-inspection-and-mechanism-workflow)

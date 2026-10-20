@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 175 + first-use integration 1 (+1 doc test), recipes 3, parametric core 61 + kernel 797 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 100 + viewer Node 473 + branch command 2 + model command 102, MCP Python 25, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 175 + first-use integration 1 (+1 doc test), recipes 3, parametric core 61 + kernel 797 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 100 + viewer Node 473 + branch command 2 + model command 102, MCP Python 26, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
