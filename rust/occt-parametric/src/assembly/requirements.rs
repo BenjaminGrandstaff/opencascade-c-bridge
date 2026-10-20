@@ -9,6 +9,7 @@ pub(crate) trait InstanceGraphRequirementsInternal<'definition> {
         &self,
         session: &Session,
         generation: &GraphRegeneration<'_>,
+        reject: bool,
     ) -> Result<Vec<VerificationResult>, ModelError>;
 
     fn verify_assembly_requirement(
@@ -42,6 +43,7 @@ impl<'definition> InstanceGraphRequirementsInternal<'definition> for InstanceGra
         &self,
         session: &Session,
         generation: &GraphRegeneration<'_>,
+        reject: bool,
     ) -> Result<Vec<VerificationResult>, ModelError> {
         let mut verification = Vec::with_capacity(self.assembly.requirements.len());
         let mut required_failures = Vec::new();
@@ -61,7 +63,7 @@ impl<'definition> InstanceGraphRequirementsInternal<'definition> for InstanceGra
             }
             verification.push(result);
         }
-        if !required_failures.is_empty() {
+        if reject && !required_failures.is_empty() {
             return Err(ModelError::new(format!(
                 "required assembly verification failed: {}",
                 required_failures.join(", ")

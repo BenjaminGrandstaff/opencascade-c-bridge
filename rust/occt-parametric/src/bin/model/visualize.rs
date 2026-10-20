@@ -60,6 +60,7 @@ pub fn write(
         stage: error.stage,
         message: error.message,
         diagnostics: error.diagnostics,
+        details: Value::Null,
     })?;
     let scenes = data["scenes"].as_array().expect("collected scenes");
     let json = serde_json::to_string(&data).map_err(|e| failure("publication", e))?;

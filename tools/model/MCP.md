@@ -101,9 +101,10 @@ report order) and lists them in `inline_images`; every render stays readable
 as an `image/png` resource. See [rendered views and sections](README.md#rendered-views-and-sections).
 Build/verification failures return `isError: true` with the native structured
 failure report. Protocol errors use JSON-RPC errors. Native STEP progress stays
-inside the worker subprocess and cannot appear on MCP stdout. Required failures
-currently have the engine's error context/diagnostics rather than a complete
-rejected measurement table. See the [build contract](README.md).
+inside the worker subprocess and cannot appear on MCP stdout. Builds and edits
+rejected by required requirements return the complete verification table,
+measured values, witnesses and output measurements in the failure, with
+`accepted: false`. See the [build contract](README.md).
 
 ## AI workflow
 

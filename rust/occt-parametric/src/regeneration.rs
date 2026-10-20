@@ -208,7 +208,7 @@ impl PartInstanceRegeneration for PartInstance<'_> {
         &self,
         session: &'session Session,
     ) -> Result<GeneratedResult<'session>, ModelError> {
-        self.regenerate_internal(session, None)
+        self.regenerate_internal(session, None, true)
     }
 
     fn regenerate_incremental<'session>(
@@ -216,15 +216,17 @@ impl PartInstanceRegeneration for PartInstance<'_> {
         session: &'session Session,
         previous: &GeneratedResult<'session>,
     ) -> Result<GeneratedResult<'session>, ModelError> {
-        self.regenerate_internal(session, Some(previous))
+        self.regenerate_internal(session, Some(previous), true)
     }
 }
 
 pub(crate) trait PartInstanceRegenerationInternal {
+    /// `reject`: whether required requirement failures fail the generation.
     fn regenerate_internal<'session>(
         &self,
         session: &'session Session,
         previous: Option<&GeneratedResult<'session>>,
+        reject: bool,
     ) -> Result<GeneratedResult<'session>, ModelError>;
 }
 
@@ -233,6 +235,7 @@ impl PartInstanceRegenerationInternal for PartInstance<'_> {
         &self,
         session: &'session Session,
         previous: Option<&GeneratedResult<'session>>,
+        reject: bool,
     ) -> Result<GeneratedResult<'session>, ModelError> {
         validate_definition(self.definition)?;
         let parameters = resolve_parameters(self.definition, &self.overrides)?;
@@ -241,7 +244,7 @@ impl PartInstanceRegenerationInternal for PartInstance<'_> {
             cleanup(session, build.shapes);
             return Err(error);
         }
-        match verify_requirements(session, self.definition, &build.shapes) {
+        match verify_requirements(session, self.definition, &build.shapes, reject) {
             Ok(verification) => Ok(GeneratedResult {
                 shapes: build.shapes,
                 feature_signatures: build.feature_signatures,

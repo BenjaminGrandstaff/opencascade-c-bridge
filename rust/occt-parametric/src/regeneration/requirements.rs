@@ -2,11 +2,13 @@
 
 use super::*;
 
-/// Evaluates every requirement; required failures reject the generation.
+/// Evaluates every requirement; when `reject`, required failures reject the
+/// generation, and otherwise they stay in the results for the caller.
 pub(crate) fn verify_requirements(
     session: &Session,
     definition: &FamilyDefinition,
     shapes: &HashMap<String, Shape<'_>>,
+    reject: bool,
 ) -> Result<Vec<VerificationResult>, ModelError> {
     let mut verification = Vec::new();
     let mut required_failures = Vec::new();
@@ -21,7 +23,7 @@ pub(crate) fn verify_requirements(
         }
         verification.push(result);
     }
-    if !required_failures.is_empty() {
+    if reject && !required_failures.is_empty() {
         return Err(ModelError::new(format!(
             "required verification failed: {}",
             required_failures.join(", ")

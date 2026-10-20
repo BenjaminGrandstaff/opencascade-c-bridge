@@ -104,9 +104,25 @@ requirements has no verified engineering intent.
 
 Failures report `stage`, `message`, and structured kernel diagnostics when
 available, including feature/operand/selector IDs and native code/name.
-Required verification failures abort regeneration; their context is in the
-message. The current library discards those rejected results, so the command
-cannot provide their complete measured verification table.
+When required requirements fail, nothing is published and the failure (stage
+`regeneration`) carries the same verification table an accepted build reports,
+so a client can repair from the evidence:
+
+- `accepted: false` and `required_failures`, the `scope/requirement` labels
+  that rejected the build (the message names the first ten);
+- `verification`: every result with its status, measured value and limits,
+  exact or sampled evidence and witness points, failures first;
+- `verification_counts`: `total`, `passed`, `failed`, `required_failed` and
+  `omitted`;
+- `outputs`: validity, volume and exact bounds of each selected output, as
+  measured on the rejected geometry, and `outputs_omitted`;
+- `generated_variants`.
+
+Rows and outputs are capped at 500 each, so the report stays one bounded JSON
+line; 600 failing instances produced a report under 700 KB. Only required
+failures reject a build; preferred and advisory failures stay in an accepted
+build's table. Failed geometry or failed requirement evaluation still fail
+with their own message and kernel diagnostics.
 
 ## Edit and repair loop
 

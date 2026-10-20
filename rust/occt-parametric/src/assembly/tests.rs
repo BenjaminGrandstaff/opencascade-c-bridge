@@ -630,6 +630,23 @@ fn assembly_requirements_verify_mass_datum_clearance_and_relationships() {
     );
     assert!(error.message.contains("relationship"));
     assert_eq!(session.shape_count().unwrap(), 0);
+    // Reporting keeps the failed required row in the table instead.
+    let reported = graph.regenerate_all_reporting(&session).unwrap();
+    let statuses: Vec<_> = reported
+        .verification()
+        .iter()
+        .map(|r| (r.requirement_id.as_str(), r.status))
+        .collect();
+    assert_eq!(
+        statuses,
+        [
+            ("mass", VerificationStatus::Passed),
+            ("clearance", VerificationStatus::Failed),
+            ("relationship", VerificationStatus::Failed),
+        ]
+    );
+    drop(reported);
+    assert_eq!(session.shape_count().unwrap(), 0);
     assert!(graph.remove_relationship("seated").is_err());
     assert!(graph.assign_material("a", None).is_err());
 

@@ -65,6 +65,9 @@ struct Failure {
     stage: &'static str,
     message: String,
     diagnostics: Value,
+    /// Extra report fields, such as the verification table of a build that
+    /// failed its required requirements; `Null` when there are none.
+    details: Value,
 }
 impl std::fmt::Display for Failure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -77,6 +80,7 @@ fn failure(stage: &'static str, error: impl std::fmt::Display) -> Failure {
         stage,
         message: error.to_string(),
         diagnostics: json!([]),
+        details: Value::Null,
     }
 }
 fn model_failure(stage: &'static str, error: ModelError) -> Failure {
@@ -84,6 +88,7 @@ fn model_failure(stage: &'static str, error: ModelError) -> Failure {
         stage,
         message: error.message,
         diagnostics: report::diagnostics(&error.diagnostics),
+        details: Value::Null,
     }
 }
 fn main() -> ExitCode {
@@ -121,10 +126,11 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(error) => {
-            eprintln!(
-                "{}",
-                json!({"schema":"occb-model-report-v1","status":"failed","stage":error.stage,"message":error.message,"diagnostics":error.diagnostics})
-            );
+            let mut value = json!({"schema":"occb-model-report-v1","status":"failed","stage":error.stage,"message":error.message,"diagnostics":error.diagnostics});
+            if let Value::Object(details) = error.details {
+                value.as_object_mut().unwrap().extend(details);
+            }
+            eprintln!("{value}");
             ExitCode::FAILURE
         }
     }
@@ -217,8 +223,10 @@ fn build_internal(
             .map_err(|e| model_failure("edits", e))?;
     }
     let session = Session::new().map_err(|e| failure("kernel", e))?;
+    // Required failures are reported with the whole table below rather than
+    // stopping at the first failing instance.
     let generation = graph
-        .regenerate_all(&session)
+        .regenerate_all_reporting(&session)
         .map_err(|e| model_failure("regeneration", e))?;
     let mut outputs = Vec::new();
     for output in &request.outputs {
@@ -242,6 +250,16 @@ fn build_internal(
             "volume_mm3":session.volume(shape).map_err(|e| failure("inspection", e))?,
             "bounds_mm":{"min":[bounds.min.x,bounds.min.y,bounds.min.z],"max":[bounds.max.x,bounds.max.y,bounds.max.z]}}));
     }
+    let verification = report::verification(&generation);
+    let failed = report::required_failures(&document, &verification);
+    if !failed.is_empty() {
+        return Err(Failure {
+            stage: "regeneration",
+            message: report::failure_message(&failed),
+            diagnostics: json!([]),
+            details: report::rejected(&generation, verification, outputs, failed),
+        });
+    }
     // Preserve authoring metadata, drawings, and revision history while saving
     // edited overrides and refreshed driven patterns/instances from the graph.
     let refreshed = ModelDocument::from_graph(&graph);
@@ -254,7 +272,7 @@ fn build_internal(
         .map_err(|e| model_failure("validation", e))?;
     let mut value = json!({"schema":"occb-model-report-v1","status":"built",
         "model_schema":CURRENT_SCHEMA_VERSION,"generated_variants":generation.generated_variants(),
-        "outputs":outputs,"verification":report::verification(&generation),"artifacts":{"model":"model.json"},
+        "outputs":outputs,"verification":verification,"artifacts":{"model":"model.json"},
         "preview_quality":"sampled; visual review only"});
     // Exclusive creation prevents overwriting previous accepted builds. On any
     // write failure remove only the directory this invocation created.

@@ -100,6 +100,15 @@ pub trait InstanceGraphRegeneration<'definition> {
         session: &'session Session,
     ) -> Result<GraphRegeneration<'session>, ModelError>;
 
+    /// Like [`Self::regenerate_all`], but failed required requirements stay
+    /// in the verification results instead of failing the call, so a caller
+    /// can report the whole table. Callers must not accept such a generation;
+    /// geometry and requirement evaluation errors still fail.
+    fn regenerate_all_reporting<'session>(
+        &mut self,
+        session: &'session Session,
+    ) -> Result<GraphRegeneration<'session>, ModelError>;
+
     /// Regenerates the requested instances, running the feature graph once per
     /// distinct set of resolved parameters. Clones that differ only in
     /// placement or assembly frame duplicate the shared local result and are
@@ -117,25 +126,14 @@ impl<'definition> InstanceGraphRegeneration<'definition> for InstanceGraph<'defi
         &mut self,
         session: &'session Session,
     ) -> Result<GraphRegeneration<'session>, ModelError> {
-        self.refresh_driven_patterns(session)?;
-        let mut ids = self
-            .nodes
-            .keys()
-            .map(String::as_str)
-            .filter(|id| !self.is_suppressed(id))
-            .collect::<Vec<_>>();
-        ids.sort_unstable();
-        let mut generation = self.regenerate_instances_current(session, &ids)?;
-        match self.verify_assembly_requirements(session, &generation) {
-            Ok(verification) => {
-                generation.verification = verification;
-                Ok(generation)
-            }
-            Err(error) => {
-                release_results(session, generation.results.into_values());
-                Err(error)
-            }
-        }
+        regenerate_all_with(self, session, true)
+    }
+
+    fn regenerate_all_reporting<'session>(
+        &mut self,
+        session: &'session Session,
+    ) -> Result<GraphRegeneration<'session>, ModelError> {
+        regenerate_all_with(self, session, false)
     }
 
     fn regenerate_instances<'session>(
@@ -145,6 +143,33 @@ impl<'definition> InstanceGraphRegeneration<'definition> for InstanceGraph<'defi
     ) -> Result<GraphRegeneration<'session>, ModelError> {
         self.refresh_driven_patterns(session)?;
         self.regenerate_instances_current(session, ids)
+    }
+}
+
+/// [`InstanceGraphRegeneration::regenerate_all`] with a requirement policy.
+fn regenerate_all_with<'session>(
+    graph: &mut InstanceGraph<'_>,
+    session: &'session Session,
+    reject: bool,
+) -> Result<GraphRegeneration<'session>, ModelError> {
+    graph.refresh_driven_patterns(session)?;
+    let mut ids = graph
+        .nodes
+        .keys()
+        .map(String::as_str)
+        .filter(|id| !graph.is_suppressed(id))
+        .collect::<Vec<_>>();
+    ids.sort_unstable();
+    let mut generation = graph.regenerate_instances_with(session, &ids, reject)?;
+    match graph.verify_assembly_requirements(session, &generation, reject) {
+        Ok(verification) => {
+            generation.verification = verification;
+            Ok(generation)
+        }
+        Err(error) => {
+            release_results(session, generation.results.into_values());
+            Err(error)
+        }
     }
 }
 
@@ -161,7 +186,17 @@ pub(crate) trait InstanceGraphRegenerationInternal<'definition> {
         &self,
         session: &'session Session,
         members: &[(&str, ResolvedInstance<'definition>)],
+        reject: bool,
     ) -> Result<Vec<(String, GeneratedResult<'session>)>, ModelError>;
+
+    /// [`Self::regenerate_instances_current`] with the requirement policy
+    /// of [`PartInstanceRegenerationInternal::regenerate_internal`].
+    fn regenerate_instances_with<'session>(
+        &self,
+        session: &'session Session,
+        ids: &[&str],
+        reject: bool,
+    ) -> Result<GraphRegeneration<'session>, ModelError>;
 }
 
 impl<'definition> InstanceGraphRegenerationInternal<'definition> for InstanceGraph<'definition> {
@@ -169,6 +204,15 @@ impl<'definition> InstanceGraphRegenerationInternal<'definition> for InstanceGra
         &self,
         session: &'session Session,
         ids: &[&str],
+    ) -> Result<GraphRegeneration<'session>, ModelError> {
+        self.regenerate_instances_with(session, ids, true)
+    }
+
+    fn regenerate_instances_with<'session>(
+        &self,
+        session: &'session Session,
+        ids: &[&str],
+        reject: bool,
     ) -> Result<GraphRegeneration<'session>, ModelError> {
         let groups = self.group_by_parameters(ids)?;
         let mut output = GraphRegeneration {
@@ -179,7 +223,7 @@ impl<'definition> InstanceGraphRegenerationInternal<'definition> for InstanceGra
         };
         for members in groups {
             let representative = members[0].0.to_owned();
-            match self.regenerate_group(session, &members) {
+            match self.regenerate_group(session, &members, reject) {
                 Ok(results) => {
                     for (id, result) in results {
                         output
@@ -201,11 +245,12 @@ impl<'definition> InstanceGraphRegenerationInternal<'definition> for InstanceGra
         &self,
         session: &'session Session,
         members: &[(&str, ResolvedInstance<'definition>)],
+        reject: bool,
     ) -> Result<Vec<(String, GeneratedResult<'session>)>, ModelError> {
         let (representative, first) = &members[0];
         let local = first
             .instance
-            .regenerate(session)
+            .regenerate_internal(session, None, reject)
             .map_err(|error| instance_error(representative, error))?;
         let mut unplaced = Vec::with_capacity(members.len());
         for (id, _) in &members[1..] {

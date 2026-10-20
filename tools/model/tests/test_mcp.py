@@ -229,6 +229,15 @@ class McpTests(unittest.TestCase):
         self.assertTrue(rejected['isError'])
         self.assertEqual(rejected['structuredContent']['stage'], 'regeneration')
         self.assertIn('wall', rejected['structuredContent']['message'])
+        # The rejection carries the whole verification table and measurements.
+        failure = rejected['structuredContent']
+        self.assertFalse(failure['accepted'])
+        self.assertEqual(failure['required_failures'], ['bracket/wall'])
+        wall = failure['verification'][0]
+        self.assertEqual((wall['requirement'], wall['status']), ('wall', 'failed'))
+        self.assertAlmostEqual(wall['measured']['value'], 1, places=6)
+        self.assertEqual(failure['verification_counts']['total'], len(failure['verification']))
+        self.assertTrue(failure['outputs'][0]['valid'])
         self.assertEqual(len(list((self.root / 'builds').iterdir())), 2)
         request['edits'][0]['value']['scalar']['value'] = 5
         repaired = self.client.tool('occt_build', request)
@@ -331,6 +340,7 @@ class McpTests(unittest.TestCase):
         self.assertTrue(failed['isError'])
         self.assertEqual(failed['structuredContent']['stage'], 'regeneration')
         self.assertIn('volume.limit', failed['structuredContent']['message'])
+        self.assertIn('volume.limit', [row['requirement'] for row in failed['structuredContent']['verification'] if row['status'] == 'failed'])
         self.assertEqual(len(list((self.root / 'builds').iterdir())), 2)
 
     def test_annotated_viewer_sketch_conflicts_and_diagnostic_build_separation(self):

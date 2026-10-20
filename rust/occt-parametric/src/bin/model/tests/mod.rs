@@ -7,6 +7,7 @@ use std::{
 
 mod build;
 mod edge_treatment_views;
+mod failure_reports;
 mod helix_views;
 mod inspection;
 mod patching;

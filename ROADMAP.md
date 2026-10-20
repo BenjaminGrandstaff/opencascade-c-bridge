@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 175 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 791 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 98 + viewer Node 472 + branch command 2 + model command 100, MCP Python 24, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 175 + first-use integration 1 (+1 doc test), recipes 3, parametric core 57 + kernel 791 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 98 + viewer Node 472 + branch command 2 + model command 102, MCP Python 24, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,16 @@ tracks status and order.
 | Scale benchmarks | Last full suite: 194 Rust cases (199 with the parallel glTF, 1,000-part view, advanced sweep, tray and bend-cutout cases) plus 7 model-command cases (including 256 renders in one build) and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
 
 ## Done
+
+- Complete failure reports for rejected builds (no schema or ABI change).
+  `regenerate_all_reporting` regenerates every instance and keeps failed
+  required requirements in the results instead of stopping at the first. A
+  build or edit it rejects still publishes nothing, but its failure now
+  carries `required_failures`, the full verification table (measured values,
+  limits, evidence, witnesses; failures first), counts, and each output's
+  validity, volume and bounds. Stage names stay unchanged for existing
+  clients. Rows and outputs are capped at 500 each; 600 failing instances
+  reported in under 700 KB. See [build contract](tools/model/README.md#request-and-report-contract).
 
 - Rendered views and sections for AI review (no schema or ABI change).
   Build, edit and edit-preview requests take an optional `renders` field
@@ -3446,9 +3456,11 @@ ordered by priority; the catalog/documentation foundation is complete.
    outputs. Remaining refinements: bend lines on flat-pattern images, several
    outputs in one scene for checking interference, and dimension labels in
    the images.
-4. **Complete failure reports** — required failures return the engine's error
-   context rather than the full rejected measurement table, which leaves less
-   evidence for repair. Return the same verification table as accepted builds.
+4. **Complete failure reports — complete.** Builds and edits rejected by
+   required requirements return the whole verification table with measured
+   values, evidence and witnesses, plus output measurements, bounded at 500
+   rows. Renders of rejected geometry are not written; use
+   `occt_visualize_model` to see failed witnesses on the geometry.
 5. **Shared sessions with the studio** — studio and MCP edits are separate,
    with no shared live session or revision locking, so a person and an AI
    cannot edit one model at once. Add a session both can join, with guarded
