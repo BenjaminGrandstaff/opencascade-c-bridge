@@ -19,6 +19,7 @@ namespace {
 using namespace occt_bridge_internal;
 int failures = 0;
 size_t comparisons = 0;
+size_t exports = 0;
 size_t validation_checks = 0;
 
 void check(bool condition, const char* test, const char* detail) {
@@ -126,10 +127,11 @@ struct Fixture {
             losses.sizes.data(), views.data(), 2, losses.views.data(), &dataset};
     }
 
-    void write(const char* path) {
+    void write(const char* path, const char* test = "export baseline") {
+        ++exports;
         require(occt_bridge_step_save_assembly_pmi(session.get(), path, "fixture", nullptr, 0,
             components.data(), nullptr, components.size(), nullptr, 0, &pmi, nullptr));
-        losses.compare(Losses{}, "export baseline");
+        losses.compare(Losses{}, test);
     }
 
     void verify(const char* path, const char* test, const Losses& expected) {
@@ -145,6 +147,65 @@ void verify_case(const char* path, const char* name, Change change, const Losses
     ++comparisons;
     change(fixture);
     fixture.verify(path, name, expected);
+}
+
+void omit_sizes(Fixture& f) {
+    f.pmi.size_count = 0;
+    for (auto& view : f.views) view.size_count = 0;
+}
+
+void omit_annotations(Fixture& f) {
+    omit_sizes(f);
+    f.pmi.datum_count = f.pmi.tolerance_count = 0;
+    for (auto& view : f.views) view.datum_count = view.tolerance_count = 0;
+}
+
+template <typename Change>
+void export_case(const char* path, const char* name, Change change) {
+    Fixture f;
+    change(f);
+    const std::string output = std::string(path) + "." + name;
+    f.write(output.c_str(), name);
+    (void)std::remove(output.c_str());
+}
+
+void writer_cases(const char* path) {
+    export_case(path, "no-size-dimensions", [](Fixture& f) { omit_sizes(f); });
+    export_case(path, "no-saved-views", [](Fixture& f) { f.pmi.view_count = 0; });
+    export_case(path, "dataset-only", [](Fixture& f) {
+        omit_annotations(f);
+        f.pmi.view_count = 0;
+    });
+    export_case(path, "camera-only", [](Fixture& f) {
+        omit_annotations(f);
+        f.pmi.dataset = nullptr;
+        for (auto& view : f.views) view.part_count = 0;
+    });
+    const auto diameter_zone = [](Fixture& f) {
+        omit_sizes(f);
+        f.tolerances[0].characteristic = OCCT_BRIDGE_GDT_POSITION;
+        f.tolerances[0].target.component = 1;
+        f.tolerances[0].diameter = 1;
+    };
+    export_case(path, "diameter-zone", diameter_zone);
+    export_case(path, "projected-zone", [&](Fixture& f) {
+        diameter_zone(f);
+        f.tolerances[0].projected_mm = 12;
+    });
+    export_case(path, "shared-part-representations", [](Fixture& f) {
+        f.components[1].shape = f.components[0].shape;
+        f.shapes[1] = f.shapes[0];
+    });
+    export_case(path, "compound-part-representation", [](Fixture& f) {
+        omit_annotations(f);
+        const std::array<occt_bridge_shape_id_t, 2> children{f.components[0].shape, f.components[1].shape};
+        occt_bridge_shape_id_t compound = 0;
+        require(occt_bridge_create_compound(f.session.get(), children.data(), children.size(), &compound));
+        f.components[0].shape = compound;
+        f.shapes[0] = &f.session->shapes.at(compound);
+        f.views[1].parts = f.plate_only.data();
+        f.views[1].part_count = 1;
+    });
 }
 
 void annotation_cases(const char* path) {
@@ -399,6 +460,7 @@ int run(const char* path) {
     const int documents = application->NbDocuments();
     Fixture baseline;
     baseline.write(path);
+    writer_cases(path);
     annotation_cases(path);
     presentation_cases(path);
     view_cases(path);
@@ -416,7 +478,8 @@ int run(const char* path) {
     check(!verify_pmi(missing.c_str(), unreadable.pmi, unreadable.shapes), "missing file", "read failure");
     unreadable.losses.compare(unchanged, "missing file leaves outputs untouched");
     check(application->NbDocuments() == documents, "read-back lifecycle", "no leaked XCAF documents");
-    (void)std::printf("%zu read-back comparisons, %zu validation checks; %d failures\n", comparisons, validation_checks, failures);
+    (void)std::printf("%zu exports, %zu read-back comparisons, %zu validation checks; %d failures\n",
+                       exports, comparisons, validation_checks, failures);
     (void)std::remove(path);
     return failures == 0 ? 0 : 1;
 }

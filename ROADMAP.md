@@ -19,12 +19,29 @@ tracks status and order.
 |---|---|---|
 | Tests | C 8/8, bridge 177 + first-use integration 1 (+1 doc test), recipes 3, parametric core 66 + kernel 804 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 101 + viewer Node 475 + branch command 2 + model command 105, MCP Python 29, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
-| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 37 clang-tidy warnings (36 complexity warnings and one public ABI padding warning) plus 83 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
+| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 36 clang-tidy warnings (35 complexity warnings and one public ABI padding warning) plus 83 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all five crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 2026-10-21: 92.80% lines overall; C++ 94.50% lines, 82.52% branches, 99.87% functions; Rust 92.37% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
+| Coverage | 2026-10-21: 92.80% lines overall; C++ 94.50% lines, 82.68% branches, 99.88% functions; Rust 92.37% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
 | Scale benchmarks | Current run: all 137 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
 
 ## Done
+
+- STEP writer finalization refactor (schema 182 and ABI 85 unchanged): entity
+  collection, presentation context and unit repair, projected-zone replacement,
+  lazy part representation lookup and saved-view assembly are separate stages.
+  Finalization complexity falls from 92 to 2; every new helper is at most 12
+  against the unchanged limit of 25. The regression now writes nine export
+  variants, covering absent size dimensions, absent views, dataset-only and
+  camera-only exports, diameter and projected zones, shared parts and compound
+  parts, alongside 38 read-back comparisons and 26 validation checks. All cases
+  pass against the previous implementation; all nine normalized AP242 files
+  match (240,849 characters total), as do all 140 public C exports. Entity order,
+  compound traversal order, representation deduplication and numeric tolerances
+  retain their previous behavior. All eight native tests and the full
+  instrumented C++/Rust suite pass with unchanged timing limits. Every STEP PMI
+  function now meets the complexity limit. Full analysis adds no findings and
+  removes the final STEP PMI complexity warning; the remaining project totals
+  are 36 clang-tidy warnings and 83 cppcheck findings.
 
 - STEP datum/presentation reader refactor (schema 182 and ABI 85 unchanged):
   datum relationship collection, cycle-safe face traversal, tessellated curve
@@ -40,8 +57,7 @@ tracks status and order.
   tests and the full instrumented C++/Rust suite pass with unchanged timing
   limits. Full analysis removes three complexity warnings and two shadowing
   findings without adding any new findings; remaining totals are 37 clang-tidy
-  warnings and 83 cppcheck findings. Writer finalization remains the next STEP
-  complexity cleanup.
+  warnings and 83 cppcheck findings.
 
 - STEP tolerance/view validation and dataset verification refactor (schema 182
   and ABI 85 unchanged): scalar tolerance checks and datum-reference checks are

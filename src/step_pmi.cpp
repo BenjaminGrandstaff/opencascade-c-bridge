@@ -1816,6 +1816,239 @@ void verify_views(const occt_bridge_step_pmi_t& pmi, const Handle(TDocStd_Docume
 }
 
 
+struct WrittenPmi {
+    Handle(StepRepr_RepresentationContext) context;
+    std::vector<Handle(StepVisual_DraughtingModel)> drawings;
+    std::vector<Handle(StepDimTol_GeometricTolerance)> tolerances;
+    std::vector<Handle(StepDimTol_RunoutZoneDefinition)> runouts;
+    std::map<std::string, Handle(StepVisual_DraughtingCallout)> callouts;
+};
+
+WrittenPmi written_pmi(const Handle(Interface_InterfaceModel)& model) {
+    WrittenPmi entities;
+    for (int index = 1; index <= model->NbEntities(); ++index) {
+        const Handle(Standard_Transient)& entity = model->Value(index);
+        if (const auto shape = Handle(StepShape_ShapeRepresentation)::DownCast(entity);
+            !shape.IsNull() && entities.context.IsNull()) {
+            entities.context = shape->ContextOfItems();
+        } else if (const auto drawing = Handle(StepVisual_DraughtingModel)::DownCast(entity); !drawing.IsNull()) {
+            entities.drawings.push_back(drawing);
+        } else if (const auto tolerance = Handle(StepDimTol_GeometricTolerance)::DownCast(entity);
+                   !tolerance.IsNull()) {
+            entities.tolerances.push_back(tolerance);
+        } else if (const auto callout = Handle(StepVisual_DraughtingCallout)::DownCast(entity); !callout.IsNull()) {
+            entities.callouts.emplace(name_of(callout->Name()), callout);
+        } else if (const auto runout = Handle(StepDimTol_RunoutZoneDefinition)::DownCast(entity); !runout.IsNull()) {
+            entities.runouts.push_back(runout);
+        }
+    }
+    return entities;
+}
+
+StepBasic_Unit repair_pmi_units(const WrittenPmi& entities, const Handle(StepBasic_NamedUnit)& unit) {
+    // OCCT 7.9 takes the presentation context and tolerance unit from its first
+    // size dimension. Without one, the context is missing and values are metres.
+    for (const auto& drawing : entities.drawings) {
+        if (drawing->ContextOfItems().IsNull()) {
+            drawing->SetContextOfItems(entities.context);
+        }
+    }
+    StepBasic_Unit length;
+    if (!unit.IsNull()) {
+        length.SetValue(unit);
+        for (const auto& tolerance : entities.tolerances) {
+            if (!tolerance->Magnitude().IsNull()) {
+                tolerance->Magnitude()->SetUnitComponent(length);
+            }
+        }
+    }
+    return length;
+}
+
+Handle(StepDimTol_ProjectedZoneDefinition) projected_zone(
+    const Handle(StepDimTol_RunoutZoneDefinition)& runout,
+    const StepBasic_Unit& length,
+    std::set<const Standard_Transient*>& removed) {
+    removed.insert(runout.get());
+    const Handle(StepDimTol_RunoutZoneOrientation) orientation = runout->Orientation();
+    if (orientation.IsNull() || orientation->Angle().IsNull()) {
+        return nullptr;
+    }
+    removed.insert(orientation.get());
+    removed.insert(orientation->Angle().get());
+    const double height = orientation->Angle()->ValueComponent();
+    const Handle(StepDimTol_ToleranceZone) zone = runout->Zone();
+    if (!(height > 0.0) || zone.IsNull() || zone->NbDefiningTolerances() == 0) {
+        return nullptr;
+    }
+    const auto tolerance = zone->DefiningToleranceValue(1).GeometricTolerance();
+    Handle(StepRepr_ShapeAspect) feature =
+        tolerance.IsNull() ? Handle(StepRepr_ShapeAspect)() : tolerance->TolerancedShapeAspect().ShapeAspect();
+    if (feature.IsNull()) {
+        feature = zone;
+    }
+    Handle(StepRepr_HArray1OfShapeAspect) boundaries = new StepRepr_HArray1OfShapeAspect(1, 1);
+    boundaries->SetValue(1, feature);
+    Handle(StepBasic_MeasureValueMember) value = new StepBasic_MeasureValueMember;
+    value->SetName("LENGTH_MEASURE");
+    value->SetReal(height);
+    Handle(StepBasic_LengthMeasureWithUnit) measure = new StepBasic_LengthMeasureWithUnit;
+    measure->Init(value, length);
+    Handle(StepDimTol_ProjectedZoneDefinition) definition = new StepDimTol_ProjectedZoneDefinition;
+    definition->Init(zone, boundaries, feature, measure);
+    return definition;
+}
+
+void remove_entities(const Handle(Interface_InterfaceModel)& model, const std::set<const Standard_Transient*>& removed) {
+    std::vector<Handle(Standard_Transient)> kept;
+    kept.reserve(static_cast<size_t>(model->NbEntities()));
+    for (int index = 1; index <= model->NbEntities(); ++index) {
+        if (removed.count(model->Value(index).get()) == 0) {
+            kept.push_back(model->Value(index));
+        }
+    }
+    model->ClearEntities();
+    for (const auto& entity : kept) {
+        model->AddEntity(entity);
+    }
+}
+
+void repair_pmi_zones(STEPCAFControl_Writer& writer, const WrittenPmi& entities, const StepBasic_Unit& length) {
+    if (entities.runouts.empty() || length.Value().IsNull()) {
+        return;
+    }
+    // OCCT 7.9 uses runout definitions for diameter zones, with the zone
+    // modifier as angle. Positive projected heights become length measures;
+    // all of these placeholder runout definitions must be removed.
+    std::set<const Standard_Transient*> removed;
+    std::vector<Handle(StepDimTol_ProjectedZoneDefinition)> projected;
+    for (const auto& runout : entities.runouts) {
+        const auto definition = projected_zone(runout, length, removed);
+        if (!definition.IsNull()) {
+            projected.push_back(definition);
+        }
+    }
+    const Handle(Interface_InterfaceModel) model = writer.Writer().WS()->Model();
+    remove_entities(model, removed);
+    // OCCT's reference walk skips a projected zone's length, so add it separately.
+    for (const auto& definition : projected) {
+        model->AddWithRefs(definition->ProjectionLength());
+        model->AddWithRefs(definition);
+    }
+    writer.Writer().WS()->ComputeGraph(Standard_True);
+}
+
+// Lazily index transferred representation items once views request parts.
+class PartRepresentations {
+public:
+    explicit PartRepresentations(STEPCAFControl_Writer& writer)
+        : model_(writer.Writer().WS()->Model()),
+          finder_(writer.Writer().WS()->TransferWriter()->FinderProcess()) {}
+
+    Handle(StepShape_ShapeRepresentation) find(const TopoDS_Shape& part) {
+        if (representation_of_.empty()) {
+            index_items();
+        }
+        // Compounds are written as children's items; the first transferred
+        // child names the representation, in the original stack traversal order.
+        std::vector<TopoDS_Shape> pending{part.Located(TopLoc_Location())};
+        while (!pending.empty()) {
+            const TopoDS_Shape shape = pending.back();
+            pending.pop_back();
+            const Handle(StepRepr_RepresentationItem) item = STEPConstruct::FindEntity(finder_, shape);
+            if (!item.IsNull()) {
+                const auto found = representation_of_.find(item.get());
+                return found == representation_of_.end() ? nullptr : found->second;
+            }
+            if (shape.ShapeType() == TopAbs_COMPOUND) {
+                for (TopoDS_Iterator child(shape); child.More(); child.Next()) {
+                    pending.push_back(child.Value());
+                }
+            }
+        }
+        return nullptr;
+    }
+
+private:
+    void index_items() {
+        for (int index = 1; index <= model_->NbEntities(); ++index) {
+            const auto shape = Handle(StepShape_ShapeRepresentation)::DownCast(model_->Value(index));
+            if (shape.IsNull() || shape->Items().IsNull()) {
+                continue;
+            }
+            for (int item = 1; item <= shape->NbItems(); ++item) {
+                representation_of_.emplace(shape->ItemsValue(item).get(), shape);
+            }
+        }
+    }
+
+    Handle(Interface_InterfaceModel) model_;
+    Handle(Transfer_FinderProcess) finder_;
+    std::map<const Standard_Transient*, Handle(StepShape_ShapeRepresentation)> representation_of_;
+};
+
+using ViewItems = std::vector<Handle(StepRepr_RepresentationItem)>;
+
+void append_view_parts(const occt_bridge_step_view_t& view, const std::vector<const TopoDS_Shape*>& shapes,
+                       PartRepresentations& representations, ViewItems& items) {
+    std::set<const Standard_Transient*> mapped;
+    for (size_t entry = 0; entry < view.part_count; ++entry) {
+        const Handle(StepShape_ShapeRepresentation) shape = representations.find(*shapes[view.parts[entry]]);
+        if (shape.IsNull() || !mapped.insert(shape.get()).second) {
+            continue;
+        }
+        Handle(StepGeom_Axis2Placement3d) origin = new StepGeom_Axis2Placement3d;
+        origin->Init(text(""), step_point(gp_XYZ(0.0, 0.0, 0.0)), Standard_False, nullptr, Standard_False, nullptr);
+        Handle(StepRepr_RepresentationMap) map = new StepRepr_RepresentationMap;
+        map->Init(origin, shape);
+        Handle(StepRepr_MappedItem) item = new StepRepr_MappedItem;
+        item->Init(text(""), map, origin);
+        items.push_back(item);
+    }
+}
+
+void append_view_callouts(const occt_bridge_step_view_t& view, const occt_bridge_step_pmi_t& pmi,
+                          const WrittenPmi& entities, ViewItems& items) {
+    const auto show = [&](const occt_bridge_step_presentation_t* presentation) {
+        if (const auto found = entities.callouts.find(presentation->name); found != entities.callouts.end()) {
+            items.push_back(found->second);
+        }
+    };
+    for (size_t entry = 0; entry < view.datum_count; ++entry) {
+        show(pmi.datums[view.datums[entry]].presentation);
+    }
+    for (size_t entry = 0; entry < view.tolerance_count; ++entry) {
+        show(pmi.tolerances[view.tolerances[entry]].presentation);
+    }
+    for (size_t entry = 0; entry < view.size_count; ++entry) {
+        show(pmi.sizes[view.sizes[entry]].presentation);
+    }
+}
+
+void write_pmi_views(STEPCAFControl_Writer& writer, const occt_bridge_step_pmi_t& pmi,
+                     const std::vector<const TopoDS_Shape*>& shapes, const WrittenPmi& entities) {
+    if (pmi.view_count == 0) {
+        return;
+    }
+    const Handle(Interface_InterfaceModel) model = writer.Writer().WS()->Model();
+    const Bnd_Box bounds = view_bounds(pmi, shapes);
+    PartRepresentations representations(writer);
+    for (size_t index = 0; index < pmi.view_count; ++index) {
+        const occt_bridge_step_view_t& view = pmi.views[index];
+        ViewItems items{camera(view, bounds)};
+        append_view_parts(view, shapes, representations, items);
+        append_view_callouts(view, pmi, entities, items);
+        Handle(StepRepr_HArray1OfRepresentationItem) array =
+            new StepRepr_HArray1OfRepresentationItem(1, static_cast<int>(items.size()));
+        for (size_t item = 0; item < items.size(); ++item) {
+            array->SetValue(static_cast<int>(item) + 1, items[item]);
+        }
+        Handle(StepVisual_DraughtingModel) drawing = new StepVisual_DraughtingModel;
+        drawing->Init(text(view.name), array, entities.context);
+        model->AddWithRefs(drawing);
+    }
+}
+
 }  // namespace
 
 const char* pmi_error(const occt_bridge_step_pmi_t& pmi, const std::vector<const TopoDS_Shape*>& shapes) {
@@ -1914,190 +2147,16 @@ void finish_pmi(
     const occt_bridge_step_pmi_t& pmi,
     const std::vector<const TopoDS_Shape*>& shapes) {
     const Handle(Interface_InterfaceModel) model = writer.Writer().WS()->Model();
-    Handle(StepRepr_RepresentationContext) context;
-    std::vector<Handle(StepVisual_DraughtingModel)> drawings;
-    std::vector<Handle(StepDimTol_GeometricTolerance)> tolerances;
-    std::vector<Handle(StepDimTol_RunoutZoneDefinition)> runouts;
-    std::map<std::string, Handle(StepVisual_DraughtingCallout)> callouts;
-    for (int index = 1; index <= model->NbEntities(); ++index) {
-        const Handle(Standard_Transient)& entity = model->Value(index);
-        if (const auto shape = Handle(StepShape_ShapeRepresentation)::DownCast(entity);
-            !shape.IsNull() && context.IsNull()) {
-            context = shape->ContextOfItems();
-        } else if (const auto drawing = Handle(StepVisual_DraughtingModel)::DownCast(entity); !drawing.IsNull()) {
-            drawings.push_back(drawing);
-        } else if (const auto tolerance = Handle(StepDimTol_GeometricTolerance)::DownCast(entity);
-                   !tolerance.IsNull()) {
-            tolerances.push_back(tolerance);
-        } else if (const auto callout = Handle(StepVisual_DraughtingCallout)::DownCast(entity); !callout.IsNull()) {
-            callouts.emplace(name_of(callout->Name()), callout);
-        } else if (const auto runout = Handle(StepDimTol_RunoutZoneDefinition)::DownCast(entity); !runout.IsNull()) {
-            runouts.push_back(runout);
-        }
-    }
-    if (context.IsNull()) {
+    const WrittenPmi entities = written_pmi(model);
+    if (entities.context.IsNull()) {
         return;
     }
-    const Handle(StepBasic_NamedUnit) unit = length_unit(context);
-    // OCCT 7.9 takes the presentation model's context and the tolerance
-    // values' unit from the first size dimension it writes: without one the
-    // context is missing, which fails the write, and values are in metres.
-    for (const auto& drawing : drawings) {
-        if (drawing->ContextOfItems().IsNull()) {
-            drawing->SetContextOfItems(context);
-        }
-    }
-    StepBasic_Unit length;
-    if (!unit.IsNull()) {
-        length.SetValue(unit);
-        for (const auto& tolerance : tolerances) {
-            if (!tolerance->Magnitude().IsNull()) {
-                tolerance->Magnitude()->SetUnitComponent(length);
-            }
-        }
-    }
-    // OCCT 7.9 writes every diameter zone with a runout zone definition whose
-    // angle is the zone modifier's value, and never a projected zone. None
-    // of these tolerances has a runout zone, so each such definition goes:
-    // a projected tolerance's (its angle is the projected height) becomes a
-    // projected zone definition bounded by the toleranced feature.
-    if (!runouts.empty() && !unit.IsNull()) {
-        std::set<const Standard_Transient*> removed;
-        std::vector<Handle(StepDimTol_ProjectedZoneDefinition)> projected;
-        for (const auto& runout : runouts) {
-            removed.insert(runout.get());
-            const Handle(StepDimTol_RunoutZoneOrientation) orientation = runout->Orientation();
-            if (orientation.IsNull() || orientation->Angle().IsNull()) {
-                continue;
-            }
-            removed.insert(orientation.get());
-            removed.insert(orientation->Angle().get());
-            const double height = orientation->Angle()->ValueComponent();
-            const Handle(StepDimTol_ToleranceZone) zone = runout->Zone();
-            if (!(height > 0.0) || zone.IsNull() || zone->NbDefiningTolerances() == 0) {
-                continue;
-            }
-            const auto tolerance = zone->DefiningToleranceValue(1).GeometricTolerance();
-            Handle(StepRepr_ShapeAspect) feature =
-                tolerance.IsNull() ? Handle(StepRepr_ShapeAspect)() : tolerance->TolerancedShapeAspect().ShapeAspect();
-            if (feature.IsNull()) {
-                feature = zone;
-            }
-            Handle(StepRepr_HArray1OfShapeAspect) boundaries = new StepRepr_HArray1OfShapeAspect(1, 1);
-            boundaries->SetValue(1, feature);
-            Handle(StepBasic_MeasureValueMember) value = new StepBasic_MeasureValueMember;
-            value->SetName("LENGTH_MEASURE");
-            value->SetReal(height);
-            Handle(StepBasic_LengthMeasureWithUnit) measure = new StepBasic_LengthMeasureWithUnit;
-            measure->Init(value, length);
-            Handle(StepDimTol_ProjectedZoneDefinition) definition = new StepDimTol_ProjectedZoneDefinition;
-            definition->Init(zone, boundaries, feature, measure);
-            projected.push_back(definition);
-        }
-        std::vector<Handle(Standard_Transient)> kept;
-        kept.reserve(static_cast<size_t>(model->NbEntities()));
-        for (int index = 1; index <= model->NbEntities(); ++index) {
-            if (removed.count(model->Value(index).get()) == 0) {
-                kept.push_back(model->Value(index));
-            }
-        }
-        model->ClearEntities();
-        for (const auto& entity : kept) {
-            model->AddEntity(entity);
-        }
-        // OCCT's reference walk skips a projected zone's length, so it is
-        // added on its own.
-        for (const auto& definition : projected) {
-            model->AddWithRefs(definition->ProjectionLength());
-            model->AddWithRefs(definition);
-        }
-        writer.Writer().WS()->ComputeGraph(Standard_True);
-    }
+    const StepBasic_Unit length = repair_pmi_units(entities, length_unit(entities.context));
+    repair_pmi_zones(writer, entities, length);
     if (pmi.dataset != nullptr) {
         write_dataset(model, *pmi.dataset);
     }
-    if (pmi.view_count == 0) {
-        return;
-    }
-    // Each view is a draughting model holding its camera and the callouts
-    // it shows, as OCCT's reader expects of a saved view.
-    const Bnd_Box bounds = view_bounds(pmi, shapes);
-    // A view that lists parts also holds a mapped item of each part's shape
-    // representation, which OCCT's reader takes as the shapes it shows. A
-    // part's representation is the one holding its transferred solid.
-    std::map<const Standard_Transient*, Handle(StepShape_ShapeRepresentation)> representation_of;
-    const Handle(Transfer_FinderProcess) finder = writer.Writer().WS()->TransferWriter()->FinderProcess();
-    const auto part_representation = [&](size_t component) -> Handle(StepShape_ShapeRepresentation) {
-        if (representation_of.empty()) {
-            for (int index = 1; index <= model->NbEntities(); ++index) {
-                const auto shape = Handle(StepShape_ShapeRepresentation)::DownCast(model->Value(index));
-                if (shape.IsNull() || shape->Items().IsNull()) {
-                    continue;
-                }
-                for (int item = 1; item <= shape->NbItems(); ++item) {
-                    representation_of.emplace(shape->ItemsValue(item).get(), shape);
-                }
-            }
-        }
-        // A compound part is written as its children's items, so the first
-        // child found names the representation.
-        std::vector<TopoDS_Shape> pending{shapes[component]->Located(TopLoc_Location())};
-        while (!pending.empty()) {
-            const TopoDS_Shape shape = pending.back();
-            pending.pop_back();
-            const Handle(StepRepr_RepresentationItem) item = STEPConstruct::FindEntity(finder, shape);
-            if (!item.IsNull()) {
-                const auto found = representation_of.find(item.get());
-                return found == representation_of.end() ? nullptr : found->second;
-            }
-            if (shape.ShapeType() == TopAbs_COMPOUND) {
-                for (TopoDS_Iterator child(shape); child.More(); child.Next()) {
-                    pending.push_back(child.Value());
-                }
-            }
-        }
-        return nullptr;
-    };
-    for (size_t index = 0; index < pmi.view_count; ++index) {
-        const occt_bridge_step_view_t& view = pmi.views[index];
-        std::vector<Handle(StepRepr_RepresentationItem)> items{camera(view, bounds)};
-        std::set<const Standard_Transient*> mapped;
-        for (size_t entry = 0; entry < view.part_count; ++entry) {
-            const Handle(StepShape_ShapeRepresentation) shape = part_representation(view.parts[entry]);
-            if (shape.IsNull() || !mapped.insert(shape.get()).second) {
-                continue;
-            }
-            Handle(StepGeom_Axis2Placement3d) origin = new StepGeom_Axis2Placement3d;
-            origin->Init(text(""), step_point(gp_XYZ(0.0, 0.0, 0.0)), Standard_False, nullptr, Standard_False, nullptr);
-            Handle(StepRepr_RepresentationMap) map = new StepRepr_RepresentationMap;
-            map->Init(origin, shape);
-            Handle(StepRepr_MappedItem) item = new StepRepr_MappedItem;
-            item->Init(text(""), map, origin);
-            items.push_back(item);
-        }
-        const auto show = [&](const occt_bridge_step_presentation_t* presentation) {
-            if (const auto found = callouts.find(presentation->name); found != callouts.end()) {
-                items.push_back(found->second);
-            }
-        };
-        for (size_t entry = 0; entry < view.datum_count; ++entry) {
-            show(pmi.datums[view.datums[entry]].presentation);
-        }
-        for (size_t entry = 0; entry < view.tolerance_count; ++entry) {
-            show(pmi.tolerances[view.tolerances[entry]].presentation);
-        }
-        for (size_t entry = 0; entry < view.size_count; ++entry) {
-            show(pmi.sizes[view.sizes[entry]].presentation);
-        }
-        Handle(StepRepr_HArray1OfRepresentationItem) array =
-            new StepRepr_HArray1OfRepresentationItem(1, static_cast<int>(items.size()));
-        for (size_t item = 0; item < items.size(); ++item) {
-            array->SetValue(static_cast<int>(item) + 1, items[item]);
-        }
-        Handle(StepVisual_DraughtingModel) drawing = new StepVisual_DraughtingModel;
-        drawing->Init(text(view.name), array, context);
-        model->AddWithRefs(drawing);
-    }
+    write_pmi_views(writer, pmi, shapes, entities);
 }
 
 bool verify_pmi(const char* path, const occt_bridge_step_pmi_t& pmi, const std::vector<const TopoDS_Shape*>& shapes) {
