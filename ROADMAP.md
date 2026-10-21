@@ -17,14 +17,30 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 176 + first-use integration 1 (+1 doc test), recipes 3, parametric core 66 + kernel 804 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 101 + viewer Node 475 + branch command 2 + model command 105, MCP Python 29, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 177 + first-use integration 1 (+1 doc test), recipes 3, parametric core 66 + kernel 804 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 101 + viewer Node 475 + branch command 2 + model command 105, MCP Python 29, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
-| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 47 clang-tidy warnings (46 complexity warnings and one public ABI padding warning) plus 91 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
+| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 45 clang-tidy warnings (44 complexity warnings and one public ABI padding warning) plus 86 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all five crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 2026-10-21: 92.71% lines overall; C++ 94.07% lines, 81.61% branches, 99.87% functions; Rust 92.37% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
+| Coverage | 2026-10-21: 92.70% lines overall; C++ 93.99% lines, 81.32% branches, 99.87% functions; Rust 92.37% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
 | Scale benchmarks | Current run: all 137 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
 
 ## Done
+
+- Constrained loft refactor (schema 182 and ABI 85 unchanged): section
+  validation/copying, profile correspondence, rational Hermite spans, independent
+  end-derivative checks, sewing/solid validation and history recording are
+  separate native stages. The maximum function cognitive complexity is 15,
+  down from 199, below the unchanged limit of 25. Targeted clang-tidy and
+  cppcheck report no findings. A differential comparison against the previous
+  library matches all 137 requests (60 successful): exact volumes, areas,
+  bounds, topology, per-source history targets, source bounds, error messages
+  and handle counts. Cases cover single/both end constraints, reversed profiles,
+  rejected strengths, malformed inputs and the 64-station/128-edge boundaries.
+  Public C parameter names now match the definition; types and layout are
+  unchanged. All seven native tests and the full instrumented C++/Rust suite
+  pass; bridge formatting and Clippy are clean. A permanent Rust regression checks
+  interior and end edge mappings, membership of generated faces in the final
+  solid, section-level history counts and shape-handle cleanup.
 
 - Spline refinement refactor (schema 182 and ABI 85 unchanged): request and
   knot validation, identity-basis construction, insertion/elevation, basis

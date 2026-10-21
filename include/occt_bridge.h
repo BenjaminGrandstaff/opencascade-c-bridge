@@ -754,9 +754,9 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_align_profile_wire(
  * Each span must progress monotonically; fold-back strengths are rejected.
  * Exact rational section curves are retained; sources are immutable. */
 OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_create_constrained_loft(
-    occt_bridge_session_t*, const occt_bridge_shape_id_t*, size_t,
+    occt_bridge_session_t* session, const occt_bridge_shape_id_t* sections, size_t count,
     const occt_bridge_vec3_t* start_tangent, const occt_bridge_vec3_t* end_tangent,
-    occt_bridge_shape_id_t*);
+    occt_bridge_shape_id_t* out_shape);
 
 /*
  * Like occt_bridge_create_loft, but each section is one non-periodic B-spline

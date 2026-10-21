@@ -342,6 +342,83 @@ fn constrained_polygon_lofts_preserve_ordered_sections_and_single_end_constraint
 }
 
 #[test]
+fn constrained_loft_history_tracks_both_spans_at_interior_sections() {
+    let session = Session::new().unwrap();
+    {
+        let square = |radius: f64, z: f64| {
+            session
+                .create_polyline_wire(
+                    &[
+                        Vec3::new(-radius, -radius, z),
+                        Vec3::new(radius, -radius, z),
+                        Vec3::new(radius, radius, z),
+                        Vec3::new(-radius, radius, z),
+                    ],
+                    true,
+                )
+                .unwrap()
+        };
+        let sections = [square(1., 0.), square(2., 10.), square(1.5, 20.)];
+        let derivative = Vec3::new(0., 0., 10.);
+        let loft = session
+            .create_constrained_loft(
+                &[&sections[0], &sections[1], &sections[2]],
+                Some(derivative),
+                Some(derivative),
+            )
+            .unwrap();
+        let faces = session.subshapes(&loft, ShapeType::Face).unwrap();
+        assert_eq!(faces.len(), 10);
+        for (station, section) in sections.iter().enumerate() {
+            let intervals: &[(f64, f64)] = match station {
+                0 => &[(0., 10.)],
+                1 => &[(0., 10.), (10., 20.)],
+                _ => &[(10., 20.)],
+            };
+            assert_eq!(
+                session
+                    .history_count(&loft, section, HistoryRelation::Generated)
+                    .unwrap(),
+                if station == 1 { 8 } else { 5 },
+                "end sections include their cap; the interior section reaches both spans"
+            );
+            for edge in session.subshapes(section, ShapeType::Edge).unwrap() {
+                let count = session
+                    .history_count(&loft, &edge, HistoryRelation::Generated)
+                    .unwrap();
+                assert_eq!(count, intervals.len());
+                let mut actual = Vec::new();
+                for index in 0..count {
+                    let target = session
+                        .history(&loft, &edge, HistoryRelation::Generated, index)
+                        .unwrap();
+                    assert!(
+                        faces
+                            .iter()
+                            .any(|face| session.is_same(face, &target).unwrap())
+                    );
+                    let bounds = session.exact_bounds(&target).unwrap();
+                    actual.push((bounds.min.z, bounds.max.z));
+                }
+                actual.sort_by(|a, b| a.0.total_cmp(&b.0));
+                // These spline-face bounds include 1e-7 of native padding.
+                for ((low, high), (expected_low, expected_high)) in actual.iter().zip(intervals) {
+                    assert!(
+                        (low - expected_low).abs() < 2e-7,
+                        "station {station}: {actual:?} != {intervals:?}"
+                    );
+                    assert!(
+                        (high - expected_high).abs() < 2e-7,
+                        "station {station}: {actual:?} != {intervals:?}"
+                    );
+                }
+            }
+        }
+    }
+    assert_eq!(session.shape_count().unwrap(), 0);
+}
+
+#[test]
 fn exact_profile_alignment_repairs_polygon_start_and_reverse_without_input_mutation() {
     let s = Session::new().unwrap();
     {
