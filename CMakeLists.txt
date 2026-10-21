@@ -174,6 +174,15 @@ if(BUILD_TESTING)
     add_test(NAME occt_bridge_step_assembly
         COMMAND occt_bridge_step_assembly_test ${CMAKE_CURRENT_BINARY_DIR}/step-assembly-test.step)
 
+    # Exercise the hidden read-back API against altered PMI expectations.
+    add_executable(occt_bridge_step_pmi_verification_test tests/step_pmi_verification_test.cpp src/step_pmi.cpp)
+    target_compile_features(occt_bridge_step_pmi_verification_test PRIVATE cxx_std_17)
+    target_compile_options(occt_bridge_step_pmi_verification_test PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic;-Werror>)
+    target_include_directories(occt_bridge_step_pmi_verification_test PRIVATE src ${OpenCASCADE_INCLUDE_DIR})
+    target_link_libraries(occt_bridge_step_pmi_verification_test PRIVATE OpenCascadeCBridge::occt_bridge ${OCCT_BRIDGE_OCCT_LIBRARIES})
+    add_test(NAME occt_bridge_step_pmi_verification
+        COMMAND occt_bridge_step_pmi_verification_test ${CMAKE_CURRENT_BINARY_DIR}/step-pmi-verification.step)
+
     # Concurrent STEP reads and writes from independent sessions.
     find_package(Threads REQUIRED)
     add_executable(occt_bridge_step_concurrency_test tests/step_concurrency_test.c)

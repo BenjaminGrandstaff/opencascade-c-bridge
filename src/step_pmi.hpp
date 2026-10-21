@@ -37,7 +37,7 @@ void finish_pmi(
 
 // Reads path back with OCCT's AP242 reader and fills pmi's loss arrays;
 // false when the file cannot be read.
-bool verify_pmi(const char* path, occt_bridge_step_pmi_t& pmi, const std::vector<const TopoDS_Shape*>& shapes);
+bool verify_pmi(const char* path, const occt_bridge_step_pmi_t& pmi, const std::vector<const TopoDS_Shape*>& shapes);
 
 }  // namespace occt_bridge_internal
 

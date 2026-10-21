@@ -1402,21 +1402,14 @@ struct ReadDocument {
     }
 };
 
-}  // namespace
-
-const char* pmi_error(const occt_bridge_step_pmi_t& pmi, const std::vector<const TopoDS_Shape*>& shapes) {
-    if ((pmi.datum_count != 0 && pmi.datums == nullptr) || (pmi.tolerance_count != 0 && pmi.tolerances == nullptr)
-        || (pmi.size_count != 0 && pmi.sizes == nullptr)) {
-        return "PMI arrays are missing";
-    }
-    ComponentFaces faces(shapes);
+const char* datum_targets_error(const occt_bridge_step_pmi_t& pmi, ComponentFaces& faces, size_t components) {
     std::vector<std::string> labels;
     for (size_t index = 0; index < pmi.datum_count; ++index) {
         const auto& datum = pmi.datums[index];
         if (datum.label == nullptr || datum.label[0] == '\0') {
             return "datums need nonempty labels";
         }
-        if (const char* error = faces_error(datum.target, faces, shapes.size())) {
+        if (const char* error = faces_error(datum.target, faces, components)) {
             return error;
         }
         labels.push_back(datum.label);
@@ -1425,6 +1418,11 @@ const char* pmi_error(const occt_bridge_step_pmi_t& pmi, const std::vector<const
     if (std::adjacent_find(labels.begin(), labels.end()) != labels.end()) {
         return "datum labels must be unique across the export";
     }
+    return nullptr;
+}
+
+const char* tolerance_targets_error(const occt_bridge_step_pmi_t& pmi, ComponentFaces& faces,
+                                     const std::vector<const TopoDS_Shape*>& shapes) {
     for (size_t index = 0; index < pmi.tolerance_count; ++index) {
         const auto& tolerance = pmi.tolerances[index];
         if (const char* error = faces_error(tolerance.target, faces, shapes.size())) {
@@ -1434,14 +1432,22 @@ const char* pmi_error(const occt_bridge_step_pmi_t& pmi, const std::vector<const
             return error;
         }
     }
+    return nullptr;
+}
+
+const char* size_targets_error(const occt_bridge_step_pmi_t& pmi, ComponentFaces& faces, size_t components) {
     for (size_t index = 0; index < pmi.size_count; ++index) {
-        if (const char* error = faces_error(pmi.sizes[index].target, faces, shapes.size())) {
+        if (const char* error = faces_error(pmi.sizes[index].target, faces, components)) {
             return error;
         }
         if (const char* error = size_error(pmi.sizes[index], faces)) {
             return error;
         }
     }
+    return nullptr;
+}
+
+const char* presentations_error(const occt_bridge_step_pmi_t& pmi) {
     std::vector<std::string> names;
     const auto presentation = [&](const occt_bridge_step_presentation_t* value) -> const char* {
         if (value == nullptr) {
@@ -1472,12 +1478,16 @@ const char* pmi_error(const occt_bridge_step_pmi_t& pmi, const std::vector<const
     if (std::adjacent_find(names.begin(), names.end()) != names.end()) {
         return "presentation names must be unique";
     }
+    return nullptr;
+}
+
+const char* views_error(const occt_bridge_step_pmi_t& pmi, size_t components) {
     if (pmi.view_count != 0 && pmi.views == nullptr) {
         return "PMI views are missing";
     }
-    names.clear();
+    std::vector<std::string> names;
     for (size_t index = 0; index < pmi.view_count; ++index) {
-        if (const char* error = view_error(pmi.views[index], pmi, shapes.size())) {
+        if (const char* error = view_error(pmi.views[index], pmi, components)) {
             return error;
         }
         names.push_back(pmi.views[index].name);
@@ -1486,12 +1496,273 @@ const char* pmi_error(const occt_bridge_step_pmi_t& pmi, const std::vector<const
     if (std::adjacent_find(names.begin(), names.end()) != names.end()) {
         return "view names must be unique";
     }
-    if (pmi.dataset != nullptr) {
-        if (const char* error = dataset_error(*pmi.dataset)) {
-            return error;
+    return nullptr;
+}
+
+std::vector<Prints> verify_datums(const occt_bridge_step_pmi_t& pmi, ComponentFaces& faces,
+    const std::multimap<std::string, Prints>& datums_by_name, const ReadPresentations& presentations) {
+    std::vector<Prints> datum_prints;
+    datum_prints.reserve(pmi.datum_count);
+    for (size_t index = 0; index < pmi.datum_count; ++index) {
+        const auto& datum = pmi.datums[index];
+        datum_prints.push_back(written_prints(faces, datum.target, 0, SIZE_MAX));
+        const auto [begin, end] = datums_by_name.equal_range(datum.label);
+        const bool found = std::any_of(begin, end, [&](const auto& entry) {
+            return same_faces(datum_prints.back(), entry.second);
+        });
+        if (pmi.out_datum_losses != nullptr) {
+            pmi.out_datum_losses[index] = found ? presentation_losses(datum.presentation, presentations)
+                                                : OCCT_BRIDGE_PMI_LOST_ITEM;
         }
     }
-    return nullptr;
+    return datum_prints;
+}
+
+uint32_t matched_tolerance_losses(const occt_bridge_step_tolerance_t& tolerance,
+    const occt_bridge_step_pmi_t& pmi, ComponentFaces& faces, const std::vector<Prints>& datum_prints,
+    std::vector<ReadTolerance>& tolerances, const ReadPresentations& presentations) {
+    const Prints written = written_prints(faces, tolerance.target, 0, SIZE_MAX);
+    const auto [begin, end] = window(tolerances, mean_x(written));
+    uint32_t best = OCCT_BRIDGE_PMI_LOST_ITEM;
+    size_t chosen = SIZE_MAX;
+    for (size_t candidate = begin; candidate < end && best != 0; ++candidate) {
+        const ReadTolerance& entry = tolerances[candidate];
+        if (entry.claimed || entry.type != kTypes[tolerance.characteristic] || !same_faces(written, entry.faces)) {
+            continue;
+        }
+        const uint32_t losses = tolerance_losses(tolerance, pmi, datum_prints, entry);
+        if (chosen == SIZE_MAX || __builtin_popcount(losses) < __builtin_popcount(best)) {
+            best = losses;
+            chosen = candidate;
+        }
+    }
+    if (chosen != SIZE_MAX) {
+        tolerances[chosen].claimed = true;
+        best |= presentation_losses(tolerance.presentation, presentations);
+    }
+    return best;
+}
+
+void verify_tolerances(const occt_bridge_step_pmi_t& pmi, ComponentFaces& faces,
+    const std::vector<Prints>& datum_prints, std::vector<ReadTolerance>& tolerances,
+    const ReadPresentations& presentations) {
+    for (size_t index = 0; index < pmi.tolerance_count; ++index) {
+        const uint32_t losses = matched_tolerance_losses(pmi.tolerances[index], pmi, faces,
+            datum_prints, tolerances, presentations);
+        if (pmi.out_tolerance_losses != nullptr) pmi.out_tolerance_losses[index] = losses;
+    }
+}
+
+uint32_t matched_size_losses(const occt_bridge_step_size_t& size, ComponentFaces& faces,
+                             std::vector<ReadSize>& sizes, const ReadPresentations& presentations) {
+    const bool diameter = size.kind == OCCT_BRIDGE_STEP_SIZE_DIAMETER;
+    const Prints first = written_prints(faces, size.target, 0, diameter ? SIZE_MAX : 1);
+    const Prints second = diameter ? Prints() : written_prints(faces, size.target, 1, 1);
+    Prints all = first;
+    all.insert(all.end(), second.begin(), second.end());
+    const int type = diameter ? XCAFDimTolObjects_DimensionType_Size_Diameter
+                              : XCAFDimTolObjects_DimensionType_Location_LinearDistance;
+    const auto [begin, end] = window(sizes, mean_x(all));
+    uint32_t best = OCCT_BRIDGE_PMI_LOST_ITEM;
+    size_t chosen = SIZE_MAX;
+    for (size_t candidate = begin; candidate < end && best != 0; ++candidate) {
+        const ReadSize& entry = sizes[candidate];
+        const bool faces_match = (same_faces(first, entry.first) && same_faces(second, entry.second))
+            || (!diameter && same_faces(first, entry.second) && same_faces(second, entry.first));
+        if (entry.claimed || entry.type != type || !faces_match) {
+            continue;
+        }
+        const uint32_t losses = (close(entry.lower, size.lower_mm) && close(entry.upper, size.upper_mm)
+                ? 0u
+                : OCCT_BRIDGE_PMI_LOST_VALUE)
+            | presentation_losses(size.presentation, presentations);
+        if (chosen == SIZE_MAX || losses < best) {
+            best = losses;
+            chosen = candidate;
+        }
+    }
+    if (chosen != SIZE_MAX) {
+        sizes[chosen].claimed = true;
+    }
+    return best;
+}
+
+void verify_sizes(const occt_bridge_step_pmi_t& pmi, ComponentFaces& faces,
+                   std::vector<ReadSize>& sizes, const ReadPresentations& presentations) {
+    for (size_t index = 0; index < pmi.size_count; ++index) {
+        const uint32_t losses = matched_size_losses(pmi.sizes[index], faces, sizes, presentations);
+        if (pmi.out_size_losses != nullptr) pmi.out_size_losses[index] = losses;
+    }
+}
+
+// Compare parts in their own coordinates, caching each authored component and
+// each read TShape once. Equal mass fingerprints retain the existing deduplication.
+using Mass = std::pair<double, gp_Pnt>;
+
+Mass part_mass(const TopoDS_Shape& shape) {
+    GProp_GProps properties;
+    BRepGProp::VolumeProperties(shape, properties);
+    return {properties.Mass(), properties.CentreOfMass()};
+}
+
+bool same_mass(const Mass& first, const Mass& second) {
+    const double scale = std::max({std::abs(first.first), std::abs(second.first), 1.0});
+    return std::abs(first.first - second.first) <= 1e-6 * scale
+        && first.second.Distance(second.second) <= 1e-6 * (1.0 + std::cbrt(scale));
+}
+
+class PartMasses {
+public:
+    explicit PartMasses(const std::vector<const TopoDS_Shape*>& shapes) : shapes_(shapes) {}
+
+    const Mass& written(size_t component) {
+        auto found = written_.find(component);
+        if (found == written_.end()) {
+            found = written_.emplace(component, part_mass(shapes_[component]->Located(TopLoc_Location()))).first;
+        }
+        return found->second;
+    }
+
+    const Mass& read(const TopoDS_Shape& part) {
+        auto found = read_.find(part.TShape().get());
+        if (found == read_.end()) {
+            found = read_.emplace(part.TShape().get(), part_mass(part.Located(TopLoc_Location()))).first;
+        }
+        return found->second;
+    }
+
+    bool same_parts(const occt_bridge_step_view_t& view, const std::vector<Mass>& parts) {
+        std::vector<Mass> expected;
+        std::set<size_t> seen;
+        for (size_t entry = 0; entry < view.part_count; ++entry) {
+            const Mass& part = written(view.parts[entry]);
+            if (seen.insert(view.parts[entry]).second
+                && std::none_of(expected.begin(), expected.end(), [&](const Mass& mass) { return same_mass(mass, part); })) {
+                expected.push_back(part);
+            }
+        }
+        if (expected.size() != parts.size()) return false;
+        return std::all_of(expected.begin(), expected.end(), [&](const Mass& part) {
+            return std::any_of(parts.begin(), parts.end(), [&](const Mass& mass) { return same_mass(mass, part); });
+        });
+    }
+
+private:
+    const std::vector<const TopoDS_Shape*>& shapes_;
+    std::map<size_t, Mass> written_;
+    std::map<const Standard_Transient*, Mass> read_;
+};
+
+struct ReadView {
+    Handle(XCAFView_Object) object;
+    std::vector<gp_Pln> planes;
+    std::vector<Mass> parts;
+};
+using ReadViews = std::multimap<std::string, ReadView>;
+
+std::vector<gp_Pln> read_view_planes(const Handle(XCAFDoc_ViewTool)& views,
+    const Handle(XCAFDoc_ClippingPlaneTool)& clipping, const TDF_Label& label) {
+    std::vector<gp_Pln> result;
+    TDF_LabelSequence planes;
+    views->GetRefClippingPlaneLabel(label, planes);
+    for (const TDF_Label& plane_label : planes) {
+        gp_Pln plane;
+        TCollection_ExtendedString name;
+        Standard_Boolean capping = Standard_False;
+        if (clipping->GetClippingPlane(plane_label, plane, name, capping)) result.push_back(plane);
+    }
+    return result;
+}
+
+std::vector<Mass> read_view_parts(const Handle(XCAFDoc_ViewTool)& views, const TDF_Label& label, PartMasses& masses) {
+    std::vector<Mass> result;
+    TDF_LabelSequence parts;
+    views->GetRefShapeLabel(label, parts);
+    for (const TDF_Label& part_label : parts) {
+        const TopoDS_Shape part = XCAFDoc_ShapeTool::GetShape(part_label);
+        if (!part.IsNull()) result.push_back(masses.read(part));
+    }
+    return result;
+}
+
+ReadViews read_views(const Handle(TDocStd_Document)& document, PartMasses& masses) {
+    const Handle(XCAFDoc_ViewTool) views = XCAFDoc_DocumentTool::ViewTool(document->Main());
+    const Handle(XCAFDoc_ClippingPlaneTool) clipping = XCAFDoc_DocumentTool::ClippingPlaneTool(document->Main());
+    TDF_LabelSequence labels;
+    views->GetViewLabels(labels);
+    ReadViews result;
+    for (const TDF_Label& label : labels) {
+        Handle(XCAFDoc_View) attribute;
+        if (label.FindAttribute(XCAFDoc_View::GetID(), attribute) && !attribute->GetObject().IsNull()) {
+            ReadView entry{attribute->GetObject(), read_view_planes(views, clipping, label), read_view_parts(views, label, masses)};
+            result.emplace(name_of(entry.object->Name()), std::move(entry));
+        }
+    }
+    return result;
+}
+
+uint32_t view_losses(const occt_bridge_step_view_t& view, const ReadViews& cameras,
+                      const ReadPresentations& presentations, PartMasses& masses) {
+    const auto [begin, end] = cameras.equal_range(view.name);
+    if (begin == end || presentations.views.find(view.name) == presentations.views.end()) return OCCT_BRIDGE_PMI_VIEW_LOST;
+    const auto axes = camera_axes(view);
+    const bool same_camera = std::any_of(begin, end, [&](const auto& entry) {
+        return entry.second.object->ViewDirection().IsEqual(axes.first, 1e-7)
+            && entry.second.object->UpDirection().IsEqual(axes.second, 1e-7);
+    });
+    const bool clipped = std::any_of(begin, end, [&](const auto& entry) {
+        return same_planes(view, entry.second.planes);
+    });
+    const bool parted = std::any_of(begin, end, [&](const auto& entry) {
+        return masses.same_parts(view, entry.second.parts);
+    });
+    return (same_camera ? 0u : OCCT_BRIDGE_PMI_VIEW_LOST_CAMERA) | (clipped ? 0u : OCCT_BRIDGE_PMI_VIEW_LOST_CLIPPING)
+        | (parted ? 0u : OCCT_BRIDGE_PMI_VIEW_LOST_PARTS);
+}
+
+uint8_t callout_lost(const occt_bridge_step_presentation_t* presentation, const std::set<std::string>* shown) {
+    return shown == nullptr || shown->count(presentation->name) == 0 ? 1 : 0;
+}
+
+void verify_view_callouts(const occt_bridge_step_view_t& view, const occt_bridge_step_pmi_t& pmi,
+                          const ReadPresentations& presentations) {
+    const auto found = presentations.views.find(view.name);
+    const auto* shown = found == presentations.views.end() ? nullptr : &found->second;
+    for (size_t entry = 0; view.out_datums_lost != nullptr && entry < view.datum_count; ++entry) {
+        view.out_datums_lost[entry] = callout_lost(pmi.datums[view.datums[entry]].presentation, shown);
+    }
+    for (size_t entry = 0; view.out_tolerances_lost != nullptr && entry < view.tolerance_count; ++entry) {
+        view.out_tolerances_lost[entry] = callout_lost(pmi.tolerances[view.tolerances[entry]].presentation, shown);
+    }
+    for (size_t entry = 0; view.out_sizes_lost != nullptr && entry < view.size_count; ++entry) {
+        view.out_sizes_lost[entry] = callout_lost(pmi.sizes[view.sizes[entry]].presentation, shown);
+    }
+}
+
+void verify_views(const occt_bridge_step_pmi_t& pmi, const Handle(TDocStd_Document)& document,
+                   const ReadPresentations& presentations, const std::vector<const TopoDS_Shape*>& shapes) {
+    PartMasses masses(shapes);
+    const ReadViews cameras = read_views(document, masses);
+    for (size_t index = 0; index < pmi.view_count; ++index) {
+        const uint32_t losses = view_losses(pmi.views[index], cameras, presentations, masses);
+        if (pmi.out_view_losses != nullptr) pmi.out_view_losses[index] = losses;
+        verify_view_callouts(pmi.views[index], pmi, presentations);
+    }
+}
+
+
+}  // namespace
+
+const char* pmi_error(const occt_bridge_step_pmi_t& pmi, const std::vector<const TopoDS_Shape*>& shapes) {
+    if ((pmi.datum_count != 0 && pmi.datums == nullptr) || (pmi.tolerance_count != 0 && pmi.tolerances == nullptr)
+        || (pmi.size_count != 0 && pmi.sizes == nullptr)) return "PMI arrays are missing";
+    ComponentFaces faces(shapes);
+    if (const char* error = datum_targets_error(pmi, faces, shapes.size())) return error;
+    if (const char* error = tolerance_targets_error(pmi, faces, shapes)) return error;
+    if (const char* error = size_targets_error(pmi, faces, shapes.size())) return error;
+    if (const char* error = presentations_error(pmi)) return error;
+    if (const char* error = views_error(pmi, shapes.size())) return error;
+    return pmi.dataset == nullptr ? nullptr : dataset_error(*pmi.dataset);
 }
 
 void add_pmi(
@@ -1764,7 +2035,7 @@ void finish_pmi(
     }
 }
 
-bool verify_pmi(const char* path, occt_bridge_step_pmi_t& pmi, const std::vector<const TopoDS_Shape*>& shapes) {
+bool verify_pmi(const char* path, const occt_bridge_step_pmi_t& pmi, const std::vector<const TopoDS_Shape*>& shapes) {
     STEPCAFControl_Reader reader;
     reader.SetGDTMode(Standard_True);
     reader.SetNameMode(Standard_True);
@@ -1781,207 +2052,15 @@ bool verify_pmi(const char* path, occt_bridge_step_pmi_t& pmi, const std::vector
     const Handle(XCAFDoc_DimTolTool) tool = XCAFDoc_DocumentTool::DimTolTool(read.document->Main());
     ComponentFaces faces(shapes);
 
-    const std::multimap<std::string, Prints> datums_by_name = read_datums(reader.Reader());
-    const ReadPresentations presentations = read_presentations(reader.Reader().WS()->Model());
-    std::vector<Prints> datum_prints;
-    datum_prints.reserve(pmi.datum_count);
-    for (size_t index = 0; index < pmi.datum_count; ++index) {
-        const auto& datum = pmi.datums[index];
-        datum_prints.push_back(written_prints(faces, datum.target, 0, SIZE_MAX));
-        const auto [begin, end] = datums_by_name.equal_range(datum.label);
-        const bool found = std::any_of(begin, end, [&](const auto& entry) {
-            return same_faces(datum_prints.back(), entry.second);
-        });
-        if (pmi.out_datum_losses != nullptr) {
-            pmi.out_datum_losses[index] = found ? presentation_losses(datum.presentation, presentations)
-                                                : OCCT_BRIDGE_PMI_LOST_ITEM;
-        }
-    }
-
+    const auto datums = read_datums(reader.Reader());
+    const auto presentations = read_presentations(reader.Reader().WS()->Model());
+    const auto datum_prints = verify_datums(pmi, faces, datums, presentations);
     PrintCache cache;
-    std::vector<ReadTolerance> tolerances = read_tolerances(tool, shape_tool, cache);
-    for (size_t index = 0; index < pmi.tolerance_count; ++index) {
-        const auto& tolerance = pmi.tolerances[index];
-        const Prints written = written_prints(faces, tolerance.target, 0, SIZE_MAX);
-        const auto [begin, end] = window(tolerances, mean_x(written));
-        uint32_t best = OCCT_BRIDGE_PMI_LOST_ITEM;
-        size_t chosen = SIZE_MAX;
-        for (size_t candidate = begin; candidate < end && best != 0; ++candidate) {
-            ReadTolerance& entry = tolerances[candidate];
-            if (entry.claimed || entry.type != kTypes[tolerance.characteristic] || !same_faces(written, entry.faces)) {
-                continue;
-            }
-            const uint32_t losses = tolerance_losses(tolerance, pmi, datum_prints, entry);
-            if (chosen == SIZE_MAX || __builtin_popcount(losses) < __builtin_popcount(best)) {
-                best = losses;
-                chosen = candidate;
-            }
-        }
-        if (chosen != SIZE_MAX) {
-            tolerances[chosen].claimed = true;
-            best |= presentation_losses(tolerance.presentation, presentations);
-        }
-        if (pmi.out_tolerance_losses != nullptr) {
-            pmi.out_tolerance_losses[index] = best;
-        }
-    }
-
-    std::vector<ReadSize> sizes = read_sizes(tool, shape_tool, cache);
-    for (size_t index = 0; index < pmi.size_count; ++index) {
-        const auto& size = pmi.sizes[index];
-        const bool diameter = size.kind == OCCT_BRIDGE_STEP_SIZE_DIAMETER;
-        const Prints first = written_prints(faces, size.target, 0, diameter ? SIZE_MAX : 1);
-        const Prints second = diameter ? Prints() : written_prints(faces, size.target, 1, 1);
-        Prints all = first;
-        all.insert(all.end(), second.begin(), second.end());
-        const int type = diameter ? XCAFDimTolObjects_DimensionType_Size_Diameter
-                                  : XCAFDimTolObjects_DimensionType_Location_LinearDistance;
-        const auto [begin, end] = window(sizes, mean_x(all));
-        uint32_t best = OCCT_BRIDGE_PMI_LOST_ITEM;
-        size_t chosen = SIZE_MAX;
-        for (size_t candidate = begin; candidate < end && best != 0; ++candidate) {
-            ReadSize& entry = sizes[candidate];
-            const bool faces_match = (same_faces(first, entry.first) && same_faces(second, entry.second))
-                || (!diameter && same_faces(first, entry.second) && same_faces(second, entry.first));
-            if (entry.claimed || entry.type != type || !faces_match) {
-                continue;
-            }
-            const uint32_t losses = (close(entry.lower, size.lower_mm) && close(entry.upper, size.upper_mm)
-                    ? 0u
-                    : OCCT_BRIDGE_PMI_LOST_VALUE)
-                | presentation_losses(size.presentation, presentations);
-            if (chosen == SIZE_MAX || losses < best) {
-                best = losses;
-                chosen = candidate;
-            }
-        }
-        if (chosen != SIZE_MAX) {
-            sizes[chosen].claimed = true;
-        }
-        if (pmi.out_size_losses != nullptr) {
-            pmi.out_size_losses[index] = best;
-        }
-    }
-
-    // Views: the camera's name, direction and up as OCCT's reader makes the
-    // view, and its callouts from the file's draughting models.
-    const Handle(XCAFDoc_ViewTool) view_tool = XCAFDoc_DocumentTool::ViewTool(read.document->Main());
-    TDF_LabelSequence view_labels;
-    view_tool->GetViewLabels(view_labels);
-    const Handle(XCAFDoc_ClippingPlaneTool) clipping_tool =
-        XCAFDoc_DocumentTool::ClippingPlaneTool(read.document->Main());
-    struct ReadView {
-        Handle(XCAFView_Object) object;
-        std::vector<gp_Pln> planes;
-        std::vector<std::pair<double, gp_Pnt>> parts;
-    };
-    // A part is known by its volume and centroid in its own coordinates,
-    // computed once per part.
-    using Mass = std::pair<double, gp_Pnt>;
-    const auto mass = [](const TopoDS_Shape& shape) {
-        GProp_GProps properties;
-        BRepGProp::VolumeProperties(shape, properties);
-        return Mass{properties.Mass(), properties.CentreOfMass()};
-    };
-    std::map<size_t, Mass> part_masses;
-    std::map<const Standard_Transient*, Mass> read_masses;
-    const auto part_mass = [&](size_t component) -> const Mass& {
-        auto found = part_masses.find(component);
-        if (found == part_masses.end()) {
-            found = part_masses.emplace(component, mass(shapes[component]->Located(TopLoc_Location()))).first;
-        }
-        return found->second;
-    };
-    const auto same_mass = [](const Mass& a, const Mass& b) {
-        const double scale = std::max({std::abs(a.first), std::abs(b.first), 1.0});
-        return std::abs(a.first - b.first) <= 1e-6 * scale
-            && a.second.Distance(b.second) <= 1e-6 * (1.0 + std::cbrt(scale));
-    };
-    // The parts a view shows, as distinct components, against the ones read.
-    const auto same_parts = [&](const occt_bridge_step_view_t& view, const std::vector<Mass>& read_parts) {
-        std::vector<Mass> expected;
-        std::set<size_t> seen;
-        for (size_t entry = 0; entry < view.part_count; ++entry) {
-            const Mass& part = part_mass(view.parts[entry]);
-            if (seen.insert(view.parts[entry]).second
-                && std::none_of(expected.begin(), expected.end(), [&](const Mass& m) { return same_mass(m, part); })) {
-                expected.push_back(part);
-            }
-        }
-        if (expected.size() != read_parts.size()) {
-            return false;
-        }
-        return std::all_of(expected.begin(), expected.end(), [&](const Mass& part) {
-            return std::any_of(read_parts.begin(), read_parts.end(), [&](const Mass& m) { return same_mass(m, part); });
-        });
-    };
-    std::multimap<std::string, ReadView> cameras;
-    for (const TDF_Label& label : view_labels) {
-        Handle(XCAFDoc_View) attribute;
-        if (label.FindAttribute(XCAFDoc_View::GetID(), attribute) && !attribute->GetObject().IsNull()) {
-            ReadView entry{attribute->GetObject(), {}, {}};
-            TDF_LabelSequence planes;
-            view_tool->GetRefClippingPlaneLabel(label, planes);
-            for (const TDF_Label& plane_label : planes) {
-                gp_Pln plane;
-                TCollection_ExtendedString plane_name;
-                Standard_Boolean capping = Standard_False;
-                if (clipping_tool->GetClippingPlane(plane_label, plane, plane_name, capping)) {
-                    entry.planes.push_back(plane);
-                }
-            }
-            TDF_LabelSequence parts;
-            view_tool->GetRefShapeLabel(label, parts);
-            for (const TDF_Label& part_label : parts) {
-                const TopoDS_Shape part = XCAFDoc_ShapeTool::GetShape(part_label);
-                if (part.IsNull()) {
-                    continue;
-                }
-                auto found = read_masses.find(part.TShape().get());
-                if (found == read_masses.end()) {
-                    found = read_masses.emplace(part.TShape().get(), mass(part.Located(TopLoc_Location()))).first;
-                }
-                entry.parts.push_back(found->second);
-            }
-            cameras.emplace(name_of(entry.object->Name()), std::move(entry));
-        }
-    }
-    for (size_t index = 0; index < pmi.view_count; ++index) {
-        const occt_bridge_step_view_t& view = pmi.views[index];
-        const auto [begin, end] = cameras.equal_range(view.name);
-        const auto shown = presentations.views.find(view.name);
-        uint32_t losses = OCCT_BRIDGE_PMI_VIEW_LOST;
-        if (begin != end && shown != presentations.views.end()) {
-            const auto axes = camera_axes(view);
-            const bool same = std::any_of(begin, end, [&](const auto& entry) {
-                return entry.second.object->ViewDirection().IsEqual(axes.first, 1e-7)
-                    && entry.second.object->UpDirection().IsEqual(axes.second, 1e-7);
-            });
-            const bool clipped = std::any_of(begin, end, [&](const auto& entry) {
-                return same_planes(view, entry.second.planes);
-            });
-            const bool parted = std::any_of(begin, end, [&](const auto& entry) {
-                return same_parts(view, entry.second.parts);
-            });
-            losses = (same ? 0u : OCCT_BRIDGE_PMI_VIEW_LOST_CAMERA) | (clipped ? 0u : OCCT_BRIDGE_PMI_VIEW_LOST_CLIPPING)
-                | (parted ? 0u : OCCT_BRIDGE_PMI_VIEW_LOST_PARTS);
-        }
-        if (pmi.out_view_losses != nullptr) {
-            pmi.out_view_losses[index] = losses;
-        }
-        const auto lost = [&](const occt_bridge_step_presentation_t* presentation) -> uint8_t {
-            return shown == presentations.views.end() || shown->second.count(presentation->name) == 0 ? 1 : 0;
-        };
-        for (size_t entry = 0; view.out_datums_lost != nullptr && entry < view.datum_count; ++entry) {
-            view.out_datums_lost[entry] = lost(pmi.datums[view.datums[entry]].presentation);
-        }
-        for (size_t entry = 0; view.out_tolerances_lost != nullptr && entry < view.tolerance_count; ++entry) {
-            view.out_tolerances_lost[entry] = lost(pmi.tolerances[view.tolerances[entry]].presentation);
-        }
-        for (size_t entry = 0; view.out_sizes_lost != nullptr && entry < view.size_count; ++entry) {
-            view.out_sizes_lost[entry] = lost(pmi.sizes[view.sizes[entry]].presentation);
-        }
-    }
+    auto tolerances = read_tolerances(tool, shape_tool, cache);
+    verify_tolerances(pmi, faces, datum_prints, tolerances, presentations);
+    auto sizes = read_sizes(tool, shape_tool, cache);
+    verify_sizes(pmi, faces, sizes, presentations);
+    verify_views(pmi, read.document, presentations, shapes);
     if (pmi.dataset != nullptr && pmi.dataset->out_losses != nullptr) {
         *pmi.dataset->out_losses = dataset_losses(reader.Reader().WS()->Model(), *pmi.dataset);
     }

@@ -1,0 +1,281 @@
+/* Read a real AP242 export against changed expectations. Losses must stay
+ * specific to the missing information, and read items cannot be claimed twice. */
+#include "bridge_internal.hpp"
+#include "step_pmi.hpp"
+#include <XCAFApp_Application.hxx>
+
+#include <algorithm>
+#include <array>
+#include <cstdio>
+#include <cstring>
+#include <limits>
+#include <memory>
+#include <stdexcept>
+#include <string>
+
+namespace {
+using namespace occt_bridge_internal;
+int failures = 0;
+size_t comparisons = 0;
+
+void check(bool condition, const char* test, const char* detail) {
+    if (!condition) {
+        (void)std::fprintf(stderr, "FAILED: %s: %s\n", test, detail);
+        ++failures;
+    }
+}
+
+void require(occt_bridge_status_t status) {
+    if (status != OCCT_BRIDGE_OK) throw std::runtime_error("PMI fixture construction failed");
+}
+
+struct Losses {
+    std::array<uint32_t, 1> datums{};
+    std::array<uint32_t, 3> tolerances{0, 0, UINT32_MAX};
+    std::array<uint32_t, 1> sizes{};
+    std::array<uint32_t, 2> views{};
+    std::array<uint8_t, 2> view_datums{};
+    std::array<std::array<uint8_t, 2>, 2> view_tolerances{};
+    std::array<uint8_t, 2> view_sizes{};
+    uint32_t dataset = 0;
+
+    void poison() {
+        datums.fill(UINT32_MAX);
+        tolerances.fill(UINT32_MAX);
+        sizes.fill(UINT32_MAX);
+        views.fill(UINT32_MAX);
+        view_datums.fill(UINT8_MAX);
+        for (auto& values : view_tolerances) values.fill(UINT8_MAX);
+        view_sizes.fill(UINT8_MAX);
+        dataset = UINT32_MAX;
+    }
+
+    void compare(const Losses& expected, const char* test) const {
+        check(datums == expected.datums, test, "datum masks");
+        check(tolerances == expected.tolerances, test, "tolerance masks / unused output slot");
+        check(sizes == expected.sizes, test, "size masks");
+        check(views == expected.views, test, "view masks");
+        check(view_datums == expected.view_datums, test, "datum visibility");
+        check(view_tolerances == expected.view_tolerances, test, "tolerance visibility");
+        check(view_sizes == expected.view_sizes, test, "size visibility");
+        check(dataset == expected.dataset, test, "dataset mask");
+    }
+};
+
+struct Fixture {
+    using SessionOwner = std::unique_ptr<occt_bridge_session_t, decltype(&occt_bridge_session_destroy)>;
+    SessionOwner session{nullptr, occt_bridge_session_destroy};
+    Losses losses;
+    std::vector<const TopoDS_Shape*> shapes;
+    std::array<occt_bridge_step_component_t, 2> components{};
+    std::array<size_t, 1> face{0};
+    std::array<size_t, 2> width_faces{0, 1};
+    std::array<size_t, 2> reversed_faces{1, 0};
+    std::array<double, 6> points{0, 0, 20, 5, 0, 20};
+    std::array<uint32_t, 1> polylines{2};
+    std::array<occt_bridge_step_presentation_t, 4> drawings{};
+    std::array<occt_bridge_step_datum_t, 1> datums{};
+    std::array<occt_bridge_step_tolerance_t, 3> tolerances{};
+    std::array<occt_bridge_step_size_t, 1> sizes{};
+    std::array<size_t, 1> datum_indices{0};
+    std::array<size_t, 2> tolerance_indices{0, 1};
+    std::array<size_t, 1> size_indices{0};
+    std::array<size_t, 1> plate_only{0};
+    std::array<size_t, 1> pin_only{1};
+    std::array<size_t, 2> both_parts{0, 1};
+    occt_bridge_step_clipping_plane_t clipping{{0, 0, 5}, {0, 0, 1}};
+    std::array<occt_bridge_step_view_t, 2> views{};
+    occt_bridge_step_approval_t approval{"CHECKED", "Maya", "2026-10-21"};
+    occt_bridge_step_dataset_t dataset{};
+    occt_bridge_step_pmi_t pmi{};
+
+    Fixture() {
+        occt_bridge_session_t* raw = nullptr;
+        require(occt_bridge_session_create(OCCT_BRIDGE_ABI_VERSION, &raw));
+        session.reset(raw);
+        occt_bridge_shape_id_t box = 0, pin = 0;
+        require(occt_bridge_create_box(raw, {0, 0, 0}, {10, 20, 10}, &box));
+        require(occt_bridge_create_cylinder(raw, {30, 0, 0}, {0, 0, 1}, 2, 8, &pin));
+        shapes = {&raw->shapes.at(box), &raw->shapes.at(pin)};
+        components = {{{box, "plate", "plate", 0, {0, 0, 0}}, {pin, "pin", "pin", 0, {0, 0, 0}}}};
+        const std::array<const char*, 4> names{"datum", "flatness", "second flatness", "width"};
+        for (size_t i = 0; i < drawings.size(); ++i) {
+            drawings[i] = {names[i], points.data(), 2, polylines.data(), 1, {0, 0, 20}, {0, 0, 1}, {1, 0, 0}};
+        }
+        datums[0] = {"A", {0, face.data(), 1}, &drawings[0]};
+        tolerances[0] = {{0, face.data(), 1}, OCCT_BRIDGE_GDT_FLATNESS, .05, 0,
+            OCCT_BRIDGE_MATERIAL_RFS, 0, 0, nullptr, 0, &drawings[1]};
+        tolerances[1] = tolerances[0];
+        tolerances[1].value_mm = .08;
+        tolerances[1].presentation = &drawings[2];
+        tolerances[2] = tolerances[0];
+        tolerances[2].presentation = nullptr;
+        sizes[0] = {{0, width_faces.data(), 2}, OCCT_BRIDGE_STEP_SIZE_WIDTH, 9.9, 10.1, &drawings[3]};
+        views[0] = {"TOP", {0, 0, -1}, {0, 1, 0}, datum_indices.data(), 1, tolerance_indices.data(), 2,
+            &losses.view_datums[0], losses.view_tolerances[0].data(), &clipping, 1, plate_only.data(), 1,
+            size_indices.data(), 1, &losses.view_sizes[0]};
+        views[1] = {"FRONT", {0, -1, 0}, {0, 0, 1}, datum_indices.data(), 1, tolerance_indices.data(), 2,
+            &losses.view_datums[1], losses.view_tolerances[1].data(), nullptr, 0, both_parts.data(), 2,
+            size_indices.data(), 1, &losses.view_sizes[1]};
+        dataset = {"PMI-TEST", "Example Works", "model", "A", "Initial", &approval, 1, &losses.dataset};
+        pmi = {datums.data(), 1, tolerances.data(), 2, sizes.data(), 1, losses.datums.data(), losses.tolerances.data(),
+            losses.sizes.data(), views.data(), 2, losses.views.data(), &dataset};
+    }
+
+    void write(const char* path) {
+        require(occt_bridge_step_save_assembly_pmi(session.get(), path, "fixture", nullptr, 0,
+            components.data(), nullptr, components.size(), nullptr, 0, &pmi, nullptr));
+        losses.compare(Losses{}, "export baseline");
+    }
+
+    void verify(const char* path, const char* test, const Losses& expected) {
+        losses.poison();
+        check(verify_pmi(path, pmi, shapes), test, "file read-back");
+        losses.compare(expected, test);
+    }
+};
+
+template <typename Change>
+void verify_case(const char* path, const char* name, Change change, const Losses& expected = {}) {
+    Fixture fixture;
+    ++comparisons;
+    change(fixture);
+    fixture.verify(path, name, expected);
+}
+
+void annotation_cases(const char* path) {
+    verify_case(path, "unchanged", [](Fixture&) {});
+    verify_case(path, "best candidates in reversed value order", [](Fixture& f) {
+        std::swap(f.tolerances[0].value_mm, f.tolerances[1].value_mm);
+    });
+    Losses expected;
+    expected.tolerances[0] = OCCT_BRIDGE_PMI_LOST_VALUE;
+    verify_case(path, "changed tolerance value", [](Fixture& f) { f.tolerances[0].value_mm = .06; }, expected);
+    expected.tolerances[0] = OCCT_BRIDGE_PMI_LOST_ITEM;
+    verify_case(path, "missing characteristic", [](Fixture& f) { f.tolerances[0].characteristic = OCCT_BRIDGE_GDT_STRAIGHTNESS; }, expected);
+    expected = {};
+    expected.tolerances[2] = OCCT_BRIDGE_PMI_LOST_ITEM;
+    verify_case(path, "one read tolerance cannot serve two expectations", [](Fixture& f) { f.pmi.tolerance_count = 3; }, expected);
+    expected = {};
+    expected.datums[0] = OCCT_BRIDGE_PMI_LOST_ITEM;
+    verify_case(path, "missing datum", [](Fixture& f) { f.datums[0].label = "Z"; }, expected);
+    expected = {};
+    expected.sizes[0] = OCCT_BRIDGE_PMI_LOST_VALUE;
+    verify_case(path, "changed size limits", [](Fixture& f) { f.sizes[0].lower_mm = 9.8; }, expected);
+    verify_case(path, "width faces may be reversed", [](Fixture& f) { f.sizes[0].target.faces = f.reversed_faces.data(); });
+}
+
+void presentation_cases(const char* path) {
+    Losses expected;
+    expected.tolerances[0] = OCCT_BRIDGE_PMI_LOST_PRESENTATION;
+    expected.view_tolerances[0][0] = expected.view_tolerances[1][0] = 1;
+    verify_case(path, "missing named presentation", [](Fixture& f) { f.drawings[1].name = "missing"; }, expected);
+    expected.view_tolerances[0][0] = expected.view_tolerances[1][0] = 0;
+    verify_case(path, "changed presentation geometry", [](Fixture& f) { f.points[3] = 6; }, [&] {
+        // All four presentations share the changed point array.
+        Losses all = expected;
+        all.datums[0] = OCCT_BRIDGE_PMI_LOST_PRESENTATION;
+        all.tolerances[1] = OCCT_BRIDGE_PMI_LOST_PRESENTATION;
+        all.sizes[0] = OCCT_BRIDGE_PMI_LOST_PRESENTATION;
+        return all;
+    }());
+}
+
+void view_cases(const char* path) {
+    Losses expected;
+    expected.views[0] = OCCT_BRIDGE_PMI_VIEW_LOST_CAMERA;
+    verify_case(path, "changed camera", [](Fixture& f) { f.views[0].up[0] = 1; }, expected);
+    expected.views[0] = OCCT_BRIDGE_PMI_VIEW_LOST_CLIPPING;
+    verify_case(path, "changed clipping", [](Fixture& f) { f.clipping.origin[2] = 6; }, expected);
+    expected.views[0] = OCCT_BRIDGE_PMI_VIEW_LOST_PARTS;
+    verify_case(path, "changed visible part", [](Fixture& f) { f.views[0].parts = f.pin_only.data(); }, expected);
+    verify_case(path, "missing visible parts", [](Fixture& f) { f.views[0].part_count = 0; }, expected);
+    expected.views[0] = OCCT_BRIDGE_PMI_VIEW_LOST;
+    expected.view_datums[0] = expected.view_sizes[0] = 1;
+    expected.view_tolerances[0].fill(1);
+    verify_case(path, "missing view", [](Fixture& f) { f.views[0].name = "missing"; }, expected);
+    expected = {};
+    expected.views.fill(UINT32_MAX);
+    verify_case(path, "visibility without view loss output", [](Fixture& f) { f.pmi.out_view_losses = nullptr; }, expected);
+
+}
+
+void dataset_cases(const char* path) {
+    Losses expected;
+    expected.dataset = OCCT_BRIDGE_DATASET_LOST_IDENTIFIER;
+    verify_case(path, "changed identifier", [](Fixture& f) { f.dataset.identifier = "other"; }, expected);
+    expected.dataset = OCCT_BRIDGE_DATASET_LOST_REVISION;
+    verify_case(path, "changed revision", [](Fixture& f) { f.dataset.revision = "B"; }, expected);
+    expected.dataset = OCCT_BRIDGE_DATASET_LOST_AUTHORITY;
+    verify_case(path, "changed authority", [](Fixture& f) { f.dataset.authority = "drawing"; }, expected);
+    expected.dataset = OCCT_BRIDGE_DATASET_LOST_APPROVALS;
+    verify_case(path, "changed approval", [](Fixture& f) { f.approval.date = "2026-10-20"; }, expected);
+    expected.dataset = UINT32_MAX;
+    verify_case(path, "optional dataset loss output", [](Fixture& f) { f.dataset.out_losses = nullptr; }, expected);
+
+}
+
+void validation_precedence() {
+    Fixture f;
+    f.datums[0].label = "";
+    f.tolerances[0].value_mm = std::numeric_limits<double>::quiet_NaN();
+    f.sizes[0].lower_mm = -1;
+    f.drawings[0].name = "";
+    f.views[0].name = "";
+    f.dataset.identifier = "";
+    const auto error_is = [&](const char* expected) {
+        const char* error = pmi_error(f.pmi, f.shapes);
+        check(error != nullptr && std::strcmp(error, expected) == 0, "validation precedence", expected);
+    };
+    f.pmi.datums = nullptr;
+    error_is("PMI arrays are missing");
+    f.pmi.datums = f.datums.data();
+    error_is("datums need nonempty labels");
+    f.datums[0].label = "A";
+    error_is("a tolerance value must be finite and positive");
+    f.tolerances[0].value_mm = .05;
+    error_is("size limits must be finite and positive, lower not above upper");
+    f.sizes[0].lower_mm = 9.9;
+    error_is("presentations need nonempty names");
+    f.drawings[0].name = "datum";
+    error_is("views need nonempty names");
+    f.views[0].name = "TOP";
+    error_is("a dataset needs an identifier, an organization and an authority");
+    f.dataset.identifier = "PMI-TEST";
+    check(pmi_error(f.pmi, f.shapes) == nullptr, "validation precedence", "fully repaired request");
+}
+
+int run(const char* path) {
+    const auto application = XCAFApp_Application::GetApplication();
+    const int documents = application->NbDocuments();
+    Fixture baseline;
+    baseline.write(path);
+    annotation_cases(path);
+    presentation_cases(path);
+    view_cases(path);
+    dataset_cases(path);
+    validation_precedence();
+    Fixture unreadable;
+    unreadable.losses.poison();
+    Losses unchanged;
+    unchanged.poison();
+    const std::string missing = std::string(path) + ".missing";
+    check(!verify_pmi(missing.c_str(), unreadable.pmi, unreadable.shapes), "missing file", "read failure");
+    unreadable.losses.compare(unchanged, "missing file leaves outputs untouched");
+    check(application->NbDocuments() == documents, "read-back lifecycle", "no leaked XCAF documents");
+    (void)std::printf("%zu read-back comparisons; %d failures\n", comparisons, failures);
+    (void)std::remove(path);
+    return failures == 0 ? 0 : 1;
+}
+}  // namespace
+
+int main(int argc, char** argv) {
+    try {
+        return run(argc > 1 ? argv[1] : "step-pmi-verification.step");
+    } catch (const std::exception& error) {
+        (void)std::fprintf(stderr, "FAILED: %s\n", error.what());
+    } catch (...) {
+        (void)std::fputs("FAILED: unexpected exception\n", stderr);
+    }
+    return 1;
+}
