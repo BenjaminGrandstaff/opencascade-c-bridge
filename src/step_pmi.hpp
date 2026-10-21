@@ -3,7 +3,8 @@
  * part faces, and verification by reading the written file back.
  */
 
-#pragma once
+#ifndef OCCT_BRIDGE_STEP_PMI_HPP
+#define OCCT_BRIDGE_STEP_PMI_HPP
 
 #include "occt_bridge.h"
 
@@ -39,3 +40,5 @@ void finish_pmi(
 bool verify_pmi(const char* path, occt_bridge_step_pmi_t& pmi, const std::vector<const TopoDS_Shape*>& shapes);
 
 }  // namespace occt_bridge_internal
+
+#endif  // OCCT_BRIDGE_STEP_PMI_HPP

@@ -116,7 +116,7 @@
 
 #include <algorithm>
 #include <array>
-#include <cstdlib>
+#include <stdexcept>
 #include <cstring>
 #include <optional>
 #include <cmath>
@@ -907,9 +907,9 @@ std::pair<gp_Dir, gp_Dir> camera_axes(const occt_bridge_step_view_t& view) {
 
 Handle(StepGeom_CartesianPoint) step_point(const gp_XYZ& value) {
     Handle(TColStd_HArray1OfReal) coordinates = new TColStd_HArray1OfReal(1, 3);
-    for (int index = 1; index <= 3; ++index) {
-        coordinates->SetValue(index, value.Coord(index));
-    }
+    coordinates->SetValue(1, value.X());
+    coordinates->SetValue(2, value.Y());
+    coordinates->SetValue(3, value.Z());
     Handle(StepGeom_CartesianPoint) point = new StepGeom_CartesianPoint;
     point->Init(text(""), coordinates);
     return point;
@@ -917,9 +917,9 @@ Handle(StepGeom_CartesianPoint) step_point(const gp_XYZ& value) {
 
 Handle(StepGeom_Direction) step_direction(const gp_Dir& value) {
     Handle(TColStd_HArray1OfReal) ratios = new TColStd_HArray1OfReal(1, 3);
-    for (int index = 1; index <= 3; ++index) {
-        ratios->SetValue(index, value.Coord(index));
-    }
+    ratios->SetValue(1, value.X());
+    ratios->SetValue(2, value.Y());
+    ratios->SetValue(3, value.Z());
     Handle(StepGeom_Direction) direction = new StepGeom_Direction;
     direction->Init(text(""), ratios);
     return direction;
@@ -1178,15 +1178,25 @@ std::optional<std::array<int, 3>> iso_date(const char* text) {
             return std::nullopt;
         }
     }
-    const int year = std::atoi(text);
-    const int month = std::atoi(text + 5);
-    const int day = std::atoi(text + 8);
+    // The checked, fixed-width digits bound each conversion without atoi's
+    // silent acceptance of partial numbers or conversion failures.
+    const int year = (text[0] - '0') * 1000 + (text[1] - '0') * 100 + (text[2] - '0') * 10 + text[3] - '0';
+    const int month = (text[5] - '0') * 10 + text[6] - '0';
+    const int day = (text[8] - '0') * 10 + text[9] - '0';
     const bool leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
     static constexpr int kDays[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
     if (year < 1 || month < 1 || month > 12 || day < 1 || day > kDays[month - 1] + (month == 2 && leap ? 1 : 0)) {
         return std::nullopt;
     }
     return std::array<int, 3>{year, month, day};
+}
+
+std::array<int, 3> approval_date(const char* text) {
+    const auto parsed = iso_date(text);
+    if (!parsed) {
+        throw std::invalid_argument("approvals need a valid YYYY-MM-DD date");
+    }
+    return *parsed;
 }
 
 const char* dataset_error(const occt_bridge_step_dataset_t& dataset) {
@@ -1274,7 +1284,7 @@ void write_dataset(const Handle(Interface_InterfaceModel)& model, const occt_bri
         status->Init(text("approved"));
         Handle(StepBasic_Approval) approval = new StepBasic_Approval;
         approval->Init(status, text(entry.role));
-        const auto [year, month, day] = *iso_date(entry.date);
+        const auto [year, month, day] = approval_date(entry.date);
         Handle(StepBasic_CalendarDate) date = new StepBasic_CalendarDate;
         date->Init(year, day, month);
         StepBasic_DateTimeSelect when;
@@ -1371,7 +1381,7 @@ uint32_t dataset_losses(const Handle(Interface_InterfaceModel)& model, const occ
     std::vector<ReadApproval> written;
     for (size_t index = 0; released && index < dataset.approval_count; ++index) {
         const auto& entry = dataset.approvals[index];
-        written.emplace_back(entry.role, entry.name, *iso_date(entry.date));
+        written.emplace_back(entry.role, entry.name, approval_date(entry.date));
     }
     std::sort(read.begin(), read.end());
     std::sort(written.begin(), written.end());

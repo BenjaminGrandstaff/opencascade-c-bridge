@@ -4,23 +4,25 @@
 #include <TColStd_Array1OfReal.hxx>
 #include <TColStd_Array1OfInteger.hxx>
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <numeric>
 
 using namespace occt_bridge_internal;
 
 occt_bridge_status_t occt_bridge_bspline_refine(
     occt_bridge_session_t* session, const occt_bridge_bspline_basis_t* basis,
     int32_t action, double knot, int32_t target_degree,
-    occt_bridge_bspline_refinement_t* out) {
-    if (out != nullptr) { out->degree = 0; out->pole_count = out->knot_count = 0; }
+    occt_bridge_bspline_refinement_t* out_result) {
+    if (out_result != nullptr) { out_result->degree = 0; out_result->pole_count = out_result->knot_count = 0; }
     return guarded(session, [&] {
-        if (basis == nullptr || out == nullptr || basis->degree < 1 || basis->degree > 25
+        if (basis == nullptr || out_result == nullptr || basis->degree < 1 || basis->degree > 25
             || (basis->periodic != 0 && basis->periodic != 1)
-            || basis->pole_count < static_cast<size_t>(basis->degree + 1) || basis->pole_count > 256
+            || basis->pole_count < (static_cast<size_t>(basis->degree) + 1) || basis->pole_count > 256
             || basis->knot_count < 2 || basis->knot_count > 514
             || basis->knots == nullptr || basis->multiplicities == nullptr
-            || out->knots == nullptr || out->multiplicities == nullptr || out->coefficients == nullptr
-            || out->knot_capacity < 514 || out->coefficient_capacity < 256 * basis->pole_count
+            || out_result->knots == nullptr || out_result->multiplicities == nullptr || out_result->coefficients == nullptr
+            || out_result->knot_capacity < 514 || out_result->coefficient_capacity < 256 * basis->pole_count
             || (action != 0 && action != 1)) {
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "Refinement requires a bounded basis and complete output buffers");
         }
@@ -44,7 +46,7 @@ occt_bridge_status_t occt_bridge_bspline_refine(
             knots.SetValue(static_cast<int>(i + 1), value); mults.SetValue(static_cast<int>(i + 1), m);
             sum += static_cast<size_t>(m);
         }
-        if (sum != basis->pole_count + (basis->periodic ? static_cast<size_t>(basis->multiplicities[basis->knot_count - 1]) : static_cast<size_t>(basis->degree + 1))
+        if (sum != basis->pole_count + (basis->periodic ? static_cast<size_t>(basis->multiplicities[basis->knot_count - 1]) : (static_cast<size_t>(basis->degree) + 1))
             || (basis->periodic && basis->multiplicities[0] != basis->multiplicities[basis->knot_count - 1])) {
             return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "Refinement basis cardinality is inconsistent");
         }
@@ -94,8 +96,9 @@ occt_bridge_status_t occt_bridge_bspline_refine(
             }
             for (int row = 1; row <= refined->NbPoles(); ++row) {
                 const auto pole = refined->Pole(row);
+                const std::array<double, 3> values{pole.X(), pole.Y(), pole.Z()};
                 for (size_t axis = 0; axis < 3 && column + axis < basis->pole_count; ++axis) {
-                    const double value = pole.Coord(static_cast<int>(axis + 1));
+                    const double value = values[axis];
                     if (!std::isfinite(value) || value < -1e-12) {
                         return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "Refinement needs finite nonnegative homogeneous coefficients");
                     }
@@ -104,18 +107,18 @@ occt_bridge_status_t occt_bridge_bspline_refine(
             }
         }
         for (int row = 0; row < refined->NbPoles(); ++row) {
-            const auto begin = coefficients.begin() + static_cast<size_t>(row) * basis->pole_count;
-            double total = 0.; for (size_t i = 0; i < basis->pole_count; ++i) { total += begin[i]; }
+            auto* begin = coefficients.data() + static_cast<size_t>(row) * basis->pole_count;
+            const double total = std::accumulate(begin, begin + basis->pole_count, 0.);
             if (!std::isfinite(total) || std::abs(total - 1.) > 1e-10) {
                 return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "Refinement coefficients must form an affine combination");
             }
             for (size_t i = 0; i < basis->pole_count; ++i) { begin[i] /= total; }
         }
         for (int i = 1; i <= refined->NbKnots(); ++i) {
-            out->knots[i - 1] = refined->Knot(i); out->multiplicities[i - 1] = refined->Multiplicity(i);
+            out_result->knots[i - 1] = refined->Knot(i); out_result->multiplicities[i - 1] = refined->Multiplicity(i);
         }
-        std::copy(coefficients.begin(), coefficients.end(), out->coefficients);
-        out->degree = refined->Degree(); out->pole_count = static_cast<size_t>(refined->NbPoles()); out->knot_count = static_cast<size_t>(refined->NbKnots());
+        std::copy(coefficients.begin(), coefficients.end(), out_result->coefficients);
+        out_result->degree = refined->Degree(); out_result->pole_count = static_cast<size_t>(refined->NbPoles()); out_result->knot_count = static_cast<size_t>(refined->NbKnots());
         return succeed(session);
     });
 }

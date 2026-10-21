@@ -23,6 +23,7 @@
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <filesystem>
 #include <iterator>
 #include <set>
 #include <string>
@@ -465,6 +466,23 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
             == OCCT_BRIDGE_OK && undrawn_losses[0] == 0,
         "an undrawn tolerance alone reads back with its value");
 
+    // Calendar boundaries, including a century leap year, survive STEP read-back.
+    const char* valid_dates[] = {"0001-01-01", "2000-02-29", "2024-02-29", "9999-12-31"};
+    for (const char* date : valid_dates) {
+        const occt_bridge_step_approval_t dated[] = {{"APPROVED", "M. Ortiz", date}};
+        uint32_t lost = 99;
+        occt_bridge_step_dataset_t dated_dataset = dataset;
+        dated_dataset.approvals = dated;
+        dated_dataset.approval_count = 1;
+        dated_dataset.out_losses = &lost;
+        occt_bridge_step_pmi_t dated_pmi{};
+        dated_pmi.dataset = &dated_dataset;
+        check(occt_bridge_step_save_assembly_pmi(
+                  session, file.c_str(), "fixture", nullptr, 0, components, nullptr, 2, nullptr, 0, &dated_pmi, nullptr)
+                == OCCT_BRIDGE_OK && lost == 0,
+            "approval date survives STEP read-back");
+    }
+
     // Invalid PMI writes nothing.
     (void)std::remove(file.c_str());
     const auto refused = [&](occt_bridge_step_pmi_t bad, const char* what) {
@@ -544,12 +562,19 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
     unreleased.revision = nullptr;
     refused({datums, 5, tolerances, 2, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr, &unreleased},
         "approvals on an unreleased dataset");
-    const occt_bridge_step_approval_t undated[] = {{"APPROVED", "M. Ortiz", "2026-02-30"}};
-    occt_bridge_step_dataset_t misdated = dataset;
-    misdated.approvals = undated;
-    misdated.approval_count = 1;
-    refused({datums, 5, tolerances, 2, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr, &misdated},
-        "approval on an impossible date");
+    const char* invalid_dates[] = {
+        "2026-02-30", "1900-02-29", "2100-02-29", "0000-01-01",
+        "2026-00-01", "2026-13-01", "2026-01-00", "2026-01-32",
+        "2026-2-01", "2026/02/01", "2026-02-01extra", "202x-02-01", "", nullptr,
+    };
+    for (const char* date : invalid_dates) {
+        const occt_bridge_step_approval_t undated[] = {{"APPROVED", "M. Ortiz", date}};
+        occt_bridge_step_dataset_t misdated = dataset;
+        misdated.approvals = undated;
+        misdated.approval_count = 1;
+        refused({datums, 5, tolerances, 2, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr, &misdated},
+            "approval on an invalid date");
+    }
     const occt_bridge_step_view_t two_views[] = {views[0], views[0]};
     refused({datums, 5, tolerances, 2, nullptr, 0, nullptr, nullptr, nullptr, two_views, 2, nullptr, nullptr},
         "repeated view name");
@@ -570,7 +595,7 @@ void pmi(occt_bridge_session_t* session, const std::string& file) {
     off_plane.presentation = &tilted;
     refused({nullptr, 0, &off_plane, 1, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, nullptr, nullptr},
         "annotation plane without a unit normal");
-    check(std::fopen(file.c_str(), "r") == nullptr, "nothing written");
+    check(!std::filesystem::exists(file), "nothing written");
     check(occt_bridge_step_save_assembly_pmi(
               session, file.c_str(), "fixture", nullptr, 0, components, nullptr, 2, nullptr, 0, nullptr, nullptr)
             == OCCT_BRIDGE_INVALID_ARGUMENT, "missing PMI");

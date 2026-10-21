@@ -24,9 +24,11 @@ podman run --rm -v "$root:$root:ro,z" "$image" bash -c "
     clang-tidy -p /tmp/build --quiet '$root'/src/*.cpp '$root'/tests/*.cpp '$root'/tests/*.c \
         2>/dev/null | tee /tmp/tidy.txt
     grep -q 'warning:' /tmp/tidy.txt && status=1
+    # Match Standard_Handle.hxx so cppcheck can parse OCCT smart handles.
     echo '== cppcheck'
     cppcheck --project=/tmp/build/compile_commands.json --quiet --inconclusive \
         --enable=warning,style,performance,portability --inline-suppr \
+        '-DHandle(Class)=opencascade::handle<Class>' \
         --suppress=missingIncludeSystem --suppress='*:/usr/include/*' \
         --error-exitcode=1 --template='{file}:{line}: {severity}: {message} [{id}]' || status=1
     exit \$status

@@ -177,6 +177,7 @@ if(BUILD_TESTING)
     # Concurrent STEP reads and writes from independent sessions.
     find_package(Threads REQUIRED)
     add_executable(occt_bridge_step_concurrency_test tests/step_concurrency_test.c)
+    target_compile_definitions(occt_bridge_step_concurrency_test PRIVATE _POSIX_C_SOURCE=200809L)
     target_compile_options(
         occt_bridge_step_concurrency_test PRIVATE
         $<$<C_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic;-Werror>

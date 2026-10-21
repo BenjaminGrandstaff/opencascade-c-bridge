@@ -247,7 +247,7 @@ namespace {
         }
         BRepBuilderAPI_MakeWire builder;size_t source_count=0,result_count=0;
         for(BRepTools_WireExplorer it(wire);it.More();it.Next()) {
-            ++source_count;const auto edge=it.Current();
+            ++source_count;const auto& edge=it.Current();
             if(edge.IsSame(incoming)) {builder.Add(a);builder.Add(join);}
             else if(edge.IsSame(outgoing)) builder.Add(b);
             else builder.Add(edge);
@@ -290,7 +290,7 @@ namespace {
         if(vertex.IsNull()) return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"corner point is not a remaining profile vertex");
         TopoDS_Edge incoming,outgoing;int incoming_count=0,outgoing_count=0;
         for(BRepTools_WireExplorer it(wire);it.More();it.Next()) {
-            const auto edge=it.Current();
+            const auto& edge=it.Current();
             if(TopExp::LastVertex(edge,true).IsSame(vertex)) {incoming=edge;++incoming_count;}
             if(TopExp::FirstVertex(edge,true).IsSame(vertex)) {outgoing=edge;++outgoing_count;}
         }

@@ -368,7 +368,9 @@ Install `liberation-sans-fonts` to build the engraved-nameplate example.
 
 C and C++ static analysis runs clang-tidy (configured by
 [`.clang-tidy`](.clang-tidy)) and cppcheck inside a podman container, so no
-host packages are needed. It exits non-zero on any finding:
+host packages are needed. The cppcheck configuration expands OCCT’s `Handle(Class)`
+macro to its native smart-pointer type. The runner exits non-zero on any finding;
+known remaining findings are tracked in the [roadmap quality table](ROADMAP.md#current-status):
 
 ```bash
 tools/cpp-lint/run.sh

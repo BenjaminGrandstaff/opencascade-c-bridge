@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <cstdio>
 #include <memory>
 #include <string>
 #include <vector>
@@ -35,6 +36,13 @@ using namespace occt_bridge_internal;
 namespace {
 
 constexpr size_t kMaxCharacters = 1000;
+
+std::string missing_glyph_message(char32_t code) {
+    char hex[16];
+    const int count = std::snprintf(hex, sizeof hex, "U+%04X", static_cast<unsigned>(code));
+    const char* glyph = count >= 0 && static_cast<size_t>(count) < sizeof hex ? hex : "this Unicode code point";
+    return std::string("font has no glyph for ") + glyph;
+}
 
 /* Decodes UTF-8, rejecting malformed input and control characters. */
 bool decode_utf8(const char* text, size_t length, std::vector<char32_t>& out) {
@@ -94,6 +102,10 @@ struct OutlineBuilder {
     gp_XY last{0, 0};
     bool open = false;
     const char* error = nullptr;
+
+    OutlineBuilder(std::vector<Contour>& output, double font_scale, const gp_Pnt& font_origin,
+                   const gp_Vec& font_x, const gp_Vec& font_y)
+        : contours(&output), pen_x(0.0), scale(font_scale), origin(font_origin), x_axis(font_x), y_axis(font_y) {}
 
     gp_XY local(const FT_Vector* v) const {
         return gp_XY((pen_x + static_cast<double>(v->x)) * scale, static_cast<double>(v->y) * scale);
@@ -293,16 +305,14 @@ occt_bridge_status_t occt_bridge_create_text(
         }
         const double scale = height / static_cast<double>(ft.face->units_per_EM);
         std::vector<Contour> contours;
-        OutlineBuilder builder{&contours, 0.0, scale, to_point(origin), x, y};
+        OutlineBuilder builder{contours, scale, to_point(origin), x, y};
         FT_Outline_Funcs funcs{move_to, line_to, conic_to, cubic_to, 0, 0};
         double pen = 0.0;
         FT_UInt previous = 0;
         for (char32_t code : characters) {
             const FT_UInt index = FT_Get_Char_Index(ft.face, code);
             if (index == 0 && code != U' ') {
-                char hex[16];
-                std::snprintf(hex, sizeof hex, "U+%04X", static_cast<unsigned>(code));
-                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, std::string("font has no glyph for ") + hex);
+                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, missing_glyph_message(code));
             }
             if (previous != 0 && index != 0 && FT_HAS_KERNING(ft.face)) {
                 FT_Vector kern;

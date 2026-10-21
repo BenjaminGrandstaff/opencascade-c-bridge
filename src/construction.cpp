@@ -277,7 +277,7 @@ occt_bridge_status_t occt_bridge_create_face_with_holes(
         if (!base.IsDone() || !BRepCheck_Analyzer(base.Face()).IsValid()) {
             return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "outer wire does not define a valid planar face");
         }
-        const TopoDS_Face outer_face = base.Face();
+        const TopoDS_Face& outer_face = base.Face();
         const gp_Pln plane = Handle(Geom_Plane)::DownCast(BRep_Tool::Surface(outer_face))->Pln();
         const gp_Dir normal = face_normal(outer_face);
         const double outer_area = face_area(outer_face);

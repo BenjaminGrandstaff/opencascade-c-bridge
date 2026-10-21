@@ -183,7 +183,7 @@ const char* curve_segment_error(
         const bool periodic = (segment.flags & kPeriodic) != 0;
         const bool non_clamped = (segment.flags & kNonClamped) != 0;
         if ((periodic && non_clamped) || (segment.flags & ~(kPeriodic | kNonClamped)) != 0 || segment.degree < 1 || segment.degree > Geom_BSplineCurve::MaxDegree()
-            || segment.point_count < static_cast<size_t>(segment.degree + 1) || segment.point_count > 10000
+            || segment.point_count < (static_cast<size_t>(segment.degree) + 1) || segment.point_count > 10000
             || segment.knot_count < 2 || segment.knot_count > 10002 || segment.knots == nullptr || segment.multiplicities == nullptr
             || (segment.weight_count != 0 && (segment.weight_count != segment.point_count || segment.weights == nullptr))) {
             return "invalid explicit B-spline sizes or degree";

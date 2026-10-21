@@ -48,18 +48,19 @@ occt_bridge_status_t occt_bridge_align_profile_wire(
         }
         if (start_point) {
             const gp_Pnt anchor(start_point->x, start_point->y, start_point->z);
-            size_t selected = edges.size(), matches = 0;
-            for (size_t i = 0; i < edges.size(); ++i) {
-                const auto vertex = TopExp::FirstVertex(edges[i], Standard_True);
+            auto selected = edges.end();
+            size_t matches = 0;
+            for (auto edge = edges.begin(); edge != edges.end(); ++edge) {
+                const auto vertex = TopExp::FirstVertex(*edge, Standard_True);
                 if (!vertex.IsNull() && BRep_Tool::Pnt(vertex).Distance(anchor) <= 1e-6) {
-                    selected = i;
+                    selected = edge;
                     ++matches;
                 }
             }
             if (matches > 1)
                 return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "alignment start point matches multiple boundary vertices");
             if (matches == 1) {
-                std::rotate(edges.begin(), edges.begin() + selected, edges.end());
+                std::rotate(edges.begin(), selected, edges.end());
             } else if (edges.size() == 1) {
                 Standard_Real first, last;
                 TopLoc_Location location;

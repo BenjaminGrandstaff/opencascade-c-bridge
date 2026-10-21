@@ -1582,10 +1582,10 @@ static void corner_edits(occt_bridge_session_t* session) {
 }
 
 static void spline_refinement(occt_bridge_session_t* session) {
-    double input_knots[2] = {0., 1.}, knots[514], coefficients[256 * 3];
+    double input_knots[2] = {0., 1.}, knots[514], coefficients[(size_t)256 * 3];
     int32_t input_mults[2] = {3, 3}, multiplicities[514];
     occt_bridge_bspline_basis_t basis = {2, 0, 3, 2, input_knots, input_mults};
-    occt_bridge_bspline_refinement_t out = {0, 0, 0, knots, multiplicities, coefficients, 514, 256 * 3};
+    occt_bridge_bspline_refinement_t out = {0, 0, 0, knots, multiplicities, coefficients, 514, (size_t)256 * 3};
     size_t before = 0, after = 0;
     EXPECT(occt_bridge_session_shape_count(session, &before), OK);
     EXPECT(occt_bridge_bspline_refine(session, &basis, 0, 0.5, 0, &out), OK);
@@ -1596,7 +1596,7 @@ static void spline_refinement(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_bspline_refine(session, &basis, 0, 0.5, 0, NULL), ARG);
     out.coefficient_capacity = 1;
     EXPECT(occt_bridge_bspline_refine(session, &basis, 0, 0.5, 0, &out), ARG);
-    out.coefficient_capacity = 256 * 3;
+    out.coefficient_capacity = (size_t)256 * 3;
     out.knot_capacity = 1;
     EXPECT(occt_bridge_bspline_refine(session, &basis, 0, 0.5, 0, &out), ARG);
     out.knot_capacity = 514;
@@ -1604,10 +1604,18 @@ static void spline_refinement(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_bspline_refine(session, &basis, 0, 1., 0, &out), ARG);
     EXPECT(occt_bridge_bspline_refine(session, &basis, 1, 0., 2, &out), ARG);
     EXPECT(occt_bridge_bspline_refine(session, &basis, 99, 0., 3, &out), ARG);
-    input_mults[0] = 0;
+    const int32_t invalid_mults[2] = {0, 3};
+    basis.multiplicities = invalid_mults;
     EXPECT(occt_bridge_bspline_refine(session, &basis, 0, 0.5, 0, &out), ARG);
-    input_mults[0] = 3;
+    basis.multiplicities = input_mults;
     basis.pole_count = 257;
+    EXPECT(occt_bridge_bspline_refine(session, &basis, 0, 0.5, 0, &out), ARG);
+    basis.pole_count = SIZE_MAX;
+    EXPECT(occt_bridge_bspline_refine(session, &basis, 0, 0.5, 0, &out), ARG);
+    basis.pole_count = 3;
+    basis.degree = INT32_MAX;
+    EXPECT(occt_bridge_bspline_refine(session, &basis, 0, 0.5, 0, &out), ARG);
+    basis.degree = INT32_MIN;
     EXPECT(occt_bridge_bspline_refine(session, &basis, 0, 0.5, 0, &out), ARG);
     EXPECT(occt_bridge_session_shape_count(session, &after), OK);
     EXPECT_TRUE(before == after, "refinement creates no shape handles");
