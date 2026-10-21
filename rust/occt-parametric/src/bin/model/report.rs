@@ -1,6 +1,15 @@
 use occt_parametric::*;
 use serde_json::{Value, json};
 
+pub fn feature_states(document: &ModelDocument) -> Value {
+    json!(std::iter::once(&document.family).chain(&document.additional_families)
+        .map(|family| json!({"family": family.id, "head": family.history.head,
+            "features": family.history_states().expect("validated history").into_iter()
+                .map(|(id, state)| { let mut value = serde_json::to_value(state).expect("feature state");
+                    value["feature"] = json!(id); value }).collect::<Vec<_>>() }))
+        .collect::<Vec<_>>())
+}
+
 pub fn diagnostics(items: &[FeatureDiagnostic]) -> Value {
     json!(
         items
@@ -71,6 +80,7 @@ pub fn required_failures(document: &ModelDocument, verification: &Value) -> Vec<
 /// output's measurements, and the failing labels, each capped at
 /// `MAX_REJECTED_ROWS` with counts of what was left out.
 pub fn rejected(
+    document: &ModelDocument,
     generation: &GraphRegeneration<'_>,
     verification: Value,
     outputs: Vec<Value>,
@@ -87,6 +97,7 @@ pub fn rejected(
     let failed_total = failed.len();
     json!({
         "accepted": false,
+        "feature_states": feature_states(document),
         "generated_variants": generation.generated_variants(),
         "required_failures": failed.into_iter().take(MAX_REJECTED_ROWS).collect::<Vec<_>>(),
         "verification": kept,

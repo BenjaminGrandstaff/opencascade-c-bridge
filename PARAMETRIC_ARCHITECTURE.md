@@ -1660,9 +1660,12 @@ parameters enter incremental invalidation. Missing or ambiguous matches reject
 edits; separate edge topology remains an extension.
 
 
-The next cross-layer work should prioritize manufacturing product definition:
-standards-verified material hatch presets and drawing conventions, followed by
-broader GD&T evaluation and structured PMI. Schema 57 integrates true planar slice drawings with
+The feature timeline now supports checkout, suppression and dependency-checked
+moves across regeneration, reports, guarded CLI/MCP edits and the studio (schema
+182). See [feature history](docs/FEATURE_HISTORY.md). Next refinements include
+named timeline bookmarks and feature branches; manufacturing work should target
+remaining datum/GD&T cases and global freeform draft proofs. Existing material
+presets, drawing conventions and structured PMI are documented below. Schema 57 integrates true planar slice drawings with
 the geometry branch's schema 56 features; the
 [drawing-export command](tools/drawing-export/README.md) shares regeneration
 across batches and writes reloadable definitions and SVG/DXF files. The balance-report command reports material

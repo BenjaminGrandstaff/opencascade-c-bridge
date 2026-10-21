@@ -12,19 +12,31 @@ tracks status and order.
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 181 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 181 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 182 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 182 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 7/7, bridge 176 + first-use integration 1 (+1 doc test), recipes 3, parametric core 61 + kernel 801 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 100 + viewer Node 473 + branch command 2 + model command 104, MCP Python 28, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 7/7, bridge 176 + first-use integration 1 (+1 doc test), recipes 3, parametric core 66 + kernel 804 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 101 + viewer Node 475 + branch command 2 + model command 105, MCP Python 29, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
-| clang-tidy, cppcheck, clang `-Werror` | Compiler build passes; full lint flags existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
-| Rust formatting and Clippy | Clean across all three crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
-| Scale benchmarks | Last full suite: 194 Rust cases (199 with the parallel glTF, 1,000-part view, advanced sweep, tray and bend-cutout cases) plus 7 model-command cases (including 256 renders in one build) and a 10,000-face Python matcher. Sketch authoring integration rechecked 60 sketch cases and 60 MCP cases within budget. | `tools/bench/run.sh` |
+| clang-tidy, cppcheck, clang `-Werror` | GCC build and C tests pass. Full Clang lint reports existing C-linkage helpers returning C++ OCCT types and captured structured bindings requiring C++20, plus existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
+| Rust formatting and Clippy | Clean across all five crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
+| Coverage | Current run blocked during the instrumented Clang build by existing C-linkage/C++17 errors; no new coverage result. Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
+| Scale benchmarks | Current run: all 137 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
 
 ## Done
+
+- Feature timeline (schema 182, ABI 85 unchanged): checkout through a feature,
+  suppress/restore without deletion, and dependency-checked moves. Suppressed
+  modifiers pass through their primary input; unavailable new bodies block their
+  dependents. Build reports show active, suppressed, rolled-back and blocked
+  states. Guarded edit actions are exposed over CLI/MCP, and the studio feature
+  list supports checkout, restoration, suppression and moves with Undo/Redo/Save.
+  Revision records retain feature order and merges preserve compatible ordering.
+  State propagation is linear in features plus dependency edges; the scale gate
+  passes 100 walks through 10,000 reverse-ordered features in 0.126 s
+  (5 s budget). See
+  [feature history](docs/FEATURE_HISTORY.md).
 
 - Render scenes with interference (no schema or ABI change). With
   `renders.scene`, a build also renders all its selected outputs together
@@ -3564,11 +3576,11 @@ ordered by priority; the catalog/documentation foundation is complete.
 
 ## Later
 
-- Sheet-metal closed and teardrop hems, cutouts across bends, edge
-  flanges on edge flanges, and unfolding edited solids beyond strips with
-  edge flanges (cutouts within flanges exist, schema 160; bend tables,
-  schema 161; open and rolled hems, schema 162; edge flanges with bend
-  reliefs, schema 176).
+- Sheet-metal edge flanges on edge flanges, and unfolding edited solids
+  beyond strips with edge flanges. Closed and teardrop hems exist (schema 177),
+  as do cutouts across bends (schema 178), flange cutouts (schema 160), bend
+  tables (schema 161), open/rolled hems (schema 162), and edge flanges with
+  bend reliefs (schema 176).
 - Tolerance classes beyond H and h (H6–H13 and h6–h13 exist, schema 163).
 - Wing structure beyond solid printed segments: hollow shells with internal
   ribs, alignment pins independent of the spar, twist-exact hinge lines, and
@@ -3580,10 +3592,12 @@ ordered by priority; the catalog/documentation foundation is complete.
 - Advanced ribs with general support-following and nonuniform closure.
 - Complete linkage branch enumeration, broader connected assembly solving, and
   bounds that preserve motion correlations in dense or deeply nested mechanisms.
-- Exact (not sampled) minimum wall thickness, exact draft on freeform BREP
-  faces, and non-planar parting surfaces.
-- Domain-specific expression functions (airfoil sections, material and
-  catalog lookups).
+- Minimum-wall checks at knife edges between faces sharing an edge, proof of
+  global draft extrema on freeform faces, and non-planar parting surfaces.
+  Exact minimum-wall checks and refined freeform draft exist (schema 181, ABI 85).
+- Further domain-specific expression functions, including airfoil sections.
+  Sourced material-property and standard-part dimension lookups already exist
+  (schemas 179–180).
 - Integration with the broader EIL source model in the sibling
   [`engineering-intent-language`](../engineering-intent-language) project.
 

@@ -42,6 +42,7 @@ examples. Project-wide status lives in [the roadmap](../ROADMAP.md) and
 
 - [Generated drawings](DRAWINGS.md)
 - [Model history and change impact](MODEL_HISTORY.md)
+- [Feature timeline: checkout, suppression and reordering](FEATURE_HISTORY.md)
 - [Semantic document comparisons and merges](DOCUMENT_DIFF.md)
 
 ## AI authoring and local tools

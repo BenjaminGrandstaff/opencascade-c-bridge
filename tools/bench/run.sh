@@ -7,6 +7,7 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 build="$root/build/bench"
+cargo_target="${CARGO_TARGET_DIR:-$root/rust/occt-parametric/target}"
 
 # Typed sketch authoring menus and validation; no native geometry required.
 node "$root/tools/bench/sketch-controls.mjs"
@@ -122,8 +123,8 @@ OCCT_BRIDGE_LIB_DIR="$build" LD_LIBRARY_PATH="$build" \
 OCCT_BRIDGE_LIB_DIR="$build" LD_LIBRARY_PATH="$build" \
     cargo build --quiet --release --manifest-path "$root/rust/occt-parametric/Cargo.toml" --bins
 LD_LIBRARY_PATH="$build" \
-    python3 "$root/tools/model/check.py" "$root/rust/occt-parametric/target/release/occt-model"
+    python3 "$root/tools/model/check.py" "$cargo_target/release/occt-model"
 
 # MCP protocol roundtrips, generated schemas, and accepted model resources.
 LD_LIBRARY_PATH="$build" \
-    python3 "$root/tools/model/check_mcp.py" "$root/rust/occt-parametric/target/release/occt-model"
+    python3 "$root/tools/model/check_mcp.py" "$cargo_target/release/occt-model"

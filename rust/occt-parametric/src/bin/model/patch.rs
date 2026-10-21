@@ -41,6 +41,23 @@ pub enum Change {
         expected: Box<SketchDefinition>,
         changes: Vec<sketch::SketchChange>,
     },
+    CheckoutFeature {
+        family: String,
+        expected: FeatureHistory,
+        head: Option<String>,
+    },
+    SuppressFeature {
+        family: String,
+        feature: String,
+        expected: FeatureHistory,
+        suppressed: bool,
+    },
+    MoveFeature {
+        family: String,
+        feature: String,
+        expected: Vec<String>,
+        after: Option<String>,
+    },
     AddFeature {
         family: String,
         feature: Box<FeatureDefinition>,
@@ -92,7 +109,10 @@ pub enum Change {
 impl Change {
     fn family(&self) -> &str {
         match self {
-            Self::EditSketch { family, .. }
+            Self::CheckoutFeature { family, .. }
+            | Self::SuppressFeature { family, .. }
+            | Self::MoveFeature { family, .. }
+            | Self::EditSketch { family, .. }
             | Self::AddFeature { family, .. }
             | Self::ReplaceFeature { family, .. }
             | Self::RemoveFeature { family, .. }
@@ -108,6 +128,9 @@ impl Change {
     }
     fn identity(&self) -> (&str, &str) {
         match self {
+            Self::CheckoutFeature { .. } => ("checkout", "head"),
+            Self::SuppressFeature { feature, .. } => ("suppression", feature),
+            Self::MoveFeature { feature, .. } => ("order", feature),
             Self::EditSketch { feature, .. } => ("feature", feature),
             Self::AddFeature { feature, .. } | Self::ReplaceFeature { feature, .. } => {
                 ("feature", &feature.id)
@@ -239,6 +262,7 @@ fn edit(request: PatchRequest, destination: &Path, preview: bool) -> Result<Valu
             true,
         )?;
         report["status"] = json!("previewed");
+        report["feature_states"] = report::feature_states(&edited);
         report["accepted"] = json!(false);
         report["source"] = json!(request.source);
         if let Some(options) = &request.renders {
@@ -398,6 +422,32 @@ fn apply(model: &mut ModelDocument, changes: &[Change]) -> Result<(), Failure> {
 }
 fn apply_family(family: &mut FamilyDefinition, changes: &[&Change]) -> Result<bool, Failure> {
     let mut changed = false;
+    // All guards compare against the same original snapshot, before any mutation.
+    let original_history = family.history.clone();
+    let original_order = family
+        .features
+        .iter()
+        .map(|f| f.id.clone())
+        .collect::<Vec<_>>();
+    for change in changes {
+        match change {
+            Change::CheckoutFeature { expected, .. } | Change::SuppressFeature { expected, .. }
+                if expected != &original_history =>
+            {
+                return Err(failure(
+                    "conflict",
+                    "feature history differs from expected snapshot",
+                ));
+            }
+            Change::MoveFeature { expected, .. } if expected != &original_order => {
+                return Err(failure(
+                    "conflict",
+                    "feature order differs from expected snapshot",
+                ));
+            }
+            _ => {}
+        }
+    }
     let mut modifications = changes
         .iter()
         .filter_map(|c| match c {
@@ -631,5 +681,33 @@ fn apply_family(family: &mut FamilyDefinition, changes: &[&Change]) -> Result<bo
         }
     }
     family.features = features;
+    for change in changes {
+        match change {
+            Change::CheckoutFeature { head, .. } => {
+                changed |= family.history.head != *head;
+                family
+                    .checkout_feature(head.clone())
+                    .map_err(|e| model_failure("patch", e))?;
+            }
+            Change::SuppressFeature {
+                feature,
+                suppressed,
+                ..
+            } => {
+                changed |= family.history.suppressed.contains(feature) != *suppressed;
+                family
+                    .set_feature_suppressed(feature, *suppressed)
+                    .map_err(|e| model_failure("patch", e))?;
+            }
+            Change::MoveFeature { feature, after, .. } => {
+                let before = family.features.clone();
+                family
+                    .move_feature(feature, after.as_deref())
+                    .map_err(|e| model_failure("patch", e))?;
+                changed |= family.features != before;
+            }
+            _ => {}
+        }
+    }
     Ok(changed)
 }

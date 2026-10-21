@@ -228,6 +228,7 @@ pub fn family(project: &Project) -> Result<FamilyDefinition, Box<dyn Error>> {
         ));
     }
     Ok(FamilyDefinition {
+        history: Default::default(),
         references: Vec::new(),
         feature_colors: Default::default(),
         assumptions: Vec::new(),

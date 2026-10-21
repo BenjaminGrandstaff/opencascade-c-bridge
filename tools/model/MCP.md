@@ -820,3 +820,12 @@ The merge CLI also supports `--report BASE CURRENT OTHER NEW_OUTPUT_DIRECTORY`
 for the same nonmutating report behavior; exit code 2 retains a conflict report.
 The ordinary Git merge-driver invocation continues to replace CURRENT only on
 a successful merge.
+
+## Feature timeline edits
+
+Schema 182 adds `checkout_feature`, `suppress_feature`, and `move_feature` changes
+in the existing `occt_edit_build` / `occt_preview_edit_build` tools. Checkout and
+suppression guard the original family history; moves guard the ordered feature
+IDs and reject dependency crossings. Reports include `feature_states` for every
+family. Retrieve `feature-history` with `occt_get_example`; see
+[feature timeline states, request examples and studio controls](../../docs/FEATURE_HISTORY.md).

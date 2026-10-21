@@ -83,11 +83,23 @@ impl FeatureOperation {
 }
 
 impl FamilyDefinition {
-    /// Every feature's state, in declaration order. O(features × inputs)
-    /// per pass, at most one pass per feature; usually one or two.
+    /// Every feature's state in declaration order, in O(features + inputs).
     pub fn history_states(&self) -> Result<Vec<(&str, FeatureState)>, ModelError> {
         let history = &self.history;
-        let position = |id: &str| self.features.iter().position(|f| f.id == id);
+        if history.is_empty() {
+            return Ok(self
+                .features
+                .iter()
+                .map(|f| (f.id.as_str(), FeatureState::Active))
+                .collect());
+        }
+        let index_of: HashMap<&str, usize> = self
+            .features
+            .iter()
+            .enumerate()
+            .map(|(i, f)| (f.id.as_str(), i))
+            .collect();
+        let position = |id: &str| index_of.get(id).copied();
         let head = match &history.head {
             Some(id) => position(id).ok_or_else(|| {
                 ModelError::new(format!("history head names unknown feature '{id}'"))
@@ -130,36 +142,35 @@ impl FamilyDefinition {
                 }
             })
             .collect();
-        // Block features whose inputs produce nothing, until nothing changes.
-        // Features may depend on features declared after them.
-        let index_of: HashMap<&str, usize> = self
-            .features
-            .iter()
-            .enumerate()
-            .map(|(index, feature)| (feature.id.as_str(), index))
-            .collect();
-        loop {
-            let mut changed = false;
-            for index in 0..states.len() {
-                let needs: Vec<&str> = match &states[index] {
-                    FeatureState::Active => inputs[index].clone(),
-                    FeatureState::Suppressed {
-                        passes: Some(input),
-                    } => vec![input.as_str()],
-                    _ => continue,
-                };
-                let missing = needs.into_iter().find(|input| {
-                    index_of
-                        .get(input)
-                        .is_some_and(|&other| !states[other].produces())
-                });
-                if let Some(by) = missing {
-                    states[index] = FeatureState::Blocked { by: by.to_owned() };
-                    changed = true;
+        // Propagate unavailable outputs once along each dependency edge.
+        let mut users = vec![Vec::new(); states.len()];
+        for (index, state) in states.iter().enumerate() {
+            let needs = match state {
+                FeatureState::Active => inputs[index].clone(),
+                FeatureState::Suppressed {
+                    passes: Some(input),
+                } => vec![input.as_str()],
+                _ => continue,
+            };
+            for input in needs {
+                if let Some(&source) = index_of.get(input) {
+                    users[source].push(index);
                 }
             }
-            if !changed {
-                break;
+        }
+        let mut queue: std::collections::VecDeque<_> = states
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| (!s.produces()).then_some(i))
+            .collect();
+        while let Some(source) = queue.pop_front() {
+            for &user in &users[source] {
+                if states[user].produces() {
+                    states[user] = FeatureState::Blocked {
+                        by: self.features[source].id.clone(),
+                    };
+                    queue.push_back(user);
+                }
             }
         }
         Ok(self
@@ -168,6 +179,46 @@ impl FamilyDefinition {
             .map(|feature| feature.id.as_str())
             .zip(states)
             .collect())
+    }
+
+    /// Check out a feature, or restore the full timeline with None.
+    pub fn checkout_feature(&mut self, head: Option<String>) -> Result<(), ModelError> {
+        if let Some(id) = &head
+            && !self.features.iter().any(|f| &f.id == id)
+        {
+            return Err(ModelError::new(format!("unknown feature '{id}'")));
+        }
+        self.history.head = head;
+        Ok(())
+    }
+
+    /// Suppress or restore a feature without removing its declaration.
+    pub fn set_feature_suppressed(
+        &mut self,
+        feature: &str,
+        suppressed: bool,
+    ) -> Result<(), ModelError> {
+        if !self.features.iter().any(|f| f.id == feature) {
+            return Err(ModelError::new(format!("unknown feature '{feature}'")));
+        }
+        if self.history.suppressed.iter().any(|id| id == feature) == suppressed {
+            return Ok(());
+        }
+        self.history.suppressed.retain(|id| id != feature);
+        if suppressed {
+            self.history.suppressed.push(feature.to_owned());
+        }
+        Ok(())
+    }
+
+    /// Last feature with an available output at the current timeline position.
+    pub fn history_output(&self) -> Result<Option<&str>, ModelError> {
+        Ok(self
+            .history_states()?
+            .into_iter()
+            .rev()
+            .find(|(_, state)| state.produces())
+            .map(|(id, _)| id))
     }
 
     /// Whether the history leaves `feature` out of the build entirely.

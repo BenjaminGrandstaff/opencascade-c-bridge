@@ -7571,3 +7571,133 @@ fn studio_previews_sheet_metal_parts_with_linked_blanks() {
 
 #[path = "tests_session.rs"]
 mod session;
+
+#[test]
+fn studio_feature_history_checkout_suppression_reorder_undo_and_stale_guards() {
+    let dir = Directory::new();
+    let path = dir.0.join("history.json");
+    fs::write(&path, document().to_json_pretty().unwrap()).unwrap();
+    let mut studio = serve::Studio::load(&path, None).unwrap();
+    let initial = get(&mut studio, "/api/features").1;
+    let request = |data: &serde_json::Value, action: &str| json!({"version":data["version"],"expected":data["history"],"expected_order":data["features"].as_array().unwrap().iter().map(|f|f["id"].clone()).collect::<Vec<_>>(),"action":action});
+    let mut checkout = request(&initial, "checkout");
+    checkout["head"] = json!("plate");
+    let response = studio.handle(
+        "POST",
+        "/api/feature-history",
+        checkout.to_string().as_bytes(),
+    );
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    let rolled = get(&mut studio, "/api/features").1;
+    assert_eq!(rolled["history"]["head"], "plate");
+    assert_eq!(rolled["output"], "plate");
+    assert_eq!(studio.handle("POST", "/api/save", b"{}").status, 200);
+    let mut reopened = serve::Studio::load(&path, None).unwrap();
+    assert_eq!(get(&mut reopened, "/api/features").1["output"], "plate");
+    assert!(
+        rolled["feature_states"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["state"] == "rolled_back")
+    );
+    assert_eq!(
+        studio
+            .handle(
+                "POST",
+                "/api/feature-history",
+                checkout.to_string().as_bytes()
+            )
+            .status,
+        400
+    );
+    let undo = json!({"version":rolled["version"]});
+    assert_eq!(
+        studio
+            .handle("POST", "/api/undo", undo.to_string().as_bytes())
+            .status,
+        200
+    );
+    let restored = get(&mut studio, "/api/features").1;
+    assert!(restored["history"].as_object().unwrap().is_empty());
+    let mut suppress = request(&restored, "suppress");
+    suppress["feature"] = json!("boss");
+    suppress["suppressed"] = json!(true);
+    let response = studio.handle(
+        "POST",
+        "/api/feature-history",
+        suppress.to_string().as_bytes(),
+    );
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    let suppressed = get(&mut studio, "/api/features").1;
+    assert!(
+        suppressed["feature_states"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["state"] == "blocked")
+    );
+    let mut restore = request(&suppressed, "suppress");
+    restore["feature"] = json!("boss");
+    restore["suppressed"] = json!(false);
+    assert_eq!(
+        studio
+            .handle(
+                "POST",
+                "/api/feature-history",
+                restore.to_string().as_bytes()
+            )
+            .status,
+        200
+    );
+    let current = get(&mut studio, "/api/features").1;
+    let mut reorder = request(&current, "move");
+    reorder["feature"] = json!("plate");
+    reorder["after"] = current["features"].as_array().unwrap().last().unwrap()["id"].clone();
+    assert_eq!(
+        studio
+            .handle(
+                "POST",
+                "/api/feature-history",
+                reorder.to_string().as_bytes()
+            )
+            .status,
+        400
+    );
+    assert_eq!(get(&mut studio, "/api/features").1, current);
+    // MCP shared-session changes also switch away from a rolled-back selection.
+    let mut select_latest = request(&current, "checkout");
+    select_latest["head"] = json!("bracket");
+    assert_eq!(
+        studio
+            .handle(
+                "POST",
+                "/api/feature-history",
+                select_latest.to_string().as_bytes()
+            )
+            .status,
+        200
+    );
+    let session = get(&mut studio, "/api/session").1;
+    let mut candidate = session["model"].clone();
+    candidate["family"]["history"]["head"] = json!("plate");
+    let change = json!({"expected_model_sha256":session["model_sha256"],"model":candidate,"author":"AI","message":"Checkout plate"});
+    let response = studio.handle("POST", "/api/session/apply", change.to_string().as_bytes());
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    assert_eq!(get(&mut studio, "/api/features").1["output"], "plate");
+}

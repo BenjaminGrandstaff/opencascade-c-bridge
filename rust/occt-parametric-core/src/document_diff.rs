@@ -45,7 +45,8 @@ fn present_value<'de, D: serde::Deserializer<'de>>(
 
 impl ModelDocument {
     /// Compare persisted intent by ID, with deterministic field/ID ordering.
-    /// Declaration order is ignored for families, parameters, features, datums,
+    /// Feature timeline order is recorded separately as `feature_order`.
+    /// Declaration order is ignored for families, parameters, datums,
     /// constraints, requirements, instances, frames, patterns, relationships,
     /// configurations, and materials. Other arrays (including sketch profiles,
     /// pattern members, expression operands and generation audit records) retain
@@ -65,6 +66,40 @@ impl ModelDocument {
         let after = canonical_document(other)?;
         let mut changes = Vec::new();
         compare(Some(&before), Some(&after), &mut Vec::new(), &mut changes);
+        for (family, path) in std::iter::once((&self.family, vec![field("family")])).chain(
+            self.additional_families.iter().map(|f| {
+                (
+                    f,
+                    vec![
+                        field("additional_families"),
+                        DocumentPathSegment::Entity(f.id.clone()),
+                    ],
+                )
+            }),
+        ) {
+            let next = std::iter::once(&other.family)
+                .chain(&other.additional_families)
+                .find(|f| f.id == family.id);
+            if let Some(next) = next {
+                let old: Vec<_> = family.features.iter().map(|f| &f.id).collect();
+                let new: Vec<_> = next.features.iter().map(|f| &f.id).collect();
+                // Additions and removals already have per-ID records; order is
+                // independently meaningful when surviving features change places.
+                let old_ids: std::collections::HashSet<_> = old.iter().copied().collect();
+                let new_ids: std::collections::HashSet<_> = new.iter().copied().collect();
+                let old_common: Vec<_> = old.iter().filter(|id| new_ids.contains(**id)).collect();
+                let new_common: Vec<_> = new.iter().filter(|id| old_ids.contains(**id)).collect();
+                if old_common != new_common {
+                    let mut path = path;
+                    path.push(field("feature_order"));
+                    changes.push(DocumentChange {
+                        path,
+                        before: Some(serde_json::json!(old)),
+                        after: Some(serde_json::json!(new)),
+                    });
+                }
+            }
+        }
         Ok(changes)
     }
 }

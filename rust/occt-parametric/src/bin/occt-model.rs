@@ -257,7 +257,7 @@ fn build_internal(
             stage: "regeneration",
             message: report::failure_message(&failed),
             diagnostics: json!([]),
-            details: report::rejected(&generation, verification, outputs, failed),
+            details: report::rejected(&document, &generation, verification, outputs, failed),
         });
     }
     // Preserve authoring metadata, drawings, and revision history while saving
@@ -271,6 +271,7 @@ fn build_internal(
         .to_json_pretty()
         .map_err(|e| model_failure("validation", e))?;
     let mut value = json!({"schema":"occb-model-report-v1","status":"built",
+        "feature_states":report::feature_states(&document),
         "model_schema":CURRENT_SCHEMA_VERSION,"generated_variants":generation.generated_variants(),
         "outputs":outputs,"verification":verification,"artifacts":{"model":"model.json"},
         "preview_quality":"sampled; visual review only"});

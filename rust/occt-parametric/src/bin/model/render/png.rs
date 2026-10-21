@@ -275,7 +275,7 @@ pub mod tests {
     #[test]
     fn zlib_round_trips_varied_data() {
         let mut data: Vec<u8> = (0..200_000u32)
-            .map(|i| ((i * 2_654_435_761) >> 13) as u8)
+            .map(|i| (i.wrapping_mul(2_654_435_761) >> 13) as u8)
             .collect();
         data.extend(std::iter::repeat_n(7, 100_000));
         data.extend((0..50_000u32).map(|i| (i % 251) as u8));

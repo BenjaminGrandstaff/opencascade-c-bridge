@@ -13,6 +13,7 @@ import { installConstraints } from './sketch-studio-constrain.mjs';
 import { layoutLabels, sketchLabels } from './sketch-studio-labels.mjs';
 import { installExtras } from './sketch-studio-extras.mjs';
 import { installPlanes } from './sketch-studio-plane-panel.mjs';
+import {installFeatureHistory} from './sketch-studio-feature-history.mjs';
 import {installStudioSolids} from './sketch-studio-solids.mjs';
 import {installStudioLinks} from './sketch-studio-links.mjs';
 import {installPointPicking} from './sketch-studio-picks.mjs';
@@ -122,11 +123,14 @@ export function startStudio(document) {
     studio.parsed = parseGlb(gltf);
     studio.solidPreview = null;
     renderer?.setModel(studio.parsed, {retain: true});
-    studio.scenes = annotations.scenes ?? [];
+    const featureStates = new Map((sketches.feature_states ?? []).map(state => [state.feature, state]));
+    studio.scenes = (annotations.scenes ?? []).filter(scene => scene.kind !== 'sketch' || !featureStates.has(scene.feature) || featureStates.get(scene.feature).state === 'active');
     studio.datums = state.datums ?? [];
     studio.planes = annotations.datum_planes ?? [];
     if (!studio.planes.some((plane) => plane.id === studio.selectedPlane)) studio.selectedPlane = null;
     studio.features = sketches.features ?? [];
+    studio.featureHistory = sketches.history ?? {};
+    studio.featureStates = sketches.feature_states ?? [];
     studio.parameters = sketches.parameters ?? [];
     for (const item of sketches.sketches ?? []) {
       bindGeneratedPoints(item.definition, captureGeneratedPoints(item.definition, item.generated_points ?? [], item.generated_curves ?? {}));
@@ -496,6 +500,7 @@ export function startStudio(document) {
   studio.renderStatus = renderStatus;
 
   function refresh() {
+    studio.renderFeatureHistory?.();
     studio.renderPlanes?.();
     renderLayers();
     renderInspector();
@@ -713,6 +718,7 @@ export function startStudio(document) {
   installPointPicking(studio, document);
   installStudioLinks(studio, document);
   installStudioSolids(studio, document);
+  installFeatureHistory(studio, document);
   load()
     .then(() => say(studio.layers.length ? 'Choose a layer, then a tool. Drag to orbit, Shift-drag or right-drag to pan, scroll to zoom.' : 'No sketches yet. Choose New sketch.'))
     .catch((error) => say(error.message, true))

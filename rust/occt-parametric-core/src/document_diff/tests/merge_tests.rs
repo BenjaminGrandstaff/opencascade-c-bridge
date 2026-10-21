@@ -361,3 +361,48 @@ fn additional_family_collections_are_restored_and_sorted() {
     );
     assert!(ModelDocument::from_json(&result.to_json_pretty().unwrap()).is_ok());
 }
+
+#[test]
+fn feature_timeline_order_survives_merges_and_conflicting_moves_are_reported() {
+    let mut base = document();
+    let cube = |id: &str| FeatureDefinition {
+        id: id.into(),
+        operation: FeatureOperation::Box {
+            origin: VectorExpr::Literal(VectorQuantity::lengths(
+                0.0,
+                0.0,
+                0.0,
+                LengthUnit::Millimeter,
+            )),
+            size: VectorExpr::Literal(VectorQuantity::lengths(
+                1.0,
+                1.0,
+                1.0,
+                LengthUnit::Millimeter,
+            )),
+        },
+    };
+    base.family.features = vec![cube("z"), cube("a"), cube("m")];
+    let result = merged(&base, &base, &base);
+    assert_eq!(result.family.features, base.family.features);
+    let mut left = base.clone();
+    left.family.move_feature("a", None).unwrap();
+    let result = merged(&base, &left, &base);
+    assert_eq!(result.family.features, left.family.features);
+    let mut right = base.clone();
+    right.family.move_feature("m", None).unwrap();
+    let conflict = conflicts(&base, &left, &right);
+    assert_eq!(conflict[0].path.last(), Some(&field("feature_order")));
+    let mut left = base.clone();
+    let mut right = base.clone();
+    left.family.features.insert(1, cube("left-added"));
+    right.family.features.insert(1, cube("right-added"));
+    let result = merged(&base, &left, &right);
+    let ids: Vec<_> = result
+        .family
+        .features
+        .iter()
+        .map(|f| f.id.as_str())
+        .collect();
+    assert_eq!(ids, ["z", "left-added", "right-added", "a", "m"]);
+}

@@ -24,7 +24,7 @@ explicitly selected.
 ```json
 {
   "schema": "occb-model-request-v1",
-  "model": { "schema_version": 181, "...": "complete ModelDocument" },
+  "model": { "schema_version": 182, "...": "complete ModelDocument" },
   "outputs": [{ "instance": "bracket", "output": "body" }],
   "edits": [{
     "instance": "bracket",
@@ -265,3 +265,6 @@ This usage pattern adds no agent runtime or knowledge-graph format to the engine
 
 [Five printable dungeon maps](../../docs/PRINTABLE_MAPS.md) provide a complete
 MCP replay example with STL/STEP exports, mesh checks and an interactive gallery.
+
+[Feature timeline controls](../../docs/FEATURE_HISTORY.md) add checkout,
+suppress/restore and move actions to guarded edits and report each feature state.

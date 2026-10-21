@@ -287,7 +287,9 @@ fn features_follow_ids_while_expression_operand_order_is_preserved() {
         });
     let mut after = before.clone();
     after.family.features.reverse();
-    assert!(before.semantic_diff(&after).unwrap().is_empty());
+    let order = before.semantic_diff(&after).unwrap();
+    assert_eq!(order.len(), 1);
+    assert_eq!(order[0].path.last(), Some(&field("feature_order")));
     if let FeatureOperation::Translate { input, .. } = &mut after.family.features[0].operation {
         *input = "other".into();
     }
@@ -295,7 +297,7 @@ fn features_follow_ids_while_expression_operand_order_is_preserved() {
         std::mem::swap(left, right);
     }
     let changes = before.semantic_diff(&after).unwrap();
-    assert_eq!(changes.len(), 2);
+    assert_eq!(changes.len(), 3);
     assert_eq!(changes[0].path.last(), Some(&field("subtract")));
     assert_eq!(
         changes[1].path,

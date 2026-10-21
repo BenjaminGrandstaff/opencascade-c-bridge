@@ -71,6 +71,7 @@ fn document() -> ModelDocument {
     ModelDocument::from_graph(&graph)
 }
 fn main() {
+    feature_timeline_scale();
     let base = document();
     let mut after = base.clone();
     if let InstanceNode::Base { overrides, .. } = after
@@ -191,4 +192,42 @@ fn main() {
     println!(
         "PASS: append after 10,000 revisions in a 10,000-instance document: {elapsed:.3?} (10s budget); history excluded from change payload"
     );
+}
+
+/// Reverse declaration order exercises transitive blocking without quadratic passes.
+fn feature_timeline_scale() {
+    let mut family = document().family;
+    let root = family.features[0].clone();
+    family.features = (1..10_000)
+        .rev()
+        .map(|i| FeatureDefinition {
+            id: format!("feature-{i:03}"),
+            operation: FeatureOperation::Translate {
+                input: format!("feature-{:03}", i - 1),
+                offset: VectorExpr::Literal(VectorQuantity::lengths(
+                    1.0,
+                    0.0,
+                    0.0,
+                    LengthUnit::Millimeter,
+                )),
+            },
+        })
+        .collect();
+    family.features.push(root);
+    family.history.suppressed = vec!["feature-000".into()];
+    let start = Instant::now();
+    for _ in 0..100 {
+        let states = family.history_states().unwrap();
+        assert_eq!(states.len(), 10_000);
+        assert_eq!(
+            states
+                .iter()
+                .filter(|(_, s)| matches!(s, FeatureState::Blocked { .. }))
+                .count(),
+            9_999
+        );
+    }
+    let elapsed = start.elapsed();
+    println!("100 history state walks across 10,000 reverse-ordered features: {elapsed:?} / 5 s");
+    assert!(elapsed < Duration::from_secs(5));
 }

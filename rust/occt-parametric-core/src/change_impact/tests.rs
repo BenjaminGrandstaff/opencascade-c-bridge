@@ -353,3 +353,25 @@ fn active_configuration_and_joint_coordinates_affect_resolved_inputs() {
     assert!(report.instances[0].placement_changed);
     assert!(report.instances[0].features.is_empty());
 }
+
+#[test]
+fn feature_history_changes_mark_affected_geometry_and_downstream_users() {
+    let before = document();
+    let mut after = before.clone();
+    after.family.history.head = Some("body".into());
+    let impact = before.change_impact(&after).unwrap();
+    assert!(!impact.instances.is_empty());
+    assert!(impact.instances.iter().all(|i| i.features == ["placed"]));
+    let mut suppressed = before.clone();
+    suppressed
+        .family
+        .set_feature_suppressed("body", true)
+        .unwrap();
+    let impact = before.change_impact(&suppressed).unwrap();
+    assert!(
+        impact
+            .instances
+            .iter()
+            .all(|i| i.features == ["body", "placed"])
+    );
+}

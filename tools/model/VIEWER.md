@@ -305,3 +305,11 @@ The collector reuses the generated geometry and a bulk resolved-sketch index
 for support planes and imports. Unavailable projections produce a source error
 instead of displaying placeholder geometry. See
 [sketch projections](../../docs/SKETCH_PROJECTIONS.md).
+
+## Feature timeline
+
+The studio feature list includes checkout, suppress/restore and earlier/later
+move controls, with active, suppressed, blocked and rolled-back states. Edits
+regenerate before acceptance and use the existing Undo/Redo and Save controls.
+See [feature history](../../docs/FEATURE_HISTORY.md) for output selection and
+guarded editing behavior.

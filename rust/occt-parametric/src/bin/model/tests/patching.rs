@@ -241,3 +241,75 @@ fn patch_conflicts_invalid_dependencies_required_failures_and_noops_leave_no_bui
     );
     assert!(!dir.0.join("duplicate-revision").exists());
 }
+
+#[test]
+fn feature_history_edits_report_states_guard_snapshots_and_record_reorders() {
+    let dir = Directory::new();
+    let model = fixture();
+    let ids: Vec<_> = model.family.features.iter().map(|f| f.id.clone()).collect();
+    let head = ids.last().unwrap();
+    let report = patch_request(
+        &dir,
+        &model,
+        json!([
+            {"action":"checkout_feature","family":"bracket","expected":{},"head":head}
+        ]),
+        json!([]),
+        "checkout",
+        "history-1",
+    )
+    .unwrap();
+    assert!(
+        report["feature_states"][0]["features"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|f| f["state"] == "active")
+    );
+    let saved =
+        ModelDocument::from_json(&fs::read_to_string(dir.0.join("checkout/model.json")).unwrap())
+            .unwrap();
+    let stale = patch_request(
+        &dir,
+        &saved,
+        json!([
+            {"action":"checkout_feature","family":"bracket","expected":{},"head":null}
+        ]),
+        json!([]),
+        "stale-history",
+        "history-2",
+    )
+    .unwrap_err();
+    assert_eq!(stale.stage, "conflict");
+    assert!(!dir.0.join("stale-history").exists());
+    let report = patch_request(&dir, &saved, json!([
+        {"action":"suppress_feature","family":"bracket","expected":{"head":head},"feature":"body","suppressed":true}
+    ]), json!([]), "suppressed", "history-2").unwrap();
+    let state = report["feature_states"][0]["features"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["feature"] == "body")
+        .unwrap();
+    assert_eq!(state["state"], "suppressed");
+    assert!(state["passes"].is_string());
+    // Independent primitives may change position, and the revision records order.
+    let report = patch_request(&dir, &model, json!([
+        {"action":"move_feature","family":"bracket","feature":ids[1],"expected":ids,"after":null}
+    ]), json!([]), "reordered", "move-1").unwrap();
+    assert_eq!(report["status"], "built");
+    let moved =
+        ModelDocument::from_json(&fs::read_to_string(dir.0.join("reordered/model.json")).unwrap())
+            .unwrap();
+    assert_eq!(moved.family.features[0].id, ids[1]);
+    assert!(
+        moved.revisions[0]
+            .changes
+            .iter()
+            .any(|c| c.path.last() == Some(&DocumentPathSegment::Field("feature_order".into())))
+    );
+    let invalid = patch_request(&dir, &model, json!([
+        {"action":"move_feature","family":"bracket","feature":"body","expected":ids,"after":null}
+    ]), json!([]), "invalid-move", "move-2").unwrap_err();
+    assert_eq!(invalid.stage, "patch");
+}

@@ -20,7 +20,7 @@ document.record_revision(&previous, RevisionMetadata {
 
 Both documents must validate and carry identical existing histories. IDs and
 metadata strings must be nonempty; IDs must be unique. Each parent identifies
-the preceding entry. No-op edits, including declaration reordering, fail without
+the preceding entry. No-op edits, including reordering of unordered declarations, fail without
 modifying the document. Each record contains typed semantic changes with
 before/after payloads. The ledger itself is excluded from those payloads, so
 recording another edit does not recursively embed previous history.
@@ -57,7 +57,8 @@ intent changes. A placement or material edit can affect a component without
 rebuilding its local geometry. Enclosing frame and joint motion are included.
 Placement comparisons preserve exact serialized representation, so two
 geometrically equivalent representations may still be reported as changed.
-Family declaration order and override-map order are ignored.
+Feature timeline order is meaningful from schema 182; other family declaration
+order and override-map order are ignored. See [feature history](FEATURE_HISTORY.md).
 
 Referenced drawings are listed when a drawing definition or one of its model
 inputs changes. Conservative flags request pattern refresh and assembly

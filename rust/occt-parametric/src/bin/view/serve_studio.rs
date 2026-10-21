@@ -11,6 +11,7 @@ macro_rules! studio_assets {
 
 const STUDIO_ASSETS: &[(&str, &str)] = studio_assets!(
     "sketch-studio-app.mjs",
+    "sketch-studio-feature-history.mjs",
     "sketch-studio-plane.mjs",
     "sketch-studio-layers.mjs",
     "sketch-studio-overlay.mjs",

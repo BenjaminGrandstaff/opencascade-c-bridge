@@ -649,7 +649,10 @@ fn draw(
             } else {
                 first_id + t.face_index as u32
             };
-            next_id = next_id.max(id.saturating_add(1).min(u32::MAX - 1));
+            // Section caps use a reserved sentinel, not an allocated face id.
+            if !cap {
+                next_id = next_id.max(id.saturating_add(1).min(u32::MAX - 1));
+            }
             fill(t.points.map(&screen), n, |x, y, z| {
                 let at = y * n + x;
                 if z < depth[at] {

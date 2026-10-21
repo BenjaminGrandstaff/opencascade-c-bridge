@@ -4,6 +4,8 @@
 mod datum;
 #[path = "serve_face_pick.rs"]
 mod face_pick;
+#[path = "serve_feature_history.rs"]
+mod feature_history;
 #[path = "serve_features.rs"]
 mod features;
 #[path = "serve_history.rs"]
@@ -188,8 +190,24 @@ impl Studio {
             .to_json_pretty()
             .and_then(|text| ModelDocument::from_json(&text))
             .map_err(|e| e.to_string())?;
-        let (gltf, requirements) = build(&document, self.output.as_deref())?;
-        self.accept(document.clone(), gltf, requirements, self.output.clone())?;
+        let mut output = self.output.clone();
+        if let Some(id) = &output
+            && !document.family.history.is_empty()
+            && document
+                .family
+                .history_excludes(id)
+                .map_err(|e| e.to_string())?
+        {
+            // Shared-session checkout/suppression can hide the previously
+            // selected result, just like the page's own timeline controls.
+            output = document
+                .family
+                .history_output()
+                .map_err(|e| e.to_string())?
+                .map(str::to_owned);
+        }
+        let (gltf, requirements) = build(&document, output.as_deref())?;
+        self.accept(document.clone(), gltf, requirements, output)?;
         Ok(document)
     }
 
@@ -475,7 +493,7 @@ impl Studio {
                     let output = self
                         .output
                         .as_deref()
-                        .or_else(|| document.family.features.last().map(|f| f.id.as_str()));
+                        .or_else(|| document.family.history_output().ok().flatten());
                     if let Some(output) = output {
                         let outputs = [occt_parametric::InstanceOutputRef {
                             instance: id,
@@ -594,7 +612,7 @@ impl Studio {
         let output = self
             .output
             .as_deref()
-            .or_else(|| self.document.family.features.last().map(|f| f.id.as_str()))
+            .or_else(|| self.document.family.history_output().ok().flatten())
             .ok_or("model family has no features")?;
         let outputs = [occt_parametric::InstanceOutputRef {
             instance: id.to_owned(),
@@ -721,6 +739,10 @@ impl Studio {
             ("GET", "/solid-editor.mjs") => {
                 Response::text(200, "text/javascript", include_str!("web/solid-editor.mjs"))
             }
+            ("POST", "/api/feature-history") => match self.feature_history_edit(body) {
+                Ok(value) => Response::json(200, &value),
+                Err(error) => Response::error(400, &error),
+            },
             ("GET", "/api/features") => Response::json(200, &self.feature_view()),
             ("POST", "/api/features") => match self.feature_edit(body) {
                 Ok(data) => Response::json(200, &data),
@@ -1133,9 +1155,9 @@ fn build(document: &ModelDocument, output: Option<&str>) -> Result<(String, Valu
         Some(output) => output.to_owned(),
         None => document
             .family
-            .features
-            .last()
-            .map(|feature| feature.id.clone())
+            .history_output()
+            .map_err(|e| e.to_string())?
+            .map(str::to_owned)
             .ok_or("model family has no features; pass --output")?,
     };
     let mut graph = document.instance_graph().map_err(|e| e.to_string())?;

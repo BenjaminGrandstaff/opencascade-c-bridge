@@ -42,7 +42,7 @@ impl ModelDocument {
     /// Independent fields and IDs combine; identical concurrent edits coalesce.
     /// Delete/edit, different additions of the same ID, incompatible variant
     /// replacements, and different edits to an ordered array produce conflicts.
-    /// Declarations in a successful result are sorted by ID. Inputs are unchanged.
+    /// Other declarations are sorted by ID; feature timeline order is preserved. Inputs are unchanged.
     ///
     /// All inputs and the final result undergo ordinary document validation.
     /// Invalid input or a combined dependency/reference/constraint failure returns
@@ -61,6 +61,7 @@ impl ModelDocument {
                 .validate()
                 .map_err(|error| error.context(&format!("merge {name}")))?;
         }
+        let (left_document, right_document) = (left, right);
         let base = canonical_document(self)?;
         let left = canonical_document(left)?;
         let right = canonical_document(right)?;
@@ -76,12 +77,114 @@ impl ModelDocument {
             return Ok(DocumentMerge::Conflicts(conflicts));
         }
         let value = restore(merged.expect("document roots are present"), &mut Vec::new());
-        let document: ModelDocument = serde_json::from_value(value)
+        let mut document: ModelDocument = serde_json::from_value(value)
             .map_err(|error| ModelError::new(format!("decode merged document: {error}")))?;
+        merge_feature_orders(
+            self,
+            left_document,
+            right_document,
+            &mut document,
+            &mut conflicts,
+        );
+        if !conflicts.is_empty() {
+            return Ok(DocumentMerge::Conflicts(conflicts));
+        }
         document
             .validate()
             .map_err(|error| error.context("merged document"))?;
         Ok(DocumentMerge::Merged(Box::new(document)))
+    }
+}
+
+/// Merge timeline ordering constraints, preserving independent insertions and
+/// reporting incompatible reorderings rather than silently sorting features.
+fn merge_feature_orders(
+    base: &ModelDocument,
+    left: &ModelDocument,
+    right: &ModelDocument,
+    merged: &mut ModelDocument,
+    conflicts: &mut Vec<DocumentConflict>,
+) {
+    let order = |doc: &ModelDocument, id: &str| -> Vec<String> {
+        std::iter::once(&doc.family)
+            .chain(&doc.additional_families)
+            .find(|f| f.id == id)
+            .map(|f| f.features.iter().map(|f| f.id.clone()).collect())
+            .unwrap_or_default()
+    };
+    let primary = merged.family.id.clone();
+    for family in std::iter::once(&mut merged.family).chain(&mut merged.additional_families) {
+        let ids: BTreeSet<_> = family.features.iter().map(|f| f.id.clone()).collect();
+        let original = order(base, &family.id);
+        let lhs = order(left, &family.id);
+        let rhs = order(right, &family.id);
+        let base_ids: BTreeSet<_> = original.iter().cloned().collect();
+        let changed = |side: &[String]| {
+            let present: BTreeSet<_> = side.iter().collect();
+            original
+                .iter()
+                .filter(|id| present.contains(id))
+                .collect::<Vec<_>>()
+                != side
+                    .iter()
+                    .filter(|id| base_ids.contains(*id))
+                    .collect::<Vec<_>>()
+        };
+        let (lc, rc) = (changed(&lhs), changed(&rhs));
+        let mut edges = BTreeSet::new();
+        for (side, skip_base) in [(&lhs, !lc && rc), (&rhs, !rc && lc)] {
+            let present: Vec<_> = side.iter().filter(|id| ids.contains(*id)).collect();
+            for pair in present.windows(2) {
+                if !(skip_base && base_ids.contains(pair[0]) && base_ids.contains(pair[1])) {
+                    edges.insert((pair[0].clone(), pair[1].clone()));
+                }
+            }
+        }
+        let mut indegree: BTreeMap<_, usize> = ids.iter().map(|id| (id.clone(), 0)).collect();
+        let mut users: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for (from, to) in edges {
+            *indegree.get_mut(&to).unwrap() += 1;
+            users.entry(from).or_default().push(to);
+        }
+        let mut ready: BTreeSet<_> = indegree
+            .iter()
+            .filter_map(|(id, n)| (*n == 0).then_some(id.clone()))
+            .collect();
+        let mut ordered = Vec::new();
+        while let Some(id) = ready.pop_first() {
+            for user in users.get(&id).into_iter().flatten() {
+                let n = indegree.get_mut(user).unwrap();
+                *n -= 1;
+                if *n == 0 {
+                    ready.insert(user.clone());
+                }
+            }
+            ordered.push(id);
+        }
+        if ordered.len() != ids.len() {
+            let mut path = if family.id == primary {
+                vec![field("family")]
+            } else {
+                vec![
+                    field("additional_families"),
+                    DocumentPathSegment::Entity(family.id.clone()),
+                ]
+            };
+            path.push(field("feature_order"));
+            conflicts.push(DocumentConflict {
+                path,
+                base: Some(serde_json::json!(original)),
+                left: Some(serde_json::json!(lhs)),
+                right: Some(serde_json::json!(rhs)),
+            });
+        } else {
+            let rank: BTreeMap<_, _> = ordered
+                .into_iter()
+                .enumerate()
+                .map(|(i, id)| (id, i))
+                .collect();
+            family.features.sort_by_key(|f| rank[&f.id]);
+        }
     }
 }
 

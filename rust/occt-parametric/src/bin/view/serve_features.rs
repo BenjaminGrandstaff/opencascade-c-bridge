@@ -10,8 +10,9 @@ impl Studio {
     pub(super) fn feature_view(&self) -> Value {
         let dependencies = self.document.family.feature_inputs().ok();
         json!({"version":self.version,"family":self.document.family.id,
+            "history":self.document.family.history,"feature_states":self.document.family.history_states().ok().map(|states|states.into_iter().map(|(id,state)|{let mut value=serde_json::to_value(state).unwrap();value["feature"]=json!(id);value}).collect::<Vec<_>>()),
             "features":self.document.family.features,"parameters":self.document.family.parameters,"dependencies":dependencies,
-            "output":self.output.as_deref().or_else(||self.document.family.features.last().map(|f|f.id.as_str())),
+            "output":self.output.as_deref().or_else(||self.document.family.history_output().ok().flatten()),
             "thread_sizes":thread_sizes()})
     }
     pub(super) fn feature_edit(&mut self, body: &[u8]) -> Result<Value, String> {

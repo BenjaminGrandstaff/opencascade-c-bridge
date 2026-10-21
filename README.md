@@ -6,7 +6,7 @@ On top of it sits a parametric CAD engine: versioned JSON documents for
 sketches, solids, sheet metal, assemblies and drawings, a local studio for
 editing them, and an AI authoring loop (`occt-model` and its MCP server).
 
-The current C ABI version is **85** and the document schema is **181**.
+The current C ABI version is **85** and the document schema is **182**.
 
 ## Status
 
@@ -14,17 +14,21 @@ The current C ABI version is **85** and the document schema is **181**.
 |---|---|---|
 | C ABI (`src/`, `include/`) | ABI 85 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | ABI 85 | Covers the full ABI |
-| `occt-parametric-core` (kernel-free) | Schema 181 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 181 | Active development |
+| `occt-parametric-core` (kernel-free) | Schema 182 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 182 | Active development |
 | Sketch studio and viewer (`occt-view --serve`) | — | Edits the same documents; adds no capability of its own |
 
-Tests: C 7/7, bridge 175, parametric core 57, kernel 791, view command 98,
-model command 95, viewer Node 472 and MCP Python 26, all passing. The scale
-benchmark suite (199 Rust cases plus model-command and matcher cases) runs
-within budget. Formatting and Clippy are clean across all crates. Full
+Tests: C 7/7, bridge 176, parametric core 66, kernel 804, view command 101,
+model command 105, viewer Node 475 and MCP Python 29, all passing. The scale
+benchmark suite covers geometry, document operations, sketch authoring, MCP
+and model-command publication, with enforced time budgets. Formatting and Clippy are clean across all crates. Full
 gate results and history live in [the roadmap](ROADMAP.md#current-status).
 
 Recently landed:
+
+- **Feature timeline (schema 182):** checkout, suppress/restore and dependency-checked
+  reordering, with build-report states, guarded CLI/MCP edits and studio controls.
+  See [feature history](docs/FEATURE_HISTORY.md).
 
 - **AI design tools:** MCP now exports dimensioned drawings, evaluates supplied
   measurements, checks motion and collisions, reports mass/CG, discovers linkage

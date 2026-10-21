@@ -17,6 +17,8 @@ by stable IDs. Moving an instance in the serialized list produces no edit;
 changing its override reports the instance ID, variant, override name, and
 changed value. Duplicate IDs fail rather than silently dropping entities.
 IDs containing slashes, tildes, or brackets remain distinct typed path segments.
+From schema 182, surviving feature reordering is recorded separately under
+`feature_order`; individual feature operations remain matched by ID.
 
 Ordered lists, including sketch profiles, expression operands, pattern members,
 and generation audit records, retain their order. Changes to those lists are
@@ -74,7 +76,9 @@ and right values, preserving null versus absence across serialization. Empty
 dictionaries omitted by serialization behave like empty maps; deleting their
 last entry can combine with an unrelated entry added on the other branch.
 
-The merge leaves inputs unchanged and sorts declaration collections by ID.
+The merge leaves inputs unchanged and sorts other declaration collections by ID.
+It preserves feature timeline ordering, combines compatible insertions, and
+reports incompatible ordering constraints as `feature_order` conflicts.
 It returns no partial document when conflicts exist. After combining edits it
 checks document references, dependency graphs, parameter bounds, and existing
 model constraints. For example, removing an instance on one branch and adding
