@@ -197,10 +197,7 @@ bool positive(double value) {
     return std::isfinite(value) && value > 0.0;
 }
 
-const char* tolerance_error(
-    const occt_bridge_step_tolerance_t& tolerance,
-    const occt_bridge_step_pmi_t& pmi,
-    const std::vector<const TopoDS_Shape*>& shapes) {
+const char* tolerance_value_error(const occt_bridge_step_tolerance_t& tolerance) {
     if (tolerance.characteristic < 0 || tolerance.characteristic >= kTypeCount) {
         return "unknown geometric characteristic";
     }
@@ -219,34 +216,43 @@ const char* tolerance_error(
     if (!std::isfinite(tolerance.projected_mm) || tolerance.projected_mm < 0.0) {
         return "a projected zone height must be finite and not negative";
     }
-    if (tolerance.datum_count != 0 && tolerance.datums == nullptr) {
-        return "tolerance datum references are missing";
+    return nullptr;
+}
+
+const char* datum_reference_error(const occt_bridge_step_datum_reference_t& reference,
+    const occt_bridge_step_tolerance_t& tolerance, const occt_bridge_step_pmi_t& pmi,
+    const std::vector<const TopoDS_Shape*>& shapes) {
+    if (reference.datum >= pmi.datum_count) {
+        return "a tolerance references an unknown datum";
     }
+    if (reference.compartment > 2) {
+        return "datum compartments are 0, 1 and 2";
+    }
+    if (reference.boundary < OCCT_BRIDGE_DATUM_RFS || reference.boundary > OCCT_BRIDGE_DATUM_LMB) {
+        return "unknown datum material boundary";
+    }
+    if (reference.translation != 0 && reference.translation != 1) {
+        return "translation must be 0 or 1";
+    }
+    const auto& datum = pmi.datums[reference.datum];
+    if (!same_part(*shapes[datum.target.component], *shapes[tolerance.target.component])) {
+        return "a tolerance's datums must lie on its own part";
+    }
+    return nullptr;
+}
+
+const char* tolerance_error(const occt_bridge_step_tolerance_t& tolerance,
+    const occt_bridge_step_pmi_t& pmi, const std::vector<const TopoDS_Shape*>& shapes) {
+    if (const char* error = tolerance_value_error(tolerance)) return error;
+    if (tolerance.datum_count != 0 && tolerance.datums == nullptr) return "tolerance datum references are missing";
     uint32_t used = 0;
     for (size_t index = 0; index < tolerance.datum_count; ++index) {
         const auto& reference = tolerance.datums[index];
-        if (reference.datum >= pmi.datum_count) {
-            return "a tolerance references an unknown datum";
-        }
-        if (reference.compartment > 2) {
-            return "datum compartments are 0, 1 and 2";
-        }
-        if (reference.boundary < OCCT_BRIDGE_DATUM_RFS || reference.boundary > OCCT_BRIDGE_DATUM_LMB) {
-            return "unknown datum material boundary";
-        }
-        if (reference.translation != 0 && reference.translation != 1) {
-            return "translation must be 0 or 1";
-        }
-        const auto& datum = pmi.datums[reference.datum];
-        if (!same_part(*shapes[datum.target.component], *shapes[tolerance.target.component])) {
-            return "a tolerance's datums must lie on its own part";
-        }
+        if (const char* error = datum_reference_error(reference, tolerance, pmi, shapes)) return error;
         used |= 1u << reference.compartment;
     }
     // Compartments fill from the primary: A, A|B, A|B|C.
-    if (used != 0 && (used & (used + 1)) != 0) {
-        return "datum compartments must fill from the primary";
-    }
+    if (used != 0 && (used & (used + 1)) != 0) return "datum compartments must fill from the primary";
     return nullptr;
 }
 
@@ -816,10 +822,7 @@ uint32_t tolerance_losses(
     return losses;
 }
 
-const char* view_error(
-    const occt_bridge_step_view_t& view,
-    const occt_bridge_step_pmi_t& pmi,
-    size_t component_count) {
+const char* view_camera_error(const occt_bridge_step_view_t& view) {
     if (view.name == nullptr || view.name[0] == '\0') {
         return "views need nonempty names";
     }
@@ -832,9 +835,10 @@ const char* view_error(
         || direction.Crossed(up).Modulus() <= 1e-9 * direction.Modulus() * up.Modulus()) {
         return "a view's direction and up must be nonzero and not parallel";
     }
-    if ((view.datum_count != 0 && view.datums == nullptr) || (view.tolerance_count != 0 && view.tolerances == nullptr)) {
-        return "view annotation arrays are missing";
-    }
+    return nullptr;
+}
+
+const char* view_clipping_error(const occt_bridge_step_view_t& view) {
     if (view.clipping_plane_count > 16 || (view.clipping_plane_count != 0 && view.clipping_planes == nullptr)) {
         return "a view has at most 16 clipping planes";
     }
@@ -844,6 +848,10 @@ const char* view_error(
             return "a clipping plane needs a finite origin and a unit normal";
         }
     }
+    return nullptr;
+}
+
+const char* view_parts_error(const occt_bridge_step_view_t& view, size_t component_count) {
     if (view.part_count != 0 && view.parts == nullptr) {
         return "view part arrays are missing";
     }
@@ -856,46 +864,37 @@ const char* view_error(
             return "a view shows a component at most once";
         }
     }
-    seen.clear();
-    for (size_t index = 0; index < view.datum_count; ++index) {
-        if (view.datums[index] >= pmi.datum_count) {
-            return "a view shows an unknown datum";
-        }
-        if (pmi.datums[view.datums[index]].presentation == nullptr) {
-            return "a view shows only annotations with presentations";
-        }
-        if (!seen.insert(view.datums[index]).second) {
-            return "a view shows an annotation at most once";
-        }
-    }
-    seen.clear();
-    if (view.size_count != 0 && view.sizes == nullptr) {
-        return "view annotation arrays are missing";
-    }
-    for (size_t index = 0; index < view.size_count; ++index) {
-        if (view.sizes[index] >= pmi.size_count) {
-            return "a view shows an unknown size";
-        }
-        if (pmi.sizes[view.sizes[index]].presentation == nullptr) {
-            return "a view shows only annotations with presentations";
-        }
-        if (!seen.insert(view.sizes[index]).second) {
-            return "a view shows an annotation at most once";
-        }
-    }
-    seen.clear();
-    for (size_t index = 0; index < view.tolerance_count; ++index) {
-        if (view.tolerances[index] >= pmi.tolerance_count) {
-            return "a view shows an unknown tolerance";
-        }
-        if (pmi.tolerances[view.tolerances[index]].presentation == nullptr) {
-            return "a view shows only annotations with presentations";
-        }
-        if (!seen.insert(view.tolerances[index]).second) {
-            return "a view shows an annotation at most once";
-        }
+    return nullptr;
+}
+
+// The categories use separate index spaces, but share presence and uniqueness rules.
+// Array pointers are checked by view_error in their original validation order.
+template <typename Annotation>
+const char* view_annotations_error(const size_t* indices, size_t count,
+    const Annotation* annotations, size_t available, const char* unknown) {
+    std::set<size_t> seen;
+    for (size_t index = 0; index < count; ++index) {
+        if (indices[index] >= available) return unknown;
+        if (annotations[indices[index]].presentation == nullptr) return "a view shows only annotations with presentations";
+        if (!seen.insert(indices[index]).second) return "a view shows an annotation at most once";
     }
     return nullptr;
+}
+
+const char* view_error(const occt_bridge_step_view_t& view, const occt_bridge_step_pmi_t& pmi, size_t component_count) {
+    if (const char* error = view_camera_error(view)) return error;
+    if ((view.datum_count != 0 && view.datums == nullptr) || (view.tolerance_count != 0 && view.tolerances == nullptr)) {
+        return "view annotation arrays are missing";
+    }
+    if (const char* error = view_clipping_error(view)) return error;
+    if (const char* error = view_parts_error(view, component_count)) return error;
+    if (const char* error = view_annotations_error(view.datums, view.datum_count,
+            pmi.datums, pmi.datum_count, "a view shows an unknown datum")) return error;
+    if (view.size_count != 0 && view.sizes == nullptr) return "view annotation arrays are missing";
+    if (const char* error = view_annotations_error(view.sizes, view.size_count,
+            pmi.sizes, pmi.size_count, "a view shows an unknown size")) return error;
+    return view_annotations_error(view.tolerances, view.tolerance_count,
+        pmi.tolerances, pmi.tolerance_count, "a view shows an unknown tolerance");
 }
 
 // The view's look direction and its up made square to it, both unit.
@@ -1312,12 +1311,8 @@ void write_dataset(const Handle(Interface_InterfaceModel)& model, const occt_bri
 // An approval as read: role, approver and date.
 using ReadApproval = std::tuple<std::string, std::string, std::array<int, 3>>;
 
-uint32_t dataset_losses(const Handle(Interface_InterfaceModel)& model, const occt_bridge_step_dataset_t& dataset) {
-    const Handle(StepBasic_ProductDefinition) root = root_definition(model);
-    if (root.IsNull() || root->Formation().IsNull() || root->Formation()->OfProduct().IsNull()) {
-        return OCCT_BRIDGE_DATASET_LOST_IDENTIFIER | OCCT_BRIDGE_DATASET_LOST_REVISION
-            | OCCT_BRIDGE_DATASET_LOST_AUTHORITY | OCCT_BRIDGE_DATASET_LOST_APPROVALS;
-    }
+uint32_t dataset_identity_losses(const Handle(StepBasic_ProductDefinition)& root,
+                                   const occt_bridge_step_dataset_t& dataset) {
     const Handle(StepBasic_ProductDefinitionFormation) formation = root->Formation();
     uint32_t losses = 0;
     if (name_of(formation->OfProduct()->Id()) != dataset.identifier) {
@@ -1332,62 +1327,102 @@ uint32_t dataset_losses(const Handle(Interface_InterfaceModel)& model, const occ
             || (dataset.description != nullptr && name_of(formation->Description()) != dataset.description))) {
         losses |= OCCT_BRIDGE_DATASET_LOST_REVISION;
     }
-    // Approvals assigned to the root formation, with their dates and signers.
+    return losses;
+}
+
+struct ApprovalLinks {
     std::set<const Standard_Transient*> assigned;
     std::map<const Standard_Transient*, std::array<int, 3>> dates;
     std::multimap<const Standard_Transient*, std::pair<std::string, std::string>> signers;
-    for (int index = 1; index <= model->NbEntities(); ++index) {
-        const Handle(Standard_Transient)& entity = model->Value(index);
-        if (const auto assignment = Handle(StepAP214_AppliedApprovalAssignment)::DownCast(entity);
-            !assignment.IsNull()) {
-            for (int item = 1; item <= assignment->NbItems(); ++item) {
-                if (assignment->ItemsValue(item).Value() == formation) {
-                    assigned.insert(assignment->AssignedApproval().get());
-                }
-            }
-        } else if (const auto dated = Handle(StepBasic_ApprovalDateTime)::DownCast(entity); !dated.IsNull()) {
-            const auto date = Handle(StepBasic_CalendarDate)::DownCast(dated->DateTime().Value());
-            if (!date.IsNull()) {
-                dates[dated->DatedApproval().get()] =
-                    std::array<int, 3>{date->YearComponent(), date->MonthComponent(), date->DayComponent()};
-            }
-        } else if (const auto signature = Handle(StepBasic_ApprovalPersonOrganization)::DownCast(entity);
-                   !signature.IsNull()) {
-            const auto person = signature->PersonOrganization().PersonAndOrganization();
-            const std::string who = person.IsNull() || person->ThePerson().IsNull()
-                ? std::string()
-                : name_of(person->ThePerson()->LastName());
-            const std::string role = signature->Role().IsNull() ? std::string() : name_of(signature->Role()->Role());
-            signers.emplace(signature->AuthorizedApproval().get(), std::make_pair(role, who));
+};
+
+void read_approval_assignment(const Handle(StepAP214_AppliedApprovalAssignment)& assignment,
+    const Handle(StepBasic_ProductDefinitionFormation)& formation, ApprovalLinks& links) {
+    for (int item = 1; item <= assignment->NbItems(); ++item) {
+        if (assignment->ItemsValue(item).Value() == formation) {
+            links.assigned.insert(assignment->AssignedApproval().get());
         }
     }
+}
+
+void read_approval_date(const Handle(StepBasic_ApprovalDateTime)& dated, ApprovalLinks& links) {
+    const auto date = Handle(StepBasic_CalendarDate)::DownCast(dated->DateTime().Value());
+    if (!date.IsNull()) {
+        links.dates[dated->DatedApproval().get()] =
+            std::array<int, 3>{date->YearComponent(), date->MonthComponent(), date->DayComponent()};
+    }
+}
+
+void read_approval_signer(const Handle(StepBasic_ApprovalPersonOrganization)& signature, ApprovalLinks& links) {
+    const auto person = signature->PersonOrganization().PersonAndOrganization();
+    const std::string who = person.IsNull() || person->ThePerson().IsNull()
+        ? std::string()
+        : name_of(person->ThePerson()->LastName());
+    const std::string role = signature->Role().IsNull() ? std::string() : name_of(signature->Role()->Role());
+    links.signers.emplace(signature->AuthorizedApproval().get(), std::make_pair(role, who));
+}
+
+// Only approvals assigned to the root formation participate in verification.
+ApprovalLinks read_approval_links(const Handle(Interface_InterfaceModel)& model,
+                                  const Handle(StepBasic_ProductDefinitionFormation)& formation) {
+    ApprovalLinks links;
+    for (int index = 1; index <= model->NbEntities(); ++index) {
+        const Handle(Standard_Transient)& entity = model->Value(index);
+        if (const auto assignment = Handle(StepAP214_AppliedApprovalAssignment)::DownCast(entity); !assignment.IsNull()) {
+            read_approval_assignment(assignment, formation, links);
+        } else if (const auto dated = Handle(StepBasic_ApprovalDateTime)::DownCast(entity); !dated.IsNull()) {
+            read_approval_date(dated, links);
+        } else if (const auto signature = Handle(StepBasic_ApprovalPersonOrganization)::DownCast(entity); !signature.IsNull()) {
+            read_approval_signer(signature, links);
+        }
+    }
+    return links;
+}
+
+std::vector<ReadApproval> read_approvals(const Handle(Interface_InterfaceModel)& model, const ApprovalLinks& links) {
     std::vector<ReadApproval> read;
     for (int index = 1; index <= model->NbEntities(); ++index) {
         const auto approval = Handle(StepBasic_Approval)::DownCast(model->Value(index));
-        if (approval.IsNull() || assigned.count(approval.get()) == 0) {
+        if (approval.IsNull() || links.assigned.count(approval.get()) == 0) {
             continue;
         }
         if (approval->Status().IsNull() || name_of(approval->Status()->Name()) != "approved") {
             read.emplace_back("", "", std::array<int, 3>{});
             continue;
         }
-        const auto [begin, end] = signers.equal_range(approval.get());
-        const auto date = dates.find(approval.get());
+        const auto [begin, end] = links.signers.equal_range(approval.get());
+        const auto date = links.dates.find(approval.get());
         for (auto signer = begin; signer != end; ++signer) {
             read.emplace_back(signer->second.first, signer->second.second,
-                              date == dates.end() ? std::array<int, 3>{} : date->second);
+                              date == links.dates.end() ? std::array<int, 3>{} : date->second);
         }
     }
+    return read;
+}
+
+std::vector<ReadApproval> written_approvals(const occt_bridge_step_dataset_t& dataset) {
     std::vector<ReadApproval> written;
+    const bool released = nonempty(dataset.revision);
     for (size_t index = 0; released && index < dataset.approval_count; ++index) {
         const auto& entry = dataset.approvals[index];
         written.emplace_back(entry.role, entry.name, approval_date(entry.date));
     }
+    return written;
+}
+
+uint32_t dataset_losses(const Handle(Interface_InterfaceModel)& model, const occt_bridge_step_dataset_t& dataset) {
+    const Handle(StepBasic_ProductDefinition) root = root_definition(model);
+    if (root.IsNull() || root->Formation().IsNull() || root->Formation()->OfProduct().IsNull()) {
+        return OCCT_BRIDGE_DATASET_LOST_IDENTIFIER | OCCT_BRIDGE_DATASET_LOST_REVISION
+            | OCCT_BRIDGE_DATASET_LOST_AUTHORITY | OCCT_BRIDGE_DATASET_LOST_APPROVALS;
+    }
+    uint32_t losses = dataset_identity_losses(root, dataset);
+    const auto links = read_approval_links(model, root->Formation());
+    auto read = read_approvals(model, links);
+    auto written = written_approvals(dataset);
     std::sort(read.begin(), read.end());
     std::sort(written.begin(), written.end());
-    if (read != written) {
-        losses |= OCCT_BRIDGE_DATASET_LOST_APPROVALS;
-    }
+    if (read != written) losses |= OCCT_BRIDGE_DATASET_LOST_APPROVALS;
     return losses;
 }
 

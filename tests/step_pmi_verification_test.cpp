@@ -8,6 +8,8 @@
 #include <array>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <stdexcept>
@@ -17,6 +19,7 @@ namespace {
 using namespace occt_bridge_internal;
 int failures = 0;
 size_t comparisons = 0;
+size_t validation_checks = 0;
 
 void check(bool condition, const char* test, const char* detail) {
     if (!condition) {
@@ -76,6 +79,7 @@ struct Fixture {
     std::array<occt_bridge_step_presentation_t, 4> drawings{};
     std::array<occt_bridge_step_datum_t, 1> datums{};
     std::array<occt_bridge_step_tolerance_t, 3> tolerances{};
+    std::array<occt_bridge_step_datum_reference_t, 1> references{};
     std::array<occt_bridge_step_size_t, 1> sizes{};
     std::array<size_t, 1> datum_indices{0};
     std::array<size_t, 2> tolerance_indices{0, 1};
@@ -210,9 +214,123 @@ void dataset_cases(const char* path) {
     verify_case(path, "changed authority", [](Fixture& f) { f.dataset.authority = "drawing"; }, expected);
     expected.dataset = OCCT_BRIDGE_DATASET_LOST_APPROVALS;
     verify_case(path, "changed approval", [](Fixture& f) { f.approval.date = "2026-10-20"; }, expected);
+    verify_case(path, "changed approver", [](Fixture& f) { f.approval.name = "Other"; }, expected);
+    verify_case(path, "changed approval role", [](Fixture& f) { f.approval.role = "APPROVED"; }, expected);
+    verify_case(path, "unexpected approval", [](Fixture& f) { f.dataset.approval_count = 0; }, expected);
+    expected.dataset = OCCT_BRIDGE_DATASET_LOST_REVISION;
+    verify_case(path, "changed revision description", [](Fixture& f) { f.dataset.description = "Other revision"; }, expected);
+    verify_case(path, "optional revision description", [](Fixture& f) { f.dataset.description = nullptr; });
     expected.dataset = UINT32_MAX;
     verify_case(path, "optional dataset loss output", [](Fixture& f) { f.dataset.out_losses = nullptr; }, expected);
 
+}
+
+void validation_is(const Fixture& fixture, const char* expected, const char* test) {
+    ++validation_checks;
+    const char* error = pmi_error(fixture.pmi, fixture.shapes);
+    check(expected == nullptr ? error == nullptr : error != nullptr && std::strcmp(error, expected) == 0,
+        test, expected == nullptr ? "valid request" : expected);
+}
+
+void tolerance_reference_precedence() {
+    Fixture f;
+    auto& tolerance = f.tolerances[0];
+    tolerance.characteristic = -1;
+    tolerance.value_mm = std::numeric_limits<double>::quiet_NaN();
+    tolerance.datum_count = 1;
+    f.references[0] = {1, 3, 9, 2};
+    f.datums[0].target.component = 1;
+    const auto error_is = [&](const char* expected) { validation_is(f, expected, "tolerance reference order"); };
+    error_is("unknown geometric characteristic");
+    tolerance.characteristic = OCCT_BRIDGE_GDT_FLATNESS;
+    error_is("a tolerance value must be finite and positive");
+    tolerance.value_mm = .05;
+    error_is("tolerance datum references are missing");
+    tolerance.datums = f.references.data();
+    error_is("a tolerance references an unknown datum");
+    f.references[0].datum = 0;
+    error_is("datum compartments are 0, 1 and 2");
+    f.references[0].compartment = 0;
+    error_is("unknown datum material boundary");
+    f.references[0].boundary = OCCT_BRIDGE_DATUM_RFS;
+    error_is("translation must be 0 or 1");
+    f.references[0].translation = 0;
+    error_is("a tolerance's datums must lie on its own part");
+    f.datums[0].target.component = 0;
+    f.references[0].compartment = 1;
+    error_is("datum compartments must fill from the primary");
+    f.references[0].compartment = 0;
+    error_is(nullptr);
+}
+
+void view_validation_precedence() {
+    Fixture f;
+    auto& view = f.views[0];
+    view.datums = nullptr;
+    view.clipping_plane_count = 17;
+    f.clipping.normal[0] = 2;
+    view.parts = nullptr;
+    f.datum_indices[0] = 1;
+    view.sizes = nullptr;
+    f.tolerance_indices[0] = 2;
+    const auto error_is = [&](const char* expected) { validation_is(f, expected, "view validation order"); };
+    error_is("view annotation arrays are missing");
+    view.datums = f.datum_indices.data();
+    error_is("a view has at most 16 clipping planes");
+    view.clipping_plane_count = 1;
+    error_is("a clipping plane needs a finite origin and a unit normal");
+    f.clipping.normal[0] = 0;
+    error_is("view part arrays are missing");
+    view.parts = f.plate_only.data();
+    error_is("a view shows an unknown datum");
+    f.datum_indices[0] = 0;
+    error_is("view annotation arrays are missing");
+    view.sizes = f.size_indices.data();
+    error_is("a view shows an unknown tolerance");
+    f.tolerance_indices[0] = 0;
+    error_is(nullptr);
+}
+
+// Remove a complete association record from this controlled STEP fixture.
+// The approval itself remains, so verification must detect the missing link.
+std::string without_record(std::string text, const std::string& type) {
+    const size_t at = text.find(" = " + type + "(");
+    if (at == std::string::npos) throw std::runtime_error("approval record not found");
+    const size_t newline = text.rfind('\n', at);
+    const size_t begin = newline == std::string::npos ? 0 : newline + 1;
+    const size_t end = text.find(';', at);
+    if (end == std::string::npos) throw std::runtime_error("approval record is incomplete");
+    text.erase(begin, end - begin + 1);
+    return text;
+}
+
+void verify_altered_file(const std::string& path, const std::string& text, const char* test) {
+    std::ofstream stream(path, std::ios::binary);
+    stream << text;
+    stream.close();
+    if (!stream) throw std::runtime_error("cannot write altered STEP fixture");
+    Losses expected;
+    expected.dataset = OCCT_BRIDGE_DATASET_LOST_APPROVALS;
+    Fixture fixture;
+    ++comparisons;
+    fixture.verify(path.c_str(), test, expected);
+    (void)std::remove(path.c_str());
+}
+
+void approval_file_cases(const char* path) {
+    std::ifstream stream(path, std::ios::binary);
+    const std::string text((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+    if (stream.bad() || text.empty()) throw std::runtime_error("cannot read STEP fixture");
+    const std::string altered = std::string(path) + ".altered";
+    for (const char* type : {"APPROVAL_DATE_TIME", "APPROVAL_PERSON_ORGANIZATION", "APPLIED_APPROVAL_ASSIGNMENT"}) {
+        verify_altered_file(altered, without_record(text, type), type);
+    }
+    std::string rejected = text;
+    const std::string approved = "APPROVAL_STATUS('approved')";
+    const size_t at = rejected.find(approved);
+    if (at == std::string::npos) throw std::runtime_error("approval status not found");
+    rejected.replace(at, approved.size(), "APPROVAL_STATUS('rejected')");
+    verify_altered_file(altered, rejected, "rejected approval status");
 }
 
 void validation_precedence() {
@@ -223,10 +341,7 @@ void validation_precedence() {
     f.drawings[0].name = "";
     f.views[0].name = "";
     f.dataset.identifier = "";
-    const auto error_is = [&](const char* expected) {
-        const char* error = pmi_error(f.pmi, f.shapes);
-        check(error != nullptr && std::strcmp(error, expected) == 0, "validation precedence", expected);
-    };
+    const auto error_is = [&](const char* expected) { validation_is(f, expected, "validation precedence"); };
     f.pmi.datums = nullptr;
     error_is("PMI arrays are missing");
     f.pmi.datums = f.datums.data();
@@ -242,7 +357,7 @@ void validation_precedence() {
     f.views[0].name = "TOP";
     error_is("a dataset needs an identifier, an organization and an authority");
     f.dataset.identifier = "PMI-TEST";
-    check(pmi_error(f.pmi, f.shapes) == nullptr, "validation precedence", "fully repaired request");
+    error_is(nullptr);
 }
 
 int run(const char* path) {
@@ -254,7 +369,10 @@ int run(const char* path) {
     presentation_cases(path);
     view_cases(path);
     dataset_cases(path);
+    approval_file_cases(path);
     validation_precedence();
+    tolerance_reference_precedence();
+    view_validation_precedence();
     Fixture unreadable;
     unreadable.losses.poison();
     Losses unchanged;
@@ -263,7 +381,7 @@ int run(const char* path) {
     check(!verify_pmi(missing.c_str(), unreadable.pmi, unreadable.shapes), "missing file", "read failure");
     unreadable.losses.compare(unchanged, "missing file leaves outputs untouched");
     check(application->NbDocuments() == documents, "read-back lifecycle", "no leaked XCAF documents");
-    (void)std::printf("%zu read-back comparisons; %d failures\n", comparisons, failures);
+    (void)std::printf("%zu read-back comparisons, %zu validation checks; %d failures\n", comparisons, validation_checks, failures);
     (void)std::remove(path);
     return failures == 0 ? 0 : 1;
 }
