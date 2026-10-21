@@ -24,6 +24,7 @@ examples. Project-wide status lives in [the roadmap](../ROADMAP.md) and
 - [Helices, springs and coils](HELIX.md)
 - [Fillets and chamfers](EDGE_TREATMENTS.md)
 - [Signed skin offsets](OFFSETS.md)
+- [Direct editing: remove, offset and move faces](DIRECT_EDITING.md)
 - [Uniform geometry scaling](SCALING.md)
 - [Mirrored parts](MIRRORS.md)
 - [Split bodies](SPLIT_BODY.md)

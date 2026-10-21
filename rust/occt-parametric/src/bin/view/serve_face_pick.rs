@@ -12,6 +12,10 @@ impl Studio {
             instance: String,
             output: String,
             face: usize,
+            /// Also accept curved faces, anchored at their centre, for
+            /// direct face edits (schema 183); they have no sketch plane.
+            #[serde(default)]
+            curved: bool,
         }
         let pick: Pick =
             serde_json::from_slice(body).map_err(|e| format!("invalid face pick: {e}"))?;
@@ -35,12 +39,49 @@ impl Studio {
         let face = session
             .subshape(shape, ShapeType::Face, pick.face)
             .map_err(|e| e.to_string())?;
+        let centre = session.center_of_mass(&face).map_err(|e| e.to_string())?;
+        let anchor = || FaceSelector::NearestCenter {
+            target: VectorExpr::Literal(VectorQuantity::lengths(
+                centre.x,
+                centre.y,
+                centre.z,
+                LengthUnit::Millimeter,
+            )),
+            maximum_distance: ScalarExpr::Literal(Quantity::length(1e-5, LengthUnit::Millimeter)),
+        };
+        let part = graph.resolve(&pick.instance).map_err(|e| e.to_string())?;
+        let matches = |selector: &FaceSelector| -> Result<bool, String> {
+            let chosen: Vec<Shape<'_>> = part
+                .select_faces(&session, result, &pick.output, selector)
+                .map_err(|e| e.to_string())?;
+            Ok(chosen.len() == 1
+                && session
+                    .is_same(&chosen[0], &face)
+                    .map_err(|e| e.to_string())?)
+        };
         if !session.face_is_planar(&face).map_err(|e| e.to_string())? {
-            return Err(
-                "Pick a planar face; curved faces are not supported by this picker.".into(),
+            if !pick.curved {
+                return Err(
+                    "Pick a planar face; curved faces are not supported by this picker.".into(),
+                );
+            }
+            // A strict centre anchor: a face that moves fails rather than
+            // selecting a neighbour.
+            let selector = anchor();
+            if !matches(&selector)? {
+                return Err("This face has no unambiguous centre selector.".into());
+            }
+            let support = SketchFaceSupport {
+                input: pick.output,
+                face: selector,
+                offset: ScalarExpr::Literal(Quantity::length(0.0, LengthUnit::Millimeter)),
+            };
+            return Ok(
+                json!({"version":self.version,"instance":pick.instance,"face_support":support,
+                "origin_mm":[centre.x,centre.y,centre.z],"normal":null,"curved":true,
+                "binding":"anchored_center"}),
             );
         }
-        let centre = session.center_of_mass(&face).map_err(|e| e.to_string())?;
         let n = session.face_normal(&face).map_err(|e| e.to_string())?;
         let norm = (n.x * n.x + n.y * n.y + n.z * n.z).sqrt();
         if !norm.is_finite() || norm <= 0.0 {
@@ -52,16 +93,6 @@ impl Studio {
         let aligned = |sign: f64| FaceSelector::NormalAligned {
             direction: direction(normal.map(|v| v * sign)),
             minimum_dot: ScalarExpr::Literal(Quantity::scalar(0.999999)),
-        };
-        let part = graph.resolve(&pick.instance).map_err(|e| e.to_string())?;
-        let matches = |selector: &FaceSelector| -> Result<bool, String> {
-            let chosen: Vec<Shape<'_>> = part
-                .select_faces(&session, result, &pick.output, selector)
-                .map_err(|e| e.to_string())?;
-            Ok(chosen.len() == 1
-                && session
-                    .is_same(&chosen[0], &face)
-                    .map_err(|e| e.to_string())?)
         };
         let mut selector = aligned(1.0);
         let mut binding = "normal";
@@ -98,21 +129,7 @@ impl Studio {
             } else {
                 // Strict stationary anchor: moving/disappearing support fails
                 // rather than selecting an unrelated nearby parallel face.
-                selector = FaceSelector::Intersection(vec![
-                    aligned(1.0),
-                    FaceSelector::NearestCenter {
-                        target: VectorExpr::Literal(VectorQuantity::lengths(
-                            centre.x,
-                            centre.y,
-                            centre.z,
-                            LengthUnit::Millimeter,
-                        )),
-                        maximum_distance: ScalarExpr::Literal(Quantity::length(
-                            1e-5,
-                            LengthUnit::Millimeter,
-                        )),
-                    },
-                ]);
+                selector = FaceSelector::Intersection(vec![aligned(1.0), anchor()]);
                 if !matches(&selector)? {
                     return Err("This face has no unambiguous semantic support selector.".into());
                 }

@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define OCCT_BRIDGE_ABI_VERSION 85u
+#define OCCT_BRIDGE_ABI_VERSION 86u
 #define OCCT_BRIDGE_INVALID_SHAPE_ID UINT64_C(0)
 
 #if defined(_WIN32) && defined(OCCT_BRIDGE_BUILD_SHARED)
@@ -159,7 +159,10 @@ enum {
     /* A subshape of a rejected result that failed validation; code is a BRepCheck_Status. */
     OCCT_BRIDGE_DIAGNOSTIC_INVALID_SUBSHAPE = 6,
     /* Draft failure; code is Draft_ErrorStatus, shape is OCCT's problematic subshape. */
-    OCCT_BRIDGE_DIAGNOSTIC_DRAFT = 7
+    OCCT_BRIDGE_DIAGNOSTIC_DRAFT = 7,
+    /* A face removal error or warning alert (ABI 86); the name is its OCCT
+     * alert key, code is 0, and the shape holds the faces it concerns. */
+    OCCT_BRIDGE_DIAGNOSTIC_DEFEATURING = 8
 };
 
 typedef struct occt_bridge_diagnostic {
@@ -167,8 +170,8 @@ typedef struct occt_bridge_diagnostic {
     /* OCCT's enumeration value for the kind; its name is available by index. */
     int32_t code;
     /*
-     * Index into the call's selection (fillet or chamfer edges, hollow/draft
-     * faces) or boolean operand (0 for left or object, 1 for right or
+     * Index into the call's selection (fillet or chamfer edges, hollow,
+     * draft, removed or offset faces) or boolean operand (0 for left or object, 1 for right or
      * tool) that the diagnostic concerns; -1 when it concerns none.
      */
     int64_t input_index;
@@ -992,6 +995,44 @@ OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_hollow(
     const occt_bridge_shape_id_t* faces_to_remove,
     size_t face_count,
     double thickness,
+    double tolerance,
+    occt_bridge_shape_id_t* out_shape
+);
+
+/*
+ * Direct face edits (ABI 86). Both take a solid (removal also accepts a
+ * shape containing solids) and faces of it, record operation history, and validate the result like other
+ * modeling operations.
+ *
+ * occt_bridge_remove_faces deletes the selected faces and closes the gap by
+ * extending or trimming the faces around them (OCCT defeaturing): holes,
+ * pockets, bosses, fillets and chamfers disappear as if never modeled. A
+ * selection OCCT cannot remove completely fails with
+ * OCCT_BRIDGE_DIAGNOSTIC_DEFEATURING alerts naming the selected face; the
+ * input is never returned partly edited.
+ *
+ * occt_bridge_offset_faces moves each selected face along its outward normal
+ * by its own signed distance (positive adds material; on a hole's wall it
+ * shrinks the hole) and re-intersects the faces around it, which keep their
+ * surfaces. Distances are finite and nonzero, and a face is selected once.
+ * Every face, edge and vertex image of the same type is recorded as
+ * modified, so face identity carries through the edit.
+ * Failures report OCCT_BRIDGE_DIAGNOSTIC_OFFSET with the selection index.
+ */
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_remove_faces(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    const occt_bridge_shape_id_t* faces,
+    size_t face_count,
+    occt_bridge_shape_id_t* out_shape
+);
+
+OCCT_BRIDGE_API occt_bridge_status_t occt_bridge_offset_faces(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    const occt_bridge_shape_id_t* faces,
+    const double* distances,
+    size_t face_count,
     double tolerance,
     occt_bridge_shape_id_t* out_shape
 );

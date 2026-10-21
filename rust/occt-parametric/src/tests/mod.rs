@@ -8,6 +8,7 @@ mod branch_search;
 mod closed_motion;
 mod continuous_motion;
 mod datum_targets;
+mod direct_edit;
 mod documents;
 mod draft;
 mod draw_view;

@@ -4,12 +4,17 @@
 
 #include "bridge_internal.hpp"
 
+#include <BRepBuilderAPI_MakeSolid.hxx>
+#include <BRepLib.hxx>
 #include <BRepOffsetAPI_MakeOffsetShape.hxx>
 #include <BRepOffsetAPI_MakeThickSolid.hxx>
 #include <BRepOffset_MakeOffset.hxx>
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
 #include <TopExp.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopoDS.hxx>
+#include <TopoDS_Solid.hxx>
 
 #include <cmath>
 
@@ -297,6 +302,106 @@ occt_bridge_status_t occt_bridge_thicken(
             return offset_failure(session, thick, "thicken", exception, {});
         }
         return store_thickened(session, thick, &moved, *value, out_shape);
+    });
+}
+
+occt_bridge_status_t occt_bridge_offset_faces(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t shape,
+    const occt_bridge_shape_id_t* faces,
+    const double* distances,
+    size_t face_count,
+    double tolerance,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (faces == nullptr || distances == nullptr || face_count == 0
+            || !std::isfinite(tolerance) || tolerance <= 0.0) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid offset faces parameters");
+        }
+        const TopoDS_Shape* value = find_shape(session, shape);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "shape was not found");
+        }
+        TopTools_IndexedMapOfShape solids;
+        TopExp::MapShapes(*value, TopAbs_SOLID, solids);
+        if (solids.Extent() != 1) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "offset faces input must be one solid");
+        }
+        TopTools_IndexedMapOfShape owned;
+        TopExp::MapShapes(*value, TopAbs_FACE, owned);
+        TopTools_IndexedMapOfShape seen;
+        TopTools_ListOfShape selection;
+        for (size_t index = 0; index < face_count; ++index) {
+            const TopoDS_Shape* face = find_shape(session, faces[index]);
+            if (face == nullptr) {
+                return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "offset faces face was not found");
+            }
+            if (face->ShapeType() != TopAbs_FACE || !owned.Contains(*face)) {
+                return fail(
+                    session,
+                    OCCT_BRIDGE_INVALID_GEOMETRY,
+                    "offset faces selection is not a face of the input shape");
+            }
+            if (!std::isfinite(distances[index]) || distances[index] == 0.0) {
+                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "offset faces distances must be finite and nonzero");
+            }
+            if (seen.Add(*face) != static_cast<int>(index) + 1) {
+                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "offset faces selects a face twice");
+            }
+            selection.Append(*face);
+        }
+        BRepOffset_MakeOffset builder;
+        const std::string exception = perform_reporting_exception([&] {
+            builder.Initialize(
+                *value, 0.0, tolerance, BRepOffset_Skin, Standard_False, Standard_False,
+                GeomAbs_Intersection, Standard_False);
+            size_t index = 0;
+            for (TopTools_ListIteratorOfListOfShape face(selection); face.More(); face.Next(), ++index) {
+                builder.SetOffsetOnFace(TopoDS::Face(face.Value()), distances[index]);
+            }
+            builder.MakeOffsetShape();
+        });
+        if (!offset_done(builder, exception)) {
+            return offset_failure(session, builder, "offset faces", exception, selection);
+        }
+        // A zero skin offset returns the closed shells; the solid reuses
+        // them, so the recorded face history still applies.
+        TopoDS_Shape result = builder.Shape();
+        if (!contains_topology(result, TopAbs_SOLID)) {
+            BRepBuilderAPI_MakeSolid solid;
+            for (TopExp_Explorer shell(result, TopAbs_SHELL); shell.More(); shell.Next()) {
+                solid.Add(TopoDS::Shell(shell.Current()));
+            }
+            if (!solid.IsDone()) {
+                return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "offset faces left no closed shell");
+            }
+            TopoDS_Solid closed = solid.Solid();
+            BRepLib::OrientClosedSolid(closed);
+            result = closed;
+        }
+        // OCCT reports every offset image as generated; an image of the
+        // source's own type is the same face, edge or vertex moved.
+        std::vector<occt_bridge_history_entry> history = collect_history(builder, {value});
+        for (occt_bridge_history_entry& entry : history) {
+            std::vector<TopoDS_Shape> generated;
+            for (const TopoDS_Shape& image : entry.generated) {
+                if (image.ShapeType() == entry.source.ShapeType()) {
+                    append_unique_shape(entry.modified, image);
+                } else {
+                    generated.push_back(image);
+                }
+            }
+            entry.generated = std::move(generated);
+        }
+        const occt_bridge_status_t status = check_result(session, "offset faces", result, &history);
+        if (status != OCCT_BRIDGE_OK) {
+            return status;
+        }
+        return store_shape_with_entries(session, result, out_shape, std::move(history));
     });
 }
 

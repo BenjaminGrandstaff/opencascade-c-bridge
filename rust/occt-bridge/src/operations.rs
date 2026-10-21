@@ -224,6 +224,42 @@ impl Session {
         })
     }
 
+    /// Delete faces and heal the gap from the faces around them (ABI 86):
+    /// holes, pockets, bosses, fillets and chamfers vanish as if never
+    /// modeled. Fails, never partly edits, when OCCT cannot remove them all.
+    pub fn remove_faces<'a>(
+        &'a self,
+        shape: &Shape<'_>,
+        faces: &[&Shape<'_>],
+    ) -> Result<Shape<'a>, BridgeError> {
+        self.selected_operation(shape, faces, |ids, out| unsafe {
+            occt_bridge_remove_faces(self.raw.as_ptr(), shape.id, ids.as_ptr(), ids.len(), out)
+        })
+    }
+
+    /// Move each face along its outward normal by its own signed distance,
+    /// positive adding material, re-intersecting the faces around it (ABI 86).
+    pub fn offset_faces<'a>(
+        &'a self,
+        shape: &Shape<'_>,
+        faces: &[(&Shape<'_>, f64)],
+        tolerance: f64,
+    ) -> Result<Shape<'a>, BridgeError> {
+        let selection: Vec<&Shape<'_>> = faces.iter().map(|(face, _)| *face).collect();
+        let distances: Vec<f64> = faces.iter().map(|(_, distance)| *distance).collect();
+        self.selected_operation(shape, &selection, |ids, out| unsafe {
+            occt_bridge_offset_faces(
+                self.raw.as_ptr(),
+                shape.id,
+                ids.as_ptr(),
+                distances.as_ptr(),
+                ids.len(),
+                tolerance,
+                out,
+            )
+        })
+    }
+
     pub fn translate<'a>(
         &'a self,
         shape: &Shape<'_>,

@@ -598,6 +598,37 @@ pub enum FeatureOperation {
         pull_direction: VectorExpr,
         angle_radians: ScalarExpr,
     },
+    /// Direct edit (schema 183): deletes the selected faces of a solid and
+    /// closes the gap from the faces around them, so holes, pockets, bosses,
+    /// fillets and chamfers vanish as if never modeled. A selection the
+    /// kernel cannot remove completely is an error, never a partial edit.
+    RemoveFaces {
+        input: String,
+        #[schemars(length(min = 1))]
+        faces: Vec<FaceSelector>,
+    },
+    /// Direct edit (schema 183): moves the selected faces along their
+    /// outward normals by `distance`, a signed nonzero length (positive adds
+    /// material; on a hole's wall it narrows the hole), and re-intersects
+    /// the faces around them, which keep their surfaces. `tolerance` is a
+    /// positive length. Faces keep their identity for later selectors.
+    OffsetFaces {
+        input: String,
+        #[schemars(length(min = 1))]
+        faces: Vec<FaceSelector>,
+        distance: ScalarExpr,
+        tolerance: ScalarExpr,
+    },
+    /// Direct edit (schema 183): moves the material the selected faces bound
+    /// by `offset`, such as a hole, pocket, boss or rib. The faces are
+    /// removed, then the region they took away is cut, and the region they
+    /// added is fused, at the moved place.
+    MoveFaces {
+        input: String,
+        #[schemars(length(min = 1))]
+        faces: Vec<FaceSelector>,
+        offset: VectorExpr,
+    },
 }
 
 impl FeatureOperation {
@@ -638,7 +669,11 @@ impl FeatureOperation {
                     projection.edge.names(&mut names);
                 }
             }
-            Self::Hollow { faces, .. } | Self::Draft { faces, .. } => {
+            Self::Hollow { faces, .. }
+            | Self::Draft { faces, .. }
+            | Self::RemoveFaces { faces, .. }
+            | Self::OffsetFaces { faces, .. }
+            | Self::MoveFaces { faces, .. } => {
                 for selector in faces {
                     selector.names(&mut names);
                 }
@@ -661,7 +696,10 @@ impl FeatureOperation {
             | Self::VariableFillet { input, .. }
             | Self::Chamfer { input, .. }
             | Self::Hollow { input, .. }
-            | Self::Draft { input, .. } => vec![input],
+            | Self::Draft { input, .. }
+            | Self::RemoveFaces { input, .. }
+            | Self::OffsetFaces { input, .. }
+            | Self::MoveFaces { input, .. } => vec![input],
             _ => self.dependencies(),
         }
     }
@@ -732,7 +770,11 @@ impl FeatureOperation {
                 }
                 dependencies
             }
-            Self::Hollow { input, faces, .. } | Self::Draft { input, faces, .. } => {
+            Self::Hollow { input, faces, .. }
+            | Self::Draft { input, faces, .. }
+            | Self::RemoveFaces { input, faces }
+            | Self::OffsetFaces { input, faces, .. }
+            | Self::MoveFaces { input, faces, .. } => {
                 let mut dependencies = vec![input.as_str()];
                 for selector in faces {
                     selector.dependencies(&mut dependencies);

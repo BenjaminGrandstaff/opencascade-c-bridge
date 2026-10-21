@@ -1,6 +1,7 @@
-// Shell, draft, mirror and pattern features in the solid editor: the
-// engine's hollow, draft, mirror, linear_pattern and circular_pattern
-// operations on an accepted solid. Pure state helpers plus one renderer
+// Shell, draft, direct face edit, mirror and pattern features in the solid
+// editor: the engine's hollow, draft, remove_faces, offset_faces,
+// move_faces, mirror, linear_pattern and circular_pattern operations on an
+// accepted solid. Pure state helpers plus one renderer
 // that uses the editor's own select/number/button rows.
 const quantity = (value,dimension='length',unit='millimeter') => ({literal:{value,dimension,unit}});
 const vector = (values,dimension) => ({components:Object.fromEntries(['x','y','z'].map((key,i)=>[key,quantity(values[i],dimension,dimension==='length'?'millimeter':null)]))});
@@ -8,16 +9,23 @@ const mm = q => q?.dimension==='length' ? q.value*({millimeter:1,centimeter:10,m
 const DEGREE = Math.PI/180;
 
 /** Tool kinds, their names, and whether they change their solid in place
- * (shell, draft) rather than making a new body that can join a target. */
+ * (shell, draft, face edits) rather than making a new body that can join a
+ * target. */
 export const SOLID_TOOLS = {
   hollow:{name:'shell',inPlace:true},
   draft:{name:'draft',inPlace:true},
+  remove_faces:{name:'delete faces',inPlace:true},
+  offset_faces:{name:'offset faces',inPlace:true},
+  move_faces:{name:'move faces',inPlace:true},
   mirror:{name:'mirror',inPlace:false},
   linear_pattern:{name:'linear pattern',inPlace:false},
   circular_pattern:{name:'circular pattern',inPlace:false},
 };
 export const isSolidTool = kind => Object.hasOwn(SOLID_TOOLS,kind);
 export const inPlaceTool = kind => SOLID_TOOLS[kind]?.inPlace===true;
+/** Direct face edits pick curved faces too and work without history. */
+const FACE_EDITS = ['remove_faces','offset_faces','move_faces'];
+const picksFaces = kind => kind==='hollow'||kind==='draft'||FACE_EDITS.includes(kind);
 export const solidToolKind = operation => Object.keys(SOLID_TOOLS).find(kind=>Object.hasOwn(operation??{},kind))??null;
 
 function readVector(value,dimension) {
@@ -54,6 +62,10 @@ export function readSolidTool(kind,body,source='') {
       origin:vectorState(body?.neutral_origin,'length',[0,0,0]),normal:vectorState(body?.neutral_normal,'scalar',[0,0,1]),
       pull:vectorState(body?.pull_direction,'scalar',[0,0,1]),
       angle:scalarState(body?.angle_radians,q=>q.dimension==='scalar'?q.value/DEGREE:NaN,3)});
+  }else if(FACE_EDITS.includes(kind)){
+    state.faces=structuredClone(body?.faces??[]);state.picked=[];
+    if(kind==='offset_faces')Object.assign(state,{distance:scalarState(body?.distance,mm,1),tolerance:structuredClone(body?.tolerance??quantity(0.000001))});
+    if(kind==='move_faces')state.offset=vectorState(body?.offset,'length',[5,0,0]);
   }else if(kind==='mirror'){
     Object.assign(state,{origin:vectorState(body?.origin,'length',[0,0,0]),normal:vectorState(body?.normal,'scalar',[1,0,0])});
   }else if(kind==='linear_pattern'){
@@ -102,6 +114,15 @@ export function solidToolOperation(kind,state,features) {
       neutral_normal:keptVector(state.normal,'scalar','neutral plane normal',true),pull_direction:keptVector(state.pull,'scalar','pull direction',true),
       angle_radians:scalar(state.angle,'draft angle (between −90° and 90°, not 0)',v=>quantity(v*DEGREE,'scalar',null),v=>v!==0&&Math.abs(v)<90)}};
   }
+  if(FACE_EDITS.includes(kind)){
+    if(!state.faces.length)throw Error('Pick at least one face to edit.');
+    const faces=structuredClone(state.faces);
+    if(kind==='remove_faces')return {remove_faces:{input,faces}};
+    if(kind==='offset_faces')return {offset_faces:{input,faces,distance:scalar(state.distance,'offset distance (nonzero; positive adds material)',v=>quantity(v),v=>v!==0),tolerance:structuredClone(state.tolerance)}};
+    const offset=keptVector(state.offset,'length','move offset');
+    if(offset.components&&['x','y','z'].every(key=>offset.components[key].literal.value===0))throw Error('Enter a nonzero move offset.');
+    return {move_faces:{input,faces,offset}};
+  }
   if(kind==='mirror')return {mirror:{input,origin:keptVector(state.origin,'length','mirror plane point'),normal:keptVector(state.normal,'scalar','mirror plane normal',true)}};
   const count=scalar(state.count,'copy count (a whole number from 2 to 10000, including the original)',v=>quantity(v,'scalar',null),v=>Number.isInteger(v)&&v>=2&&v<=10000);
   if(kind==='linear_pattern'){
@@ -128,6 +149,9 @@ export function renderSolidTool({kind,state,features,parameters,select,number,bu
   note.textContent={
     hollow:'Removes the picked faces and leaves walls of the given thickness, inside or outside the original surface. Pick planar faces of the source; Preview checks every instance.',
     draft:'Tapers the picked faces about the neutral plane. Positive angles remove material on the pull-direction side. Vectors use family coordinates.',
+    remove_faces:'Deletes the picked faces and closes the gap from the faces around them, so a hole, pocket, boss, fillet or chamfer disappears without editing the feature that made it. Pick every face of the detail.',
+    offset_faces:'Moves the picked faces along their outward normals; positive adds material, and on a hole wall a negative distance widens the hole. The faces around them extend or trim to meet.',
+    move_faces:'Moves the detail the picked faces bound, such as a hole, pocket or boss, by the offset in family coordinates. Pick every face of the detail.',
     mirror:'Reflects the source across the plane. Choose Add material with the source as target to make a symmetric part.',
     linear_pattern:'Copies the source along the direction at the spacing; the count includes the original. Add material with the source as target to join the copies.',
     circular_pattern:'Copies the source about the axis; the count includes the original. Add material with the source as target to join the copies.',
@@ -146,17 +170,18 @@ export function renderSolidTool({kind,state,features,parameters,select,number,bu
     if(v.saved){const kept=document.createElement('p');kept.textContent=`${label} keeps its formula.`;content.append(kept);content.append(button(`Enter ${label.toLowerCase()} instead`,()=>{v.saved=null;invalidate();render();}));return;}
     for(const [i,key] of ['X','Y','Z'].entries())number(`${label} ${key}${unit}`,v.values[i],value=>v.values[i]=value);
   };
-  if(kind==='hollow'||kind==='draft'){
+  if(picksFaces(kind)){
     state.faces.forEach((_,index)=>{
       const row=document.createElement('p');
       const picked=state.picked[index];
-      row.textContent=`Face ${index+1}: `+(picked?`picked planar face at ${(picked.origin_mm??[]).map(v=>Number(v.toPrecision(6))).join(', ')} mm`:'saved selector');
+      row.textContent=`Face ${index+1}: `+(picked?`picked ${picked.curved?'curved face centred':'planar face'} at ${(picked.origin_mm??[]).map(v=>Number(v.toPrecision(6))).join(', ')} mm`:'saved selector');
       content.append(row,button(`Remove face ${index+1}`,()=>{state.faces.splice(index,1);state.picked.splice(index,1);invalidate();render();}));
     });
-    if(pickFace)content.append(button(kind==='hollow'?'Pick a face to open':'Pick a face to draft',async()=>{
+    const curved=FACE_EDITS.includes(kind);
+    if(pickFace)content.append(button(kind==='hollow'?'Pick a face to open':kind==='draft'?'Pick a face to draft':'Pick a face to edit',async()=>{
       if(!state.source)throw Error('Choose a source solid first.');
-      message('Click a planar face of the amber source solid. Escape cancels the pick.');
-      const picked=await pickFace(state.source);
+      message(curved?'Click a face of the amber source solid; curved faces work too. Escape cancels the pick.':'Click a planar face of the amber source solid. Escape cancels the pick.');
+      const picked=curved?await pickFace(state.source,{curved:true}):await pickFace(state.source);
       if(!picked)return;
       state.faces.push(structuredClone(picked.face));state.picked[state.faces.length-1]=picked;invalidate();render();
       message(`${state.faces.length} face(s) selected. Preview checks every instance.`);
@@ -172,6 +197,13 @@ export function renderSolidTool({kind,state,features,parameters,select,number,bu
     vectorRows('Pull direction',state.pull,'');
     select('Draft angle source',sources(state.angle,'Entered angle',scalars,' (radians)'),state.angle.source,value=>{state.angle.source=value;render();});
     number('Draft angle (degrees)',state.angle.value,value=>state.angle.value=value).disabled=state.angle.source!=='literal';
+  }else if(kind==='offset_faces'){
+    select('Distance source',sources(state.distance,'Entered distance',lengths,''),state.distance.source,value=>{state.distance.source=value;render();});
+    number('Distance (mm, positive adds material)',state.distance.value,value=>state.distance.value=value).disabled=state.distance.source!=='literal';
+  }else if(kind==='move_faces'){
+    vectorRows('Move offset',state.offset,' (mm)');
+  }else if(kind==='remove_faces'){
+    // Faces only.
   }else if(kind==='mirror'){
     const principal={yz:[1,0,0],xz:[0,1,0],xy:[0,0,1]};
     const current=!state.normal.saved&&Object.entries(principal).find(([,n])=>n.every((v,i)=>v===state.normal.values[i]))?.[0];

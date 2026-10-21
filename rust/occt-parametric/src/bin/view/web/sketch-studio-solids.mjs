@@ -81,7 +81,7 @@ export function installStudioSolids(studio, document) {
       pickLoftAnchor: (profile,splits) => anchorPicker.pick(profile,current,splits),
       pickHolePosition: target => picker.pick(target,current,'hole'),
       pickSolidEdge: target => picker.pick(target,current,'edge'),
-      pickLimitingFace: target => picker.pick(target,current),
+      pickLimitingFace: (target,options) => picker.pick(target,current,options?.curved?'any-face':'face'),
       cancelLimitingFacePick: () => {picker.cancel();anchorPicker.cancel();},
       initialProfile: () => studio.activeLayer()?.feature,
       profileDirection: feature => {

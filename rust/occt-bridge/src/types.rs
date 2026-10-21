@@ -38,6 +38,7 @@ pub(crate) fn diagnostic_kind(kind: i32) -> DiagnosticKind {
             5 => DiagnosticKind::BooleanAlert,
             6 => DiagnosticKind::InvalidSubshape,
             7 => DiagnosticKind::Draft,
+            8 => DiagnosticKind::Defeaturing,
             other => DiagnosticKind::Other(other),
         }
     }

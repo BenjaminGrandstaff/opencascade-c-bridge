@@ -39,6 +39,7 @@ add_library(
     src/edge_treatments.cpp
     src/draft.cpp
     src/offsets.cpp
+    src/defeaturing.cpp
     src/mirror.cpp
     src/inspection.cpp
     src/geometry_queries.cpp

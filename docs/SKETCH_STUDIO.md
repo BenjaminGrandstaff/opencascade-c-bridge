@@ -479,9 +479,9 @@ built a channel through the form. It had three flanges, walls on both
 floor edges with reliefs, a closed end hem and a hole. Its preview matched
 the analytic 8,249.3 mm³.
 
-### Shells, drafts, mirrors and patterns
+### Shells, drafts, face edits, mirrors and patterns
 
-**Solid feature** also offers five operations on an accepted solid. Each
+**Solid feature** also offers eight operations on an accepted solid. Each
 names its **Source solid**:
 
 - **Shell (hollow) a solid** removes the picked faces and leaves walls of
@@ -503,6 +503,15 @@ Shell and draft change their solid in place, like fillets. **Pick a face to
 open** or **Pick a face to draft** picks planar faces of the amber source in
 the canvas, one per click; **Remove face …** drops one. Curved faces can be
 chosen in the model document.
+
+**Delete faces**, **Offset faces** and **Move faces** are direct edits
+([direct editing](DIRECT_EDITING.md)). They change the source in place
+without editing the features that made it, so they also work on imported
+bodies. **Pick a face to edit** accepts curved faces such as hole walls and
+fillets. A curved face is anchored at its centre and must be repicked if a
+later change moves it. Delete closes the gap left by the faces. Offset takes
+a signed distance, entered or from a length parameter; positive adds
+material. Move takes an offset vector in millimeters.
 
 Mirror and patterns make new bodies. With **Add material** and the source as
 target they join it, which is how to make a symmetric part or a row of

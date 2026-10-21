@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(crate) const ABI_VERSION: u32 = 85;
+pub(crate) const ABI_VERSION: u32 = 86;
 
 #[repr(C)]
 #[derive(Default)]
@@ -997,6 +997,22 @@ unsafe extern "C" {
         faces_to_remove: *const RawShapeId,
         face_count: usize,
         thickness: f64,
+        tolerance: f64,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_remove_faces(
+        session: *mut c_void,
+        shape: RawShapeId,
+        faces: *const RawShapeId,
+        face_count: usize,
+        out: *mut RawShapeId,
+    ) -> RawStatus;
+    pub(crate) fn occt_bridge_offset_faces(
+        session: *mut c_void,
+        shape: RawShapeId,
+        faces: *const RawShapeId,
+        distances: *const f64,
+        face_count: usize,
         tolerance: f64,
         out: *mut RawShapeId,
     ) -> RawStatus;

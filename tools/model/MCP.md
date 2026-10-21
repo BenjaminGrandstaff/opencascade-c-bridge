@@ -829,3 +829,16 @@ suppression guard the original family history; moves guard the ordered feature
 IDs and reject dependency crossings. Reports include `feature_states` for every
 family. Retrieve `feature-history` with `occt_get_example`; see
 [feature timeline states, request examples and studio controls](../../docs/FEATURE_HISTORY.md).
+
+## Direct face edits
+
+Schema 183 adds `remove_faces`, `offset_faces` and `move_faces` feature
+operations. Add them with an `add_feature` change, like any other feature.
+They edit faces of any solid, including an imported STEP body, with no feature
+history. To find selectors for curved faces such as hole walls, call
+`occt_inspect_model` with output regeneration. It reports each face's center,
+and a `nearest_center` selector with a small `maximum_distance` picks that
+face. Prefer a `persistent` selector on the feature that made the face, so a
+later edit still finds it. A removal the kernel cannot complete fails with the
+OCCT alert and the selector at fault. Retrieve `direct-edit` with
+`occt_get_example`; see [direct editing](../../docs/DIRECT_EDITING.md).

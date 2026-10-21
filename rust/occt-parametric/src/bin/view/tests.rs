@@ -7415,6 +7415,13 @@ fn studio_shells_drafts_mirrors_and_patterns_preview_exact_solids() {
         "ring",
     );
     close(ring, 96000.0);
+    // Direct edit: the top face pushed up 5 mm.
+    let pushed = preview(
+        &mut studio,
+        json!([{"id": "pushed", "operation": {"offset_faces": {"input": "block", "faces": [facing(0.0, 0.0, 1.0)], "distance": {"literal": length(5.0)}, "tolerance": {"literal": length(1e-6)}}}}]),
+        "pushed",
+    );
+    close(pushed, 30000.0);
     // Previews leave the accepted model alone.
     assert_eq!(get(&mut studio, "/api/state").1, state);
 }
@@ -7700,4 +7707,95 @@ fn studio_feature_history_checkout_suppression_reorder_undo_and_stale_guards() {
         String::from_utf8_lossy(&response.body)
     );
     assert_eq!(get(&mut studio, "/api/features").1["output"], "plate");
+}
+
+#[test]
+fn curved_face_picks_drive_direct_face_edits() {
+    // A 40 × 30 × 20 block with a Ø6 through hole at (10, 15).
+    let length = |v: f64| json!({"value": v, "dimension": "length", "unit": "millimeter"});
+    let scalar = |v: f64| json!({"value": v, "dimension": "scalar", "unit": null});
+    let lengths = |x: f64, y: f64, z: f64| json!({"components": {"x": {"literal": length(x)}, "y": {"literal": length(y)}, "z": {"literal": length(z)}}});
+    let model = json!({"schema_version": CURRENT_SCHEMA_VERSION, "family": {
+        "id": "block", "version": 1, "parameters": [], "derived_parameters": [],
+        "derived_vector_parameters": [], "constraints": [], "requirements": [], "datums": [],
+        "features": [
+            {"id": "block", "operation": {"box": {"origin": lengths(0.0, 0.0, 0.0), "size": lengths(40.0, 30.0, 20.0)}}},
+            {"id": "rod", "operation": {"cylinder": {"origin": lengths(10.0, 15.0, -1.0), "axis": {"literal": {"x": scalar(0.0), "y": scalar(0.0), "z": scalar(1.0)}}, "radius": {"literal": length(3.0)}, "height": {"literal": length(22.0)}}}},
+            {"id": "drilled", "operation": {"cut": {"object": "block", "tool": "rod"}}}]},
+        "instances": [{"base": {"id": "part", "overrides": {}, "provenance": "test"}}]});
+    let document = ModelDocument::from_json(&model.to_string()).unwrap();
+    let directory = Directory::new();
+    let path = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&path, Some("drilled".into())).unwrap();
+    let data = get(&mut studio, "/api/annotations?id=part").1;
+    let wall = data["scenes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "solid")
+        .unwrap()["mesh"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|triangle| {
+            triangle["points"].as_array().unwrap().iter().all(|p| {
+                let (x, y) = (p[0].as_f64().unwrap() - 10.0, p[1].as_f64().unwrap() - 15.0);
+                ((x * x + y * y).sqrt() - 3.0).abs() < 1e-6
+            })
+        })
+        .unwrap()["face"]
+        .as_u64()
+        .unwrap() as usize;
+    // The sketch picker still refuses curved faces.
+    let (status, refused) = pick_face(&mut studio, "part", "drilled", wall);
+    assert_eq!(status, 422, "{refused}");
+    let version = get(&mut studio, "/api/state").1["version"].clone();
+    let response = studio.handle(
+        "POST",
+        "/api/sketch-face-pick",
+        json!({"version": version, "instance": "part", "output": "drilled", "face": wall, "curved": true})
+            .to_string()
+            .as_bytes(),
+    );
+    assert_eq!(response.status, 200);
+    let pick: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(pick["binding"], "anchored_center");
+    assert_eq!(pick["curved"], true);
+    assert_eq!(pick["normal"], serde_json::Value::Null);
+    let origin = pick["origin_mm"].as_array().unwrap();
+    assert!((origin[0].as_f64().unwrap() - 10.0).abs() < 1e-6);
+    let face = pick["face_support"]["face"].clone();
+    let (_, features) = get(&mut studio, "/api/features");
+    let preview = |studio: &mut serve::Studio, operation: serde_json::Value| -> f64 {
+        let edit = json!({"version": features["version"], "instance": "part", "expected": features["features"], "action": "add", "features": [{"id": "edited", "operation": operation}], "output": "edited", "apply": false});
+        let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(body["can_apply"], true, "{body}");
+        body["geometry"]["part"]["volume_mm3"].as_f64().unwrap()
+    };
+    let hole = std::f64::consts::PI * 9.0 * 20.0;
+    let close = |actual: f64, expected: f64| {
+        assert!((actual - expected).abs() < 1e-6, "{actual} vs {expected}")
+    };
+    close(
+        preview(
+            &mut studio,
+            json!({"remove_faces": {"input": "drilled", "faces": [face]}}),
+        ),
+        24000.0,
+    );
+    close(
+        preview(
+            &mut studio,
+            json!({"offset_faces": {"input": "drilled", "faces": [face], "distance": {"literal": length(-1.0)}, "tolerance": {"literal": length(1e-6)}}}),
+        ),
+        24000.0 - std::f64::consts::PI * 16.0 * 20.0,
+    );
+    close(
+        preview(
+            &mut studio,
+            json!({"move_faces": {"input": "drilled", "faces": [face], "offset": lengths(15.0, 0.0, 0.0)}}),
+        ),
+        24000.0 - hole,
+    );
 }

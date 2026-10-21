@@ -1662,7 +1662,11 @@ edits; separate edge topology remains an extension.
 
 The feature timeline now supports checkout, suppression and dependency-checked
 moves across regeneration, reports, guarded CLI/MCP edits and the studio (schema
-182). See [feature history](docs/FEATURE_HISTORY.md). Next refinements include
+182). See [feature history](docs/FEATURE_HISTORY.md). Schema 183 adds direct
+face edits that need no feature history: `remove_faces` (OCCT defeaturing),
+`offset_faces` (per-face skin offsets that keep face identity) and
+`move_faces` (removal, then a cut and a fuse at the moved place), on native
+ABI 86. See [direct editing](docs/DIRECT_EDITING.md). Next refinements include
 named timeline bookmarks and feature branches; manufacturing work should target
 remaining datum/GD&T cases and global freeform draft proofs. Existing material
 presets, drawing conventions and structured PMI are documented below. Schema 57 integrates true planar slice drawings with

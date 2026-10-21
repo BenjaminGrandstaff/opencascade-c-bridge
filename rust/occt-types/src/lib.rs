@@ -114,6 +114,8 @@ pub enum DiagnosticKind {
     InvalidSubshape,
     /// Draft failure; code is `Draft_ErrorStatus`.
     Draft,
+    /// A face removal alert (ABI 86); the name is its OCCT alert key.
+    Defeaturing,
     /// A kind added by a newer library.
     Other(i32),
 }

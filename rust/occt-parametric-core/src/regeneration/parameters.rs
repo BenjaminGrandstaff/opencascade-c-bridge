@@ -302,6 +302,29 @@ pub fn collect_operation_parameters<'a>(
             collect_vector_parameters(pull_direction, names);
             collect_scalar_parameters(angle_radians, names);
         }
+        FeatureOperation::RemoveFaces { faces, .. } => {
+            for selector in faces {
+                collect_face_selector_parameters(selector, names);
+            }
+        }
+        FeatureOperation::OffsetFaces {
+            faces,
+            distance,
+            tolerance,
+            ..
+        } => {
+            for selector in faces {
+                collect_face_selector_parameters(selector, names);
+            }
+            collect_scalar_parameters(distance, names);
+            collect_scalar_parameters(tolerance, names);
+        }
+        FeatureOperation::MoveFaces { faces, offset, .. } => {
+            for selector in faces {
+                collect_face_selector_parameters(selector, names);
+            }
+            collect_vector_parameters(offset, names);
+        }
         FeatureOperation::Compound { .. } | FeatureOperation::MakeSolid { .. } => {}
         FeatureOperation::Fuse { .. }
         | FeatureOperation::Cut { .. }

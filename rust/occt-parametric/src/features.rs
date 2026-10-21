@@ -2,6 +2,7 @@
 
 use super::*;
 
+mod direct_edit;
 mod extrusions;
 mod holes;
 pub use holes::PartInstanceHoles;
@@ -706,6 +707,50 @@ pub(crate) fn execute_feature<'session>(
                 ));
             }
             return Ok(result);
+        }
+        FeatureOperation::RemoveFaces { input, faces } => {
+            return direct_edit::remove_faces(
+                session,
+                shape(shapes, input)?,
+                faces,
+                parameters,
+                shapes,
+                definitions,
+            );
+        }
+        FeatureOperation::OffsetFaces {
+            input,
+            faces,
+            distance,
+            tolerance,
+        } => {
+            return direct_edit::offset_faces(
+                session,
+                shape(shapes, input)?,
+                faces,
+                (
+                    scalar(distance, parameters, Dimension::Length)?,
+                    scalar(tolerance, parameters, Dimension::Length)?,
+                ),
+                parameters,
+                shapes,
+                definitions,
+            );
+        }
+        FeatureOperation::MoveFaces {
+            input,
+            faces,
+            offset,
+        } => {
+            return direct_edit::move_faces(
+                session,
+                shape(shapes, input)?,
+                faces,
+                vector(offset, parameters, Dimension::Length)?,
+                parameters,
+                shapes,
+                definitions,
+            );
         }
         FeatureOperation::Hollow {
             input,

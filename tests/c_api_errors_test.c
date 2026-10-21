@@ -579,6 +579,36 @@ static void combinations_and_features(occt_bridge_session_t* session) {
     EXPECT(occt_bridge_hollow(session, box, wrong_faces, 1, -0.5, 1e-6, &out), GEOMETRY);
     EXPECT(occt_bridge_hollow(session, box, foreign_faces, 1, -0.5, 1e-6, &out), GEOMETRY);
 
+    EXPECT(occt_bridge_remove_faces(session, box, faces, 1, NULL), ARG);
+    EXPECT(occt_bridge_remove_faces(session, box, NULL, 1, &out), ARG);
+    EXPECT(occt_bridge_remove_faces(session, box, faces, 0, &out), ARG);
+    EXPECT(occt_bridge_remove_faces(session, unknown, faces, 1, &out), MISSING);
+    EXPECT(occt_bridge_remove_faces(session, box, missing_list, 1, &out), MISSING);
+    EXPECT(occt_bridge_remove_faces(session, box, wrong_faces, 1, &out), GEOMETRY);
+    EXPECT(occt_bridge_remove_faces(session, box, foreign_faces, 1, &out), GEOMETRY);
+    EXPECT(occt_bridge_remove_faces(session, faces[0], faces, 1, &out), GEOMETRY);
+    {
+        const double one[] = {1.0};
+        const double bad[] = {NAN};
+        const double nil[] = {0.0};
+        const double two[] = {1.0, 2.0};
+        const occt_bridge_shape_id_t twice[] = {faces[0], faces[0]};
+        EXPECT(occt_bridge_offset_faces(session, box, faces, one, 1, 1e-6, NULL), ARG);
+        EXPECT(occt_bridge_offset_faces(session, box, NULL, one, 1, 1e-6, &out), ARG);
+        EXPECT(occt_bridge_offset_faces(session, box, faces, NULL, 1, 1e-6, &out), ARG);
+        EXPECT(occt_bridge_offset_faces(session, box, faces, one, 0, 1e-6, &out), ARG);
+        EXPECT(occt_bridge_offset_faces(session, box, faces, one, 1, NAN, &out), ARG);
+        EXPECT(occt_bridge_offset_faces(session, box, faces, one, 1, 0, &out), ARG);
+        EXPECT(occt_bridge_offset_faces(session, box, faces, bad, 1, 1e-6, &out), ARG);
+        EXPECT(occt_bridge_offset_faces(session, box, faces, nil, 1, 1e-6, &out), ARG);
+        EXPECT(occt_bridge_offset_faces(session, box, twice, two, 2, 1e-6, &out), ARG);
+        EXPECT(occt_bridge_offset_faces(session, unknown, faces, one, 1, 1e-6, &out), MISSING);
+        EXPECT(occt_bridge_offset_faces(session, box, missing_list, one, 1, 1e-6, &out), MISSING);
+        EXPECT(occt_bridge_offset_faces(session, box, wrong_faces, one, 1, 1e-6, &out), GEOMETRY);
+        EXPECT(occt_bridge_offset_faces(session, box, foreign_faces, one, 1, 1e-6, &out), GEOMETRY);
+        EXPECT(occt_bridge_offset_faces(session, faces[0], faces, one, 1, 1e-6, &out), GEOMETRY);
+    }
+
     EXPECT(occt_bridge_thicken(session, faces[0], 0.5, 0, 1e-6, NULL), ARG);
     EXPECT(occt_bridge_thicken(session, faces[0], NAN, 0, 1e-6, &out), ARG);
     EXPECT(occt_bridge_thicken(session, faces[0], 0, 1, 1e-6, &out), ARG);

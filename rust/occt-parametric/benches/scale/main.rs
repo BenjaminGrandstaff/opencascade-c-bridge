@@ -32,6 +32,7 @@ mod continuous_motion;
 mod curve_edits;
 mod datum_planes;
 mod design_knowledge;
+mod direct_edit;
 mod draft;
 mod drawing;
 mod expressions;
@@ -162,6 +163,9 @@ fn main() -> ExitCode {
             design_knowledge::standard_parts_case(),
         ]);
     }
+    if std::env::args().any(|arg| arg == "--direct-edit-only") {
+        return report(&[direct_edit::direct_edit_case()]);
+    }
     if std::env::args().any(|arg| arg == "--gltf-only") {
         return report(&[
             mesh::gltf_case(definition),
@@ -204,6 +208,7 @@ fn main() -> ExitCode {
     outcomes.push(profile_sweep_case(true));
     outcomes.push(hole_features_case());
     outcomes.push(draft::draft_features_case());
+    outcomes.push(direct_edit::direct_edit_case());
     outcomes.push(ribs::rib_features_case(false));
     outcomes.push(ribs::rib_features_case(true));
     outcomes.push(ribs::open_rib_features_case());

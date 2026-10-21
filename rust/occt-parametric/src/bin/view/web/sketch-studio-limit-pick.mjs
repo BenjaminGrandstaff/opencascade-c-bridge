@@ -15,7 +15,7 @@ export function createSolidSourcePicker(studio,mode,viewRect=()=>({left:0,top:0}
       const min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];
       for(const triangle of source.mesh)for(const point of triangle.points)for(const [i,v] of toGltf(point).entries()){min[i]=Math.min(min[i],v);max[i]=Math.max(max[i],v);}
       s.bounds=min.every(Number.isFinite)&&max.every(Number.isFinite)?{min,max}:null;
-      s.source=source;studio.redraw();studio.say(s.kind==='hole'?'Click the hole entry on a planar face of the amber source. Fit frames it; Escape cancels.':s.kind==='edge'?'Click an edge of the amber source solid. Fit frames it; drag to orbit; Escape cancels the pick.':'Click a planar face of the amber limiting feature. Fit frames the target; drag to orbit; Escape cancels the pick.');
+      s.source=source;studio.redraw();studio.say(s.kind==='hole'?'Click the hole entry on a planar face of the amber source. Fit frames it; Escape cancels.':s.kind==='edge'?'Click an edge of the amber source solid. Fit frames it; drag to orbit; Escape cancels the pick.':s.kind==='any-face'?'Click a face of the amber source solid; curved faces such as hole walls and fillets work too. Fit frames it; drag to orbit; Escape cancels the pick.':'Click a planar face of the amber limiting feature. Fit frames the target; drag to orbit; Escape cancels the pick.');
     }catch(error){fail(s,error);}
   }
   function pick(target,current,kind='face'){
@@ -32,11 +32,11 @@ export function createSolidSourcePicker(studio,mode,viewRect=()=>({left:0,top:0}
     if(!s.source)return;
     const entry=s.kind==='hole'?pickFaceHit(s.source.mesh,studio.rayAt(event.clientX,event.clientY)):null;
     const face=s.kind==='hole'?entry?.face??-1:hit(s,event);
-    if(face===null||face<0){studio.say(s.kind==='edge'?'That click missed the source edges.':'That click missed the limiting feature. Pick a planar face.',true);return;}
+    if(face===null||face<0){studio.say(s.kind==='edge'?'That click missed the source edges.':s.kind==='any-face'?'That click missed the source solid.':'That click missed the limiting feature. Pick a planar face.',true);return;}
     s.pending=true;
     try{
       const edge=s.kind==='edge',id='solid-finish-edge';
-      const result=await studio.api(edge?'/api/sketch-edge-pick':'/api/sketch-face-pick',{method:'POST',body:JSON.stringify({version:s.version,instance:s.instance,output:s.target,...(edge?{edge:face,id}:{face})})});
+      const result=await studio.api(edge?'/api/sketch-edge-pick':'/api/sketch-face-pick',{method:'POST',body:JSON.stringify({version:s.version,instance:s.instance,output:s.target,...(edge?{edge:face,id}:{face}),...(s.kind==='any-face'?{curved:true}:{})})});
       if(!valid(s)){if(session===s)cancel();return;}
       if(result.version!==s.version||result.instance!==s.instance)throw Error('The picked source does not match this model and instance.');
       if(edge?(result.projection?.input!==s.target||result.projection.id!==id||!result.projection.edge):(result.face_support?.input!==s.target||!result.face_support.face))throw Error('The pick does not match the requested source feature.');
@@ -50,8 +50,8 @@ export function createSolidSourcePicker(studio,mode,viewRect=()=>({left:0,top:0}
         placement={position_mm:p.map((v,i)=>v-distance*normal[i]),axis:normal.map(v=>-v)};s.placement=placement;
       }
       s.face=face;s.picking=false;mode(false,s.kind);studio.redraw();
-      s.resolve(edge?{target:s.target,edge:result.projection.edge,binding:result.binding,center_mm:result.center_mm,length_mm:result.length_mm}:{...placement,target:s.target,face:result.face_support.face,binding:result.binding,normal:result.normal,origin_mm:result.origin_mm});
-      studio.say(s.kind==='hole'?'Hole entry selected at a fixed family-coordinate position, directed into the face. Preview checks every instance.':edge?'Edge selected. Preview checks the finishing operation in every instance.':'Limiting face selected. Preview verifies full forward coverage in every instance.');
+      s.resolve(edge?{target:s.target,edge:result.projection.edge,binding:result.binding,center_mm:result.center_mm,length_mm:result.length_mm}:{...placement,target:s.target,face:result.face_support.face,binding:result.binding,normal:result.normal,origin_mm:result.origin_mm,curved:result.curved===true});
+      studio.say(s.kind==='hole'?'Hole entry selected at a fixed family-coordinate position, directed into the face. Preview checks every instance.':edge?'Edge selected. Preview checks the finishing operation in every instance.':s.kind==='any-face'?'Face selected. Preview checks the edit in every instance.':'Limiting face selected. Preview verifies full forward coverage in every instance.');
     }catch(error){if(valid(s))studio.say(`Source pick rejected: ${error.message}`,true);}
     finally{s.pending=false;}
   }

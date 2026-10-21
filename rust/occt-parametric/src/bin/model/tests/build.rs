@@ -222,3 +222,33 @@ fn step_pmi_writes_drawing_gdt_on_faces_and_reports_the_read_back() {
     let error = invoke(&dir, value, "no-step").unwrap_err();
     assert!(error.message.contains("needs a STEP export"));
 }
+
+#[test]
+fn direct_edit_example_lifts_the_top_and_moves_the_hole_by_parameter() {
+    let dir = Directory::new();
+    let mut example = view_example("direct-edit");
+    example["step"] = json!(false);
+    example["preview"] = json!(false);
+    let built = invoke(&dir, example.clone(), "default").unwrap();
+    assert_eq!(built["status"], "built", "{built}");
+    let hole = std::f64::consts::PI * 16.0;
+    let volume = |report: &Value| report["outputs"][0]["volume_mm3"].as_f64().unwrap();
+    assert!((volume(&built) - (60.0 * 40.0 - hole) * 24.0).abs() < 1e-6);
+    assert_eq!(built["outputs"][0]["bounds_mm"]["max"][2], 24.0);
+    // Moving the hole further keeps the volume; a taller lift is built
+    // exactly and then rejected by the volume requirement.
+    let edit = |parameter: &str, value: f64| json!([{"instance":"plate","parameter":parameter,"value":ParameterValue::Scalar(Quantity::length(value,LengthUnit::Millimeter))}]);
+    example["edits"] = edit("shift", 30.0);
+    let shifted = invoke(&dir, example.clone(), "shifted").unwrap();
+    assert!((volume(&shifted) - volume(&built)).abs() < 1e-6);
+    example["edits"] = edit("lift", 8.0);
+    let lifted = invoke(&dir, example, "lifted").unwrap_err();
+    let measured = lifted.details["verification"][0]["measured"]["value"]
+        .as_f64()
+        .unwrap();
+    assert!((measured - (60.0 * 40.0 - hole) * 28.0).abs() < 1e-6);
+    assert_eq!(
+        lifted.details["required_failures"],
+        json!(["plate/moved-volume"])
+    );
+}

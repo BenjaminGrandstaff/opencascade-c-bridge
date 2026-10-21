@@ -8,23 +8,36 @@ tracks status and order.
 
 | Layer | Version | State |
 |---|---|---|
-| C ABI (`src/`, `include/`) | ABI 85 | Stable; exact version match required |
+| C ABI (`src/`, `include/`) | ABI 86 | Stable; exact version match required |
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 182 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 182 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 183 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 183 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 8/8, bridge 181 + first-use integration 1 (+1 doc test), recipes 3, parametric core 66 + kernel 804 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 101 + viewer Node 475 + branch command 2 + model command 105, MCP Python 29, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 8/8, bridge 185 + first-use integration 1 (+1 doc test), recipes 3, parametric core 66 + kernel 809 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 102 + viewer Node 476 + branch command 2 + model command 106, MCP Python 29, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 32 clang-tidy warnings (31 complexity warnings and one public ABI padding warning) plus 83 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all five crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 2026-10-21: 92.78% lines overall; C++ 94.43% lines, 82.67% branches, 99.88% functions; Rust 92.37% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
-| Scale benchmarks | Current run: all 137 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
+| Scale benchmarks | Current run: all 138 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
 
 ## Done
+
+- Direct editing (schema 183, ABI 86): `remove_faces` deletes selected faces
+  and heals the gap (holes, pockets, bosses, fillets, chamfers), failing rather
+  than partly editing; `offset_faces` pushes and pulls faces along their
+  normals, re-intersecting neighbours and keeping face identity; `move_faces`
+  moves the detail selected faces bound. All three work on solids without
+  history and are ordinary, parameter-driven timeline features. The studio
+  solid editor adds Delete, Offset and Move faces with curved-face picking
+  anchored at the face centre. Tests check closed-form volumes in the bridge,
+  kernel, studio and the `direct-edit` example. A removal or move selects at
+  most 100 faces; OCCT reworks the whole solid per detail, so 100 hole walls
+  take 12.4 s (offsetting 400 takes 2.2 s; scale budget 80 s). Faster local
+  removal is an open item. See [direct editing](docs/DIRECT_EDITING.md).
 
 - Exact wire-partition refactor (schema 182 and ABI 85 unchanged): each copied
   edge owns its curve and pending cuts, replacing four parallel arrays. Point
@@ -3588,6 +3601,11 @@ explicit lost/split/merge diagnostics. Safeguarded solving now includes rank
 certification, stopping reports and opt-in warm starts. The five sketch-engine milestones are complete: composition, geometry editing,
 stable references, solver reliability and guarded AI editing/repair. Interactive
 sketch authoring UI and broader solver/geometry extensions remain separate work.
+
+Direct editing (schema 183) removes, offsets and moves faces without history.
+Open extensions: faster removal of many details, by removing each inside a box
+around it and applying all changes with one boolean (needs seam unification);
+replacing a face with another surface; and rotating moved details.
 
 The earlier geometry and assembly milestones are complete. Manufacturing
 product definition is the next general CAD priority; additional rib variants

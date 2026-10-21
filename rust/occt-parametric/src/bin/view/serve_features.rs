@@ -70,6 +70,9 @@ impl Studio {
                 | FeatureOperation::Cut { .. }
                 | FeatureOperation::Hollow { .. }
                 | FeatureOperation::Draft { .. }
+                | FeatureOperation::RemoveFaces { .. }
+                | FeatureOperation::OffsetFaces { .. }
+                | FeatureOperation::MoveFaces { .. }
                 | FeatureOperation::Mirror { .. }
                 | FeatureOperation::LinearPattern { .. }
                 | FeatureOperation::CircularPattern { .. }
@@ -77,7 +80,7 @@ impl Studio {
                 | FeatureOperation::SheetMetalFlat { .. } => (),
                 _ => {
                     return Err(
-                        "Solid controls support extrusions, revolutions, sweeps, profile lofts, fillets, chamfers, holes, shells, drafts, mirrors, patterns, sheet metal, unions and cuts."
+                        "Solid controls support extrusions, revolutions, sweeps, profile lofts, fillets, chamfers, holes, shells, drafts, face edits, mirrors, patterns, sheet metal, unions and cuts."
                             .into(),
                     );
                 }

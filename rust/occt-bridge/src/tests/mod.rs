@@ -3,6 +3,7 @@ use std::{fs, path::PathBuf};
 
 mod construction;
 mod curve_intersections;
+mod direct_edit;
 mod draft;
 mod exchange;
 mod extrusion_limits;

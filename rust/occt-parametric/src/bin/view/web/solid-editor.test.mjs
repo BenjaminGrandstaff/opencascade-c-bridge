@@ -148,14 +148,14 @@ test('sweep edits keep twists and sections, and the form adds them',async()=>{
 });
 
 
-test('shell, draft, mirror and pattern forms pick faces, add tools and keep saved ones',async()=>{
+test('shell, draft, face edit, mirror and pattern forms pick faces, add tools and keep saved ones',async()=>{
  globalThis.document={createElement:tag=>new Element(tag)};globalThis.Option=class extends Element{constructor(text,value){super('option');this.textContent=text;this.value=value;}};
  try{
- const host=new Element('div'),calls=[],picks=[];
+ const host=new Element('div'),calls=[],picks=[],curved=[];
  const top={normal_aligned:{z:1}};
  const saved={id:'twin',operation:{mirror:{input:'body',origin:{parameter:'pivot'},normal:{literal:{x:{value:1,dimension:'scalar',unit:null},y:{value:0,dimension:'scalar',unit:null},z:{value:0,dimension:'scalar',unit:null}}}}}};
  const features=[...base,saved];
- createSolidEditor({host,instance:()=> 'part',preview:async()=>{},applied:async()=>{},restore:async()=>{},pickLimitingFace:async target=>{picks.push(target);return {target,face:top,origin_mm:[20,15,20]};},request:async(path,options)=>{
+ createSolidEditor({host,instance:()=> 'part',preview:async()=>{},applied:async()=>{},restore:async()=>{},pickLimitingFace:async (target,options)=>{picks.push(target);curved.push(options);return {target,face:top,origin_mm:[20,15,20]};},request:async(path,options)=>{
   if(!options)return {version:1,features,output:'body',parameters:[]};
   calls.push(JSON.parse(options.body));return {can_apply:true};
  }});
@@ -179,6 +179,17 @@ test('shell, draft, mirror and pattern forms pick faces, add tools and keep save
  // Editing a saved mirror keeps its formula untouched.
  await button(host,'Edit mirror twin').onclick();
  await button(host,'Preview solid').onclick();assert.deepEqual(calls[2].features,[saved]);
+ // Direct face edits pick curved faces too and change the source in place.
+ await button(host,'Close solid draft').onclick();
+ await button(host,'Sketch to solid').onclick();
+ control(host,'Solid feature').value='offset_faces';control(host,'Solid feature').onchange();
+ assert.equal(control(host,'Solid operation'),undefined);
+ control(host,'Result feature name').value='pushed';control(host,'Result feature name').oninput();
+ control(host,'Source solid').value='body';control(host,'Source solid').onchange();
+ await button(host,'Pick a face to edit').onclick();assert.deepEqual(curved.at(-1),{curved:true});
+ control(host,'Distance (mm, positive adds material)').value='-1.5';control(host,'Distance (mm, positive adds material)').oninput();
+ await button(host,'Preview solid').onclick();
+ assert.deepEqual(calls[3].features,[{id:'pushed',operation:{offset_faces:{input:'body',faces:[top],distance:{literal:{value:-1.5,dimension:'length',unit:'millimeter'}},tolerance:{literal:{value:0.000001,dimension:'length',unit:'millimeter'}}}}}]);
  }finally{delete globalThis.document;delete globalThis.Option;}
 });
 

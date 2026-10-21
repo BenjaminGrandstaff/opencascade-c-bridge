@@ -55,3 +55,28 @@ test('drafts, mirrors and patterns write the engine operations and refuse bad va
   assert.equal(solidToolKind({circular_pattern:{}}),'circular_pattern');
   assert.ok(inPlaceTool('hollow')&&!inPlaceTool('mirror')&&isSolidTool('draft')&&!isSolidTool('extrude'));
 });
+
+test('face edits delete, offset and move picked faces and refuse empty edits',()=>{
+  const wall={nearest_center:{target:{literal:{x:length(10),y:length(15),z:length(10)}},maximum_distance:length(1e-5)}};
+  for(const kind of ['remove_faces','offset_faces','move_faces']){
+    assert.ok(isSolidTool(kind)&&inPlaceTool(kind));
+    const state=readSolidTool(kind,null,'body');
+    assert.throws(()=>solidToolOperation(kind,state,features),/at least one face/);
+    state.faces.push(wall);
+    const op=solidToolOperation(kind,state,features)[kind];
+    assert.equal(op.input,'body');assert.deepEqual(op.faces,[wall]);
+    assert.equal(solidToolKind({[kind]:op}),kind);
+    // Saved edits read back to the same operation.
+    assert.deepEqual(solidToolOperation(kind,readSolidTool(kind,op),features)[kind],op);
+  }
+  const offset=readSolidTool('offset_faces',null,'body');offset.faces.push(wall);
+  assert.deepEqual(solidToolOperation('offset_faces',offset,features).offset_faces.distance,length(1));
+  offset.distance.value=-2;
+  assert.deepEqual(solidToolOperation('offset_faces',offset,features).offset_faces.distance,length(-2));
+  offset.distance.value=0;assert.throws(()=>solidToolOperation('offset_faces',offset,features),/nonzero/);
+  offset.distance.source='parameter:push';
+  assert.deepEqual(solidToolOperation('offset_faces',offset,features).offset_faces.distance,{parameter:'push'});
+  const move=readSolidTool('move_faces',null,'body');move.faces.push(wall);move.offset.values=[0,-4,0];
+  assert.equal(solidToolOperation('move_faces',move,features).move_faces.offset.components.y.literal.value,-4);
+  move.offset.values=[0,0,0];assert.throws(()=>solidToolOperation('move_faces',move,features),/nonzero move offset/);
+});

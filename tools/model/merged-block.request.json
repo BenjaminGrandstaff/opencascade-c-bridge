@@ -1,7 +1,7 @@
 {
   "schema": "occb-document-merge-request-v1",
   "base": {
-    "schema_version": 182,
+    "schema_version": 183,
     "family": {
       "id": "analysis-block",
       "version": 1,
@@ -70,7 +70,7 @@
     ]
   },
   "current": {
-    "schema_version": 182,
+    "schema_version": 183,
     "family": {
       "id": "analysis-block",
       "version": 1,
@@ -139,7 +139,7 @@
     ]
   },
   "other": {
-    "schema_version": 182,
+    "schema_version": 183,
     "family": {
       "id": "analysis-block",
       "version": 1,

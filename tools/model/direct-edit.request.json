@@ -1,0 +1,318 @@
+{
+  "schema": "occb-model-request-v1",
+  "model": {
+    "schema_version": 183,
+    "family": {
+      "id": "direct-edit",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "lift",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 4,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 1,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 10,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "shift",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 20,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 5,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 30,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "features": [
+        {
+          "id": "block",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 60,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 40,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 20,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "rod",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 15,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 20,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": -1,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "literal": {
+                  "value": 4,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "height": {
+                "literal": {
+                  "value": 22,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "drilled",
+          "operation": {
+            "cut": {
+              "object": "block",
+              "tool": "rod"
+            }
+          }
+        },
+        {
+          "id": "raised",
+          "operation": {
+            "offset_faces": {
+              "input": "drilled",
+              "faces": [
+                {
+                  "at_extreme": {
+                    "axis": "z",
+                    "extremum": "maximum",
+                    "tolerance": {
+                      "literal": {
+                        "value": 1e-06,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                }
+              ],
+              "distance": {
+                "parameter": "lift"
+              },
+              "tolerance": {
+                "literal": {
+                  "value": 1e-06,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "moved",
+          "operation": {
+            "move_faces": {
+              "input": "raised",
+              "faces": [
+                {
+                  "persistent": {
+                    "feature": "drilled",
+                    "select": {
+                      "nearest_center": {
+                        "target": {
+                          "literal": {
+                            "x": {
+                              "value": 15,
+                              "dimension": "length",
+                              "unit": "millimeter"
+                            },
+                            "y": {
+                              "value": 20,
+                              "dimension": "length",
+                              "unit": "millimeter"
+                            },
+                            "z": {
+                              "value": 10,
+                              "dimension": "length",
+                              "unit": "millimeter"
+                            }
+                          }
+                        },
+                        "maximum_distance": {
+                          "literal": {
+                            "value": 0.01,
+                            "dimension": "length",
+                            "unit": "millimeter"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              ],
+              "offset": {
+                "components": {
+                  "x": {
+                    "parameter": "shift"
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "requirements": [
+        {
+          "id": "moved-volume",
+          "version": 1,
+          "kind": "dimensional",
+          "priority": "required",
+          "statement": "the raised plate keeps one \u00d88 through hole",
+          "rule": {
+            "volume_range": {
+              "output": "moved",
+              "minimum": {
+                "value": 56000,
+                "unit": "millimeter"
+              },
+              "maximum": {
+                "value": 57000,
+                "unit": "millimeter"
+              }
+            }
+          },
+          "provenance": "example",
+          "traces": []
+        }
+      ],
+      "datums": []
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "plate",
+          "overrides": {},
+          "provenance": "example; dimensions are demonstration assumptions"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "plate",
+      "output": "moved"
+    }
+  ],
+  "step": true,
+  "stl": false,
+  "preview": true
+}

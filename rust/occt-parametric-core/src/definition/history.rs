@@ -74,7 +74,10 @@ impl FeatureOperation {
             | Self::Split { input, .. }
             | Self::Offset { input, .. }
             | Self::Hollow { input, .. }
-            | Self::Draft { input, .. } => Some(input),
+            | Self::Draft { input, .. }
+            | Self::RemoveFaces { input, .. }
+            | Self::OffsetFaces { input, .. }
+            | Self::MoveFaces { input, .. } => Some(input),
             Self::Fuse { left, .. } | Self::Common { left, .. } => Some(left),
             Self::Cut { object, .. } => Some(object),
             _ => None,
