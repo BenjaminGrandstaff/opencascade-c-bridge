@@ -123,3 +123,112 @@ fn invalid_fonts_and_text_fail_without_storing_shapes() {
     }
     assert_eq!(session.shape_count().unwrap(), count);
 }
+
+#[test]
+fn text_frames_preserve_holes_area_and_extruded_volume() {
+    let session = Session::new().unwrap();
+    let Some(font) = sans(&session) else { return };
+    let count = session.shape_count().unwrap();
+    for align in [TextAlign::Start, TextAlign::Center, TextAlign::End] {
+        for label in ["AV 8i", "ÅéΩ"] {
+            let planar = text(&session, &font, label, 10.0, align);
+            let placed = session
+                .create_text(
+                    label,
+                    &font,
+                    10.0,
+                    Vec3::new(4.0, 5.0, 6.0),
+                    Vec3::new(0.0, 0.0, 2.0),
+                    Vec3::new(0.0, -3.0, 0.0),
+                    align,
+                )
+                .unwrap();
+            assert!(session.is_valid(&placed).unwrap());
+            for kind in [ShapeType::Face, ShapeType::Wire] {
+                assert_eq!(
+                    session.subshape_count(&planar, kind).unwrap(),
+                    session.subshape_count(&placed, kind).unwrap()
+                );
+            }
+            let area = session.surface_area(&planar).unwrap();
+            assert!((session.surface_area(&placed).unwrap() - area).abs() < area * 1e-9);
+            let a = session.exact_bounds(&planar).unwrap();
+            let b = session.exact_bounds(&placed).unwrap();
+            for (actual, expected) in [
+                (b.min.x, 4.0),
+                (b.max.x, 4.0),
+                (b.min.y, 5.0 - a.max.y),
+                (b.max.y, 5.0 - a.min.y),
+                (b.min.z, 6.0 + a.min.x),
+                (b.max.z, 6.0 + a.max.x),
+            ] {
+                assert!(
+                    (actual - expected).abs() < 1e-6,
+                    "{label}: {actual} {expected}"
+                );
+            }
+            let mut volume = 0.0;
+            for face in session.subshapes(&placed, ShapeType::Face).unwrap() {
+                let solid = session
+                    .create_prism_from_face(&face, Vec3::new(2.0, 0.0, 0.0))
+                    .unwrap();
+                assert!(session.is_valid(&solid).unwrap());
+                volume += session.volume(&solid).unwrap();
+            }
+            assert!((volume - 2.0 * area).abs() < area * 1e-9);
+        }
+    }
+    assert_eq!(session.shape_count().unwrap(), count);
+}
+
+#[test]
+fn malformed_utf8_and_axis_errors_preserve_text_failure_precedence() {
+    let session = Session::new().unwrap();
+    let file = CString::new("/nonexistent/font.ttf").unwrap();
+    let count = session.shape_count().unwrap();
+    let origin = Vec3::new(0.0, 0.0, 0.0);
+    for bytes in [
+        &b"\x80"[..],
+        &b"\xc0\xaf"[..],
+        &b"\xe2\x82"[..],
+        &b"\xed\xa0\x80"[..],
+        &b"\xf4\x90\x80\x80"[..],
+        &b"a\0b"[..],
+    ] {
+        let mut shape = 123;
+        let status = unsafe {
+            occt_bridge_create_text(
+                session.raw.as_ptr(),
+                bytes.as_ptr().cast(),
+                bytes.len(),
+                file.as_ptr(),
+                10.0,
+                origin.into(),
+                Vec3::new(1.0, 0.0, 0.0).into(),
+                Vec3::new(0.0, 1.0, 0.0).into(),
+                0,
+                &mut shape,
+            )
+        };
+        assert_eq!(status, 1);
+        assert_eq!(shape, 0);
+        assert!(session.error(status).message.contains("printable UTF-8"));
+    }
+    let error = session
+        .create_text(
+            "\n",
+            file.to_str().unwrap(),
+            10.0,
+            origin,
+            origin,
+            Vec3::new(0.0, 1.0, 0.0),
+            TextAlign::Start,
+        )
+        .unwrap_err();
+    assert!(
+        error
+            .message
+            .contains("axes must be nonzero and perpendicular")
+    );
+    assert_eq!(session.shape_count().unwrap(), count);
+}

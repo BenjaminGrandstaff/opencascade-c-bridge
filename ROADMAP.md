@@ -17,14 +17,30 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 8/8, bridge 177 + first-use integration 1 (+1 doc test), recipes 3, parametric core 66 + kernel 804 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 101 + viewer Node 475 + branch command 2 + model command 105, MCP Python 29, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 8/8, bridge 179 + first-use integration 1 (+1 doc test), recipes 3, parametric core 66 + kernel 804 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 101 + viewer Node 475 + branch command 2 + model command 105, MCP Python 29, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
-| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 36 clang-tidy warnings (35 complexity warnings and one public ABI padding warning) plus 83 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
+| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 34 clang-tidy warnings (33 complexity warnings and one public ABI padding warning) plus 83 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all five crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 2026-10-21: 92.80% lines overall; C++ 94.50% lines, 82.68% branches, 99.88% functions; Rust 92.37% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
+| Coverage | 2026-10-21: 92.79% lines overall; C++ 94.47% lines, 82.81% branches, 99.88% functions; Rust 92.37% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
 | Scale benchmarks | Current run: all 137 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
 
 ## Done
+
+- Native text-outline refactor (schema 182 and ABI 85 unchanged): UTF-8 checks,
+  glyph loading and kerning, contour area/nesting, wire orientation and face
+  construction are separate stages. The creation helper has complexity 11,
+  down from the entry point's 125; every new helper is at most 23 against the
+  unchanged limit of 25. All text functions now meet that limit. A differential
+  run covers 310 cases (288 successful outlines) across TrueType and CFF fonts,
+  heights, alignments and rotated frames, with exact BREP geometry, statuses,
+  diagnostics and zero retained shapes matching the previous implementation.
+  New Rust regressions verify normalized axes, glyph holes, rotated bounds,
+  extruded volume and malformed UTF-8/axis error precedence; all four text tests
+  also pass against the previous native library. All 140 public C exports remain
+  unchanged. All eight native tests and the full instrumented C++/Rust suite
+  pass with unchanged timing limits; Rust formatting and bridge Clippy are clean.
+  Static analysis removes two complexity warnings without adding findings; the
+  remaining project totals are 34 clang-tidy warnings and 83 cppcheck findings.
 
 - STEP writer finalization refactor (schema 182 and ABI 85 unchanged): entity
   collection, presentation context and unit repair, projected-zone replacement,

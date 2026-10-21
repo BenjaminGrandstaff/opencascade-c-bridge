@@ -199,6 +199,120 @@ bool inside(const std::vector<gp_XY>& polygon, const gp_XY& p) {
     return in;
 }
 
+std::string load_text_contours(FT_Face face, const std::vector<char32_t>& characters,
+                               OutlineBuilder& builder, double& pen) {
+    FT_Outline_Funcs funcs{move_to, line_to, conic_to, cubic_to, 0, 0};
+    FT_UInt previous = 0;
+    for (char32_t code : characters) {
+        const FT_UInt index = FT_Get_Char_Index(face, code);
+        if (index == 0 && code != U' ') {
+            return missing_glyph_message(code);
+        }
+        if (previous != 0 && index != 0 && FT_HAS_KERNING(face)) {
+            FT_Vector kern;
+            if (FT_Get_Kerning(face, previous, index, FT_KERNING_UNSCALED, &kern) == 0) pen += static_cast<double>(kern.x);
+        }
+        if (FT_Load_Glyph(face, index, FT_LOAD_NO_SCALE | FT_LOAD_NO_BITMAP) != 0) {
+            return "glyph failed to load";
+        }
+        if (face->glyph->format == FT_GLYPH_FORMAT_OUTLINE && face->glyph->outline.n_contours > 0) {
+            builder.pen_x = pen;
+            if (FT_Outline_Decompose(&face->glyph->outline, &funcs, &builder) != 0 || builder.error) {
+                return builder.error ? builder.error : "glyph outline failed";
+            }
+            builder.close();
+        }
+        pen += static_cast<double>(face->glyph->advance.x);
+        previous = index;
+    }
+    return {};
+}
+
+void measure_contours(std::vector<Contour>& contours) {
+    for (auto& c : contours) {
+        double area = 0.0;
+        for (size_t i = 0, j = c.samples.size() - 1; i < c.samples.size(); j = i++)
+            area += c.samples[j].X() * c.samples[i].Y() - c.samples[i].X() * c.samples[j].Y();
+        c.area = std::abs(area) / 2.0;
+        c.counterclockwise = area > 0.0;
+    }
+}
+
+void nest_contour(std::vector<Contour>& contours, size_t i) {
+    for (size_t j = 0; j < contours.size(); ++j) {
+        if (i == j || contours[j].area <= contours[i].area) continue;
+        if (inside(contours[j].samples, contours[i].samples.front())) {
+            ++contours[i].depth;
+            if (contours[i].parent < 0 || contours[j].area < contours[static_cast<size_t>(contours[i].parent)].area) {
+                contours[i].parent = static_cast<int>(j);
+            }
+        }
+    }
+}
+
+TopoDS_Wire contour_wire(const Contour& c, bool counterclockwise) {
+    BRepBuilderAPI_MakeWire wire;
+    for (const auto& e : c.edges) wire.Add(e);
+    TopoDS_Wire result;
+    if (wire.IsDone()) {
+        result = wire.Wire();
+        if (c.counterclockwise != counterclockwise) result.Reverse();
+    }
+    return result;
+}
+
+const char* glyph_face(const std::vector<Contour>& contours, size_t i, const gp_Pln& plane,
+                       const gp_Trsf& move, TopoDS_Shape& result) {
+    // Outer boundaries run counterclockwise about the plane normal (x × y),
+    // holes clockwise, whatever the font's convention.
+    const TopoDS_Wire outer = contour_wire(contours[i], true);
+    if (outer.IsNull() || !outer.Closed()) return "glyph contour is not closed";
+    BRepBuilderAPI_MakeFace face(plane, outer, Standard_True);
+    for (size_t j = 0; j < contours.size(); ++j) {
+        if (contours[j].parent == static_cast<int>(i) && contours[j].depth % 2 != 0) {
+            const TopoDS_Wire hole = contour_wire(contours[j], false);
+            if (hole.IsNull() || !hole.Closed()) return "glyph hole is not closed";
+            face.Add(hole);
+        }
+    }
+    if (!face.IsDone()) return "glyph face construction failed";
+    result = face.Face().Moved(TopLoc_Location(move));
+    if (!BRepCheck_Analyzer(result).IsValid()) return "glyph face is invalid";
+    return nullptr;
+}
+
+const char* text_faces(std::vector<Contour>& contours, const OutlineBuilder& builder,
+                       double pen, int align, TopoDS_Compound& compound) {
+    contours.erase(std::remove_if(contours.begin(), contours.end(), [](const Contour& c) { return c.edges.empty(); }), contours.end());
+    if (contours.empty()) return "text has no visible glyphs";
+    const double shift = align == 0 ? 0.0 : -(align == 1 ? 0.5 : 1.0) * pen * builder.scale;
+    gp_Trsf move;
+    move.SetTranslation(builder.x_axis * shift);
+    // Nest each contour under the smallest containing contour. Even depth
+    // denotes an outer boundary, independently of the font's winding order.
+    measure_contours(contours);
+    for (size_t i = 0; i < contours.size(); ++i) nest_contour(contours, i);
+    const gp_Pln plane(builder.origin, gp_Dir(builder.x_axis.Crossed(builder.y_axis)));
+    BRep_Builder compound_builder;
+    compound_builder.MakeCompound(compound);
+    size_t faces = 0;
+    for (size_t i = 0; i < contours.size(); ++i) {
+        if (contours[i].depth % 2 != 0) continue;
+        TopoDS_Shape face;
+        if (const char* error = glyph_face(contours, i, plane, move, face)) return error;
+        compound_builder.Add(compound, face);
+        ++faces;
+    }
+    return faces == 0 ? "text has no outer glyph contours" : nullptr;
+}
+
+const char* text_characters(const char* utf8, size_t length, std::vector<char32_t>& characters) {
+    if (!decode_utf8(utf8, length, characters) || characters.empty()) {
+        return "text must be printable UTF-8 on one line";
+    }
+    return characters.size() > kMaxCharacters ? "text is limited to 1000 characters" : nullptr;
+}
+
 struct FreeTypeLibrary {
     FT_Library library = nullptr;
     FT_Face face = nullptr;
@@ -207,6 +321,53 @@ struct FreeTypeLibrary {
         if (library) FT_Done_FreeType(library);
     }
 };
+
+occt_bridge_status_t create_text_shape(
+    occt_bridge_session_t* session,
+    const char* utf8,
+    size_t length,
+    const char* font_file,
+    double height,
+    const occt_bridge_vec3_t& origin,
+    const occt_bridge_vec3_t& x_axis,
+    const occt_bridge_vec3_t& y_axis,
+    int align,
+    occt_bridge_shape_id_t* out_shape) {
+    if (out_shape == nullptr) return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+    *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    if (utf8 == nullptr || length == 0 || font_file == nullptr || !std::isfinite(height) || height <= 0
+        || !finite(origin) || !finite(x_axis) || !finite(y_axis) || align < 0 || align > 2) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid text parameters");
+    }
+    gp_Vec x(x_axis.x, x_axis.y, x_axis.z), y(y_axis.x, y_axis.y, y_axis.z);
+    if (x.Magnitude() <= Precision::Confusion() || y.Magnitude() <= Precision::Confusion()
+        || std::abs(x.Normalized().Dot(y.Normalized())) > 1e-9) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "text axes must be nonzero and perpendicular");
+    }
+    x.Normalize();
+    y.Normalize();
+    std::vector<char32_t> characters;
+    if (const char* error = text_characters(utf8, length, characters)) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, error);
+    }
+    FreeTypeLibrary ft;
+    if (FT_Init_FreeType(&ft.library) != 0) return fail(session, OCCT_BRIDGE_INTERNAL_ERROR, "FreeType failed to initialize");
+    if (FT_New_Face(ft.library, font_file, 0, &ft.face) != 0 || !FT_IS_SCALABLE(ft.face)) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "font file is not a readable scalable font");
+    }
+    const double scale = height / static_cast<double>(ft.face->units_per_EM);
+    std::vector<Contour> contours;
+    OutlineBuilder builder{contours, scale, to_point(origin), x, y};
+    double pen = 0.0;
+    if (const std::string error = load_text_contours(ft.face, characters, builder, pen); !error.empty()) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, error);
+    }
+    TopoDS_Compound compound;
+    if (const char* error = text_faces(contours, builder, pen, align, compound)) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, error);
+    }
+    return store_shape(session, compound, out_shape);
+}
 
 }  // namespace
 
@@ -278,122 +439,7 @@ occt_bridge_status_t occt_bridge_create_text(
     int align,
     occt_bridge_shape_id_t* out_shape) {
     return guarded(session, [&] {
-        if (out_shape == nullptr) return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
-        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
-        if (utf8 == nullptr || length == 0 || font_file == nullptr || !std::isfinite(height) || height <= 0
-            || !finite(origin) || !finite(x_axis) || !finite(y_axis) || align < 0 || align > 2) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid text parameters");
-        }
-        gp_Vec x(x_axis.x, x_axis.y, x_axis.z), y(y_axis.x, y_axis.y, y_axis.z);
-        if (x.Magnitude() <= Precision::Confusion() || y.Magnitude() <= Precision::Confusion()
-            || std::abs(x.Normalized().Dot(y.Normalized())) > 1e-9) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "text axes must be nonzero and perpendicular");
-        }
-        x.Normalize();
-        y.Normalize();
-        std::vector<char32_t> characters;
-        if (!decode_utf8(utf8, length, characters) || characters.empty()) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "text must be printable UTF-8 on one line");
-        }
-        if (characters.size() > kMaxCharacters) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "text is limited to 1000 characters");
-        }
-        FreeTypeLibrary ft;
-        if (FT_Init_FreeType(&ft.library) != 0) return fail(session, OCCT_BRIDGE_INTERNAL_ERROR, "FreeType failed to initialize");
-        if (FT_New_Face(ft.library, font_file, 0, &ft.face) != 0 || !FT_IS_SCALABLE(ft.face)) {
-            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "font file is not a readable scalable font");
-        }
-        const double scale = height / static_cast<double>(ft.face->units_per_EM);
-        std::vector<Contour> contours;
-        OutlineBuilder builder{contours, scale, to_point(origin), x, y};
-        FT_Outline_Funcs funcs{move_to, line_to, conic_to, cubic_to, 0, 0};
-        double pen = 0.0;
-        FT_UInt previous = 0;
-        for (char32_t code : characters) {
-            const FT_UInt index = FT_Get_Char_Index(ft.face, code);
-            if (index == 0 && code != U' ') {
-                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, missing_glyph_message(code));
-            }
-            if (previous != 0 && index != 0 && FT_HAS_KERNING(ft.face)) {
-                FT_Vector kern;
-                if (FT_Get_Kerning(ft.face, previous, index, FT_KERNING_UNSCALED, &kern) == 0) pen += static_cast<double>(kern.x);
-            }
-            if (FT_Load_Glyph(ft.face, index, FT_LOAD_NO_SCALE | FT_LOAD_NO_BITMAP) != 0) {
-                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "glyph failed to load");
-            }
-            if (ft.face->glyph->format == FT_GLYPH_FORMAT_OUTLINE && ft.face->glyph->outline.n_contours > 0) {
-                builder.pen_x = pen;
-                if (FT_Outline_Decompose(&ft.face->glyph->outline, &funcs, &builder) != 0 || builder.error) {
-                    return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, builder.error ? builder.error : "glyph outline failed");
-                }
-                builder.close();
-            }
-            pen += static_cast<double>(ft.face->glyph->advance.x);
-            previous = index;
-        }
-        contours.erase(std::remove_if(contours.begin(), contours.end(), [](const Contour& c) { return c.edges.empty(); }), contours.end());
-        if (contours.empty()) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "text has no visible glyphs");
-        // Alignment shifts every edge along x.
-        const double shift = align == 0 ? 0.0 : -(align == 1 ? 0.5 : 1.0) * pen * scale;
-        gp_Trsf move;
-        move.SetTranslation(x * shift);
-        // Nesting by containment of each contour's first sample, smallest
-        // containing contour as parent; even depth is an outer boundary.
-        for (auto& c : contours) {
-            double area = 0.0;
-            for (size_t i = 0, j = c.samples.size() - 1; i < c.samples.size(); j = i++)
-                area += c.samples[j].X() * c.samples[i].Y() - c.samples[i].X() * c.samples[j].Y();
-            c.area = std::abs(area) / 2.0;
-            c.counterclockwise = area > 0.0;
-        }
-        for (size_t i = 0; i < contours.size(); ++i) {
-            for (size_t j = 0; j < contours.size(); ++j) {
-                if (i == j || contours[j].area <= contours[i].area) continue;
-                if (inside(contours[j].samples, contours[i].samples.front())) {
-                    ++contours[i].depth;
-                    if (contours[i].parent < 0 || contours[j].area < contours[static_cast<size_t>(contours[i].parent)].area) {
-                        contours[i].parent = static_cast<int>(j);
-                    }
-                }
-            }
-        }
-        const gp_Pln plane(to_point(origin), gp_Dir(x.Crossed(y)));
-        TopoDS_Compound compound;
-        BRep_Builder compound_builder;
-        compound_builder.MakeCompound(compound);
-        size_t faces = 0;
-        for (size_t i = 0; i < contours.size(); ++i) {
-            if (contours[i].depth % 2 != 0) continue;
-            // Outer boundaries run counterclockwise about the plane normal
-            // (x × y), holes clockwise, whatever the font's convention.
-            const auto wire_of = [&](const Contour& c, bool counterclockwise) {
-                BRepBuilderAPI_MakeWire wire;
-                for (const auto& e : c.edges) wire.Add(e);
-                TopoDS_Wire result;
-                if (wire.IsDone()) {
-                    result = wire.Wire();
-                    if (c.counterclockwise != counterclockwise) result.Reverse();
-                }
-                return result;
-            };
-            const TopoDS_Wire outer = wire_of(contours[i], true);
-            if (outer.IsNull() || !outer.Closed()) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "glyph contour is not closed");
-            BRepBuilderAPI_MakeFace face(plane, outer, Standard_True);
-            for (size_t j = 0; j < contours.size(); ++j) {
-                if (contours[j].parent == static_cast<int>(i) && contours[j].depth % 2 != 0) {
-                    const TopoDS_Wire hole = wire_of(contours[j], false);
-                    if (hole.IsNull() || !hole.Closed()) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "glyph hole is not closed");
-                    face.Add(hole);
-                }
-            }
-            if (!face.IsDone()) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "glyph face construction failed");
-            TopoDS_Shape fixed = face.Face().Moved(TopLoc_Location(move));
-            if (!BRepCheck_Analyzer(fixed).IsValid()) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "glyph face is invalid");
-            compound_builder.Add(compound, fixed);
-            ++faces;
-        }
-        if (faces == 0) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "text has no outer glyph contours");
-        return store_shape(session, compound, out_shape);
+        return create_text_shape(session, utf8, length, font_file, height, origin, x_axis, y_axis, align, out_shape);
     });
 }
 
