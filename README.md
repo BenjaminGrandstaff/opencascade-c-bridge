@@ -383,10 +383,11 @@ written to `build/coverage/html/index.html` and `build/coverage/lcov.info`:
 tools/coverage/run.sh
 ```
 
-Rust unit tests live in `tests` modules inside each crate's `src/` (for example
-`src/tests/`, `src/tests.rs`, and `src/assembly/tests.rs`); like the C tests,
-they are excluded, so the percentages measure only code under test. Rust
-branch coverage needs a nightly toolchain and is not reported.
+Coverage excludes the C test files and Rust test source files under `tests/`
+or named `tests.rs`. Inline `#[cfg(test)]` modules in other source files remain
+in the file-based totals. Instrumented Rust tests run serially to avoid competing
+with each other's timing assertions; their original time limits remain enabled.
+This report does not include Rust branch coverage.
 
 The scale benchmark suite enforces the roadmap's scaling requirement. It
 builds an optimized copy of the library in `build/bench`, runs every case at

@@ -186,37 +186,6 @@ occt_bridge_status_t build_loft(
 
 }  // namespace
 
-extern "C" {
-
-occt_bridge_status_t occt_bridge_create_face_from_wire(
-    occt_bridge_session_t* session,
-    occt_bridge_shape_id_t wire,
-    occt_bridge_shape_id_t* out_shape) {
-    return guarded(session, [&] {
-        if (out_shape == nullptr) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
-        }
-        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
-        const TopoDS_Shape* value = find_shape(session, wire);
-        if (value == nullptr) {
-            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "wire was not found");
-        }
-        if (value->ShapeType() != TopAbs_WIRE) {
-            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape is not a wire");
-        }
-        BRepBuilderAPI_MakeFace builder(TopoDS::Wire(*value));
-        if (!builder.IsDone()) {
-            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "wire does not define a planar face");
-        }
-        return store_shape_with_history(
-            session,
-            builder.Face(),
-            out_shape,
-            builder,
-            {value});
-    });
-}
-
 namespace {
 constexpr double kHoleClearance = 1e-7;
 
@@ -247,6 +216,37 @@ bool inside(const TopoDS_Face& face, const gp_Pnt& point) {
     return classifier.State() == TopAbs_IN;
 }
 }  // namespace
+
+extern "C" {
+
+occt_bridge_status_t occt_bridge_create_face_from_wire(
+    occt_bridge_session_t* session,
+    occt_bridge_shape_id_t wire,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] {
+        if (out_shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        const TopoDS_Shape* value = find_shape(session, wire);
+        if (value == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "wire was not found");
+        }
+        if (value->ShapeType() != TopAbs_WIRE) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "shape is not a wire");
+        }
+        BRepBuilderAPI_MakeFace builder(TopoDS::Wire(*value));
+        if (!builder.IsDone()) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "wire does not define a planar face");
+        }
+        return store_shape_with_history(
+            session,
+            builder.Face(),
+            out_shape,
+            builder,
+            {value});
+    });
+}
 
 occt_bridge_status_t occt_bridge_create_face_with_holes(
     occt_bridge_session_t* session,

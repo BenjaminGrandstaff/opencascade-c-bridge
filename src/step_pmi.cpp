@@ -1942,10 +1942,10 @@ bool verify_pmi(const char* path, occt_bridge_step_pmi_t& pmi, const std::vector
         const auto shown = presentations.views.find(view.name);
         uint32_t losses = OCCT_BRIDGE_PMI_VIEW_LOST;
         if (begin != end && shown != presentations.views.end()) {
-            const auto [direction, up] = camera_axes(view);
+            const auto axes = camera_axes(view);
             const bool same = std::any_of(begin, end, [&](const auto& entry) {
-                return entry.second.object->ViewDirection().IsEqual(direction, 1e-7)
-                    && entry.second.object->UpDirection().IsEqual(up, 1e-7);
+                return entry.second.object->ViewDirection().IsEqual(axes.first, 1e-7)
+                    && entry.second.object->UpDirection().IsEqual(axes.second, 1e-7);
             });
             const bool clipped = std::any_of(begin, end, [&](const auto& entry) {
                 return same_planes(view, entry.second.planes);

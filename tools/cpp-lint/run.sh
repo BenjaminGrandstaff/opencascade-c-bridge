@@ -9,12 +9,16 @@ image="occt-cpplint"
 
 podman build -q -t "$image" -f "$root/tools/cpp-lint/Containerfile" "$root/tools/cpp-lint" >/dev/null
 
-podman run --rm -v "$root:$root:ro,Z" "$image" bash -c "
+# Share the read-only checkout's SELinux label with other gate containers.
+podman run --rm -v "$root:$root:ro,z" "$image" bash -c "
     set -euo pipefail
     cmake -S '$root' -B /tmp/build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
         -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ >/dev/null
     echo '== clang -Werror build'
-    cmake --build /tmp/build -j 2>&1 | grep -E '(error|warning):' && exit 1
+    if ! cmake --build /tmp/build -j >/tmp/clang-build.log 2>&1; then
+        cat /tmp/clang-build.log
+        exit 1
+    fi
     status=0
     echo '== clang-tidy'
     clang-tidy -p /tmp/build --quiet '$root'/src/*.cpp '$root'/tests/*.cpp '$root'/tests/*.c \

@@ -19,12 +19,22 @@ tracks status and order.
 |---|---|---|
 | Tests | C 7/7, bridge 176 + first-use integration 1 (+1 doc test), recipes 3, parametric core 66 + kernel 804 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 101 + viewer Node 475 + branch command 2 + model command 105, MCP Python 29, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
-| clang-tidy, cppcheck, clang `-Werror` | GCC build and C tests pass. Full Clang lint reports existing C-linkage helpers returning C++ OCCT types and captured structured bindings requiring C++20, plus existing sketch/extrusion complexity and sketch C/header parameter-name mismatches. Profile-loft and updated history/inspection and mirror code pass targeted lint; the updated transform and curve-intersection code also pass. | `tools/cpp-lint/run.sh` |
+| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 81 clang-tidy warnings plus cppcheck findings, including complexity, conversions, unchecked optionals, OCCT macro configuration and test-code issues. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all five crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | Current run blocked during the instrumented Clang build by existing C-linkage/C++17 errors; no new coverage result. Last recorded: 93.61% lines overall, test code excluded; C++ 94.13% lines, 87.40% branches, 100% functions; Rust 93.42% lines | `tools/coverage/run.sh` |
+| Coverage | Restored, 2026-10-20: 92.72% lines overall; C++ 94.09% lines, 81.23% branches, 99.86% functions; Rust 92.37% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
 | Scale benchmarks | Current run: all 137 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
 
 ## Done
+
+- Native Clang portability and gate execution (ABI 85 and schema 182 unchanged):
+  C++ profile helpers are outside C linkage, and STEP camera verification no
+  longer captures C++17 structured bindings in a lambda. The public C ABI's
+  140 exported symbols are unchanged. The lint runner stops immediately after
+  a failed compiler build and preserves its diagnostics. Read-only source
+  mounts share their SELinux label so concurrent gate containers do not revoke
+  one another's file access. Coverage runs instrumented Rust tests serially,
+  keeping every test and its original timing assertions enabled. Full static
+  analyzer findings remain tracked in the quality table above.
 
 - Feature timeline (schema 182, ABI 85 unchanged): checkout through a feature,
   suppress/restore without deletion, and dependency-checked moves. Suppressed

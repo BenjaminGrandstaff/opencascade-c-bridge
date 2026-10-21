@@ -13,7 +13,8 @@ mkdir -p "$out"
 
 podman build -q -t "$image" -f "$root/tools/coverage/Containerfile" "$root/tools/coverage" >/dev/null
 
-podman run --rm -v "$root:$root:ro,Z" -v "$out:/out:Z" "$image" bash -c "
+# Share the read-only checkout's SELinux label with other gate containers.
+podman run --rm -v "$root:$root:ro,z" -v "$out:/out:Z" "$image" bash -c "
     set -euo pipefail
     flags='-fprofile-instr-generate -fcoverage-mapping'
     cmake -S '$root' -B /tmp/build -DCMAKE_BUILD_TYPE=Debug \
@@ -29,6 +30,9 @@ podman run --rm -v "$root:$root:ro,Z" -v "$out:/out:Z" "$image" bash -c "
 
     export OCCT_BRIDGE_LIB_DIR=/tmp/build LD_LIBRARY_PATH=/tmp/build
     export CARGO_TARGET_DIR=/tmp/target RUSTFLAGS='-C instrument-coverage'
+    # Instrumentation adds overhead; run timing assertions without competing
+    # tests while keeping every test and its original time budget enabled.
+    export RUST_TEST_THREADS=1
     objects=()
     for crate in occt-types occt-bridge occt-recipes occt-parametric-core occt-parametric; do
         manifest='$root/rust/'\$crate/Cargo.toml
