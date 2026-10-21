@@ -737,3 +737,100 @@ fn boundary_partition_preserves_reversed_lines_and_ellipses_and_rejects_bad_poin
     }
     assert_eq!(s.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn unordered_partition_cuts_preserve_reversed_edge_history_and_source_geometry() {
+    let s = Session::new().unwrap();
+    {
+        let source = s
+            .create_polyline_wire(
+                &[
+                    Vec3::new(0., 0., 0.),
+                    Vec3::new(2., 0., 0.),
+                    Vec3::new(2., 2., 0.),
+                    Vec3::new(0., 2., 0.),
+                ],
+                true,
+            )
+            .unwrap();
+        for reverse in [false, true] {
+            let wire = s.align_profile_wire(&source, None, reverse).unwrap();
+            let before = s.exact_bounds(&wire).unwrap();
+            let split = s
+                .partition_profile_wire(
+                    &wire,
+                    &[
+                        Vec3::new(1.5, 0., 0.),
+                        Vec3::new(0.5, 0., 0.),
+                        Vec3::new(1., 0., 0.),
+                        Vec3::new(0., 0., 0.),
+                    ],
+                )
+                .unwrap();
+            assert!(s.is_valid(&split).unwrap());
+            assert_eq!(s.subshape_count(&split, ShapeType::Edge).unwrap(), 7);
+            assert_eq!(
+                s.history_count(&split, &wire, HistoryRelation::Modified)
+                    .unwrap(),
+                1
+            );
+            for edge in s.subshapes(&wire, ShapeType::Edge).unwrap() {
+                let middle = s.curve_point_at_fraction(&edge, 0.5).unwrap();
+                let expected = if middle.y.abs() < 1e-9 { 4 } else { 1 };
+                assert_eq!(
+                    s.history_count(&split, &edge, HistoryRelation::Modified)
+                        .unwrap(),
+                    expected
+                );
+                assert_eq!(
+                    s.history_count(&split, &edge, HistoryRelation::Generated)
+                        .unwrap(),
+                    0
+                );
+                let mut previous = s.curve_point_at_fraction(&edge, 0.).unwrap();
+                for index in 0..expected {
+                    let piece = s
+                        .history(&split, &edge, HistoryRelation::Modified, index)
+                        .unwrap();
+                    let start = s.curve_point_at_fraction(&piece, 0.).unwrap();
+                    assert_eq!(start, previous);
+                    previous = s.curve_point_at_fraction(&piece, 1.).unwrap();
+                }
+                assert_eq!(previous, s.curve_point_at_fraction(&edge, 1.).unwrap());
+            }
+            assert_eq!(s.exact_bounds(&wire).unwrap(), before);
+            assert_eq!(s.subshape_count(&wire, ShapeType::Edge).unwrap(), 4);
+            let face = s.create_face_from_wire(&split).unwrap();
+            assert!((s.surface_area(&face).unwrap() - 4.).abs() < 1e-9);
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn profile_partition_accepts_exactly_128_result_edges_without_partial_failure_storage() {
+    let s = Session::new().unwrap();
+    {
+        let circle = s
+            .create_circle_wire(Vec3::new(0., 0., 0.), Vec3::new(0., 0., 1.), 2.)
+            .unwrap();
+        let points = |denominator: u32| {
+            (1..denominator)
+                .map(|i| {
+                    let angle = std::f64::consts::TAU * f64::from(i) / f64::from(denominator);
+                    Vec3::new(2. * angle.cos(), 2. * angle.sin(), 0.)
+                })
+                .collect::<Vec<_>>()
+        };
+        let split = s.partition_profile_wire(&circle, &points(128)).unwrap();
+        assert_eq!(s.subshape_count(&split, ShapeType::Edge).unwrap(), 128);
+        let face = s.create_face_from_wire(&split).unwrap();
+        assert!((s.surface_area(&face).unwrap() - 4. * std::f64::consts::PI).abs() < 1e-7);
+        let count = s.shape_count().unwrap();
+        let error = s.partition_profile_wire(&circle, &points(129)).unwrap_err();
+        assert!(error.message.contains("exceeds 128 resulting edges"));
+        assert_eq!(s.shape_count().unwrap(), count);
+        assert_eq!(s.subshape_count(&circle, ShapeType::Edge).unwrap(), 1);
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
