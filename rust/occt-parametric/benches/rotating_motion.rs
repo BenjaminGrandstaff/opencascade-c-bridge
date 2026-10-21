@@ -13,6 +13,7 @@ fn vector(x: f64, y: f64, z: f64) -> VectorQuantity {
 }
 fn definition() -> FamilyDefinition {
     FamilyDefinition {
+        history: Default::default(),
         references: Vec::new(),
         feature_colors: Default::default(),
         assumptions: Vec::new(),

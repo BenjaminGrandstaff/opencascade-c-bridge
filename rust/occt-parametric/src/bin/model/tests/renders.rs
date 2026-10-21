@@ -173,6 +173,7 @@ fn flat_pattern_renders_show_dashed_bend_lines() {
 /// 5 × 20 × 20 mm block. A third cube 100 mm away touches nothing.
 fn clashing_cubes() -> ModelDocument {
     let family = FamilyDefinition {
+        history: Default::default(),
         id: "cube".into(),
         version: 1,
         references: vec![],

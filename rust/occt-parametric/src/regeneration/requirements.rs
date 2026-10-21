@@ -1,6 +1,7 @@
 //! Verification of family requirements against regenerated geometry.
 
 use super::*;
+use std::collections::HashSet;
 
 /// Evaluates every requirement; when `reject`, required failures reject the
 /// generation, and otherwise they stay in the results for the caller.
@@ -12,7 +13,22 @@ pub(crate) fn verify_requirements(
 ) -> Result<Vec<VerificationResult>, ModelError> {
     let mut verification = Vec::new();
     let mut required_failures = Vec::new();
+    // Requirements on outputs the feature history leaves out (rolled back,
+    // or suppressed with what depends on them) are not evaluated.
+    let excluded: HashSet<&str> = if definition.history.is_empty() {
+        HashSet::new()
+    } else {
+        definition
+            .history_states()?
+            .into_iter()
+            .filter(|(_, state)| !state.produces())
+            .map(|(id, _)| id)
+            .collect()
+    };
     for requirement in &definition.requirements {
+        if excluded.contains(requirement.rule.output()) {
+            continue;
+        }
         let result = verify_requirement(session, requirement, shapes).map_err(|error| {
             ModelError::new(format!("requirement '{}': {error}", requirement.id))
         })?;

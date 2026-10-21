@@ -338,6 +338,7 @@ fn block() -> FamilyDefinition {
     let direction = |x, y, z| VectorExpr::Literal(VectorQuantity::scalars(x, y, z));
     let point = |x, y, z| VectorExpr::Components { x, y, z };
     FamilyDefinition {
+        history: Default::default(),
         references: Vec::new(),
         feature_colors: Default::default(),
         assumptions: Vec::new(),

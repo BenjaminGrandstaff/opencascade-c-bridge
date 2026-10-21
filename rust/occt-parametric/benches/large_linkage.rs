@@ -88,6 +88,7 @@ fn slider_array(
 
 fn main() {
     let definition = FamilyDefinition {
+        history: Default::default(),
         references: Vec::new(),
         feature_colors: Default::default(),
         assumptions: Vec::new(),

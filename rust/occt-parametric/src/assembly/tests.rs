@@ -38,6 +38,7 @@ fn direction(x: f64, y: f64, z: f64) -> VectorExpr {
 /// face, top center, and vertical center axis.
 pub(crate) fn block() -> FamilyDefinition {
     FamilyDefinition {
+        history: Default::default(),
         references: Vec::new(),
         feature_colors: Default::default(),
         assumptions: Vec::new(),

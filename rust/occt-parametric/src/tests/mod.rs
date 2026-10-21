@@ -15,6 +15,7 @@ mod drawing;
 mod exact_walls;
 mod expressions;
 mod face_colors;
+mod feature_history;
 mod graph;
 mod helix;
 mod hole_catalogs;
@@ -71,6 +72,7 @@ fn length_parameter(id: &str, default: f64) -> ParameterDefinition {
 
 fn family(priority: RequirementPriority, maximum_volume: f64) -> FamilyDefinition {
     FamilyDefinition {
+        history: Default::default(),
         references: Vec::new(),
         feature_colors: Default::default(),
         assumptions: Vec::new(),

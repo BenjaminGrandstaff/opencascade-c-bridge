@@ -17,6 +17,7 @@ fn document() -> ModelDocument {
 /// A plate with a fused boss and `members` pattern copies, colored by material.
 fn document_with(members: usize) -> ModelDocument {
     let family = FamilyDefinition {
+        history: Default::default(),
         references: Vec::new(),
         assumptions: Vec::new(),
         feature_colors: Default::default(),

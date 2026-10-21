@@ -51,6 +51,7 @@ fn cut(object: String, tool: String) -> FeatureOperation {
 
 fn family(features: Vec<FeatureDefinition>) -> FamilyDefinition {
     FamilyDefinition {
+        history: Default::default(),
         references: Vec::new(),
         feature_colors: Default::default(),
         assumptions: Vec::new(),

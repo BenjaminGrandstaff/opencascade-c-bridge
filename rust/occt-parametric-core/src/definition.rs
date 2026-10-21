@@ -4,11 +4,13 @@
 use super::*;
 
 pub mod features;
+pub mod history;
 pub(crate) mod parameters;
 pub(crate) mod requirements;
 pub mod selectors;
 
 pub use features::*;
+pub use history::*;
 pub use parameters::*;
 pub use requirements::*;
 pub use selectors::*;
@@ -41,6 +43,9 @@ pub struct FamilyDefinition {
     /// Engineering assumptions that requirements trace to.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assumptions: Vec<Assumption>,
+    /// The feature timeline's checkout and suppressions (schema 182).
+    #[serde(default, skip_serializing_if = "FeatureHistory::is_empty")]
+    pub history: FeatureHistory,
 }
 
 /// A face or edge rule declared once in a family and used by name, so the

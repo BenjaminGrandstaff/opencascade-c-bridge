@@ -31,6 +31,7 @@ fn size(x: f64, y: f64) -> VectorExpr {
 }
 fn fixture() -> ModelDocument {
     let mut family = FamilyDefinition {
+        history: Default::default(),
         id: "bracket".into(),
         version: 1,
         references: vec![],

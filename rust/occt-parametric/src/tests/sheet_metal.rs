@@ -30,6 +30,7 @@ fn spec(turns: &[f64]) -> SheetMetalDefinition {
 }
 fn definition(sheet: SheetMetalDefinition) -> FamilyDefinition {
     FamilyDefinition {
+        history: Default::default(),
         references: Vec::new(),
         feature_colors: Default::default(),
         assumptions: Vec::new(),

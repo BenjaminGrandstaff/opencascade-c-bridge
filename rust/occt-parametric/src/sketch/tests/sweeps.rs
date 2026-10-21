@@ -8,6 +8,7 @@ fn sweep_family(
     operation: FeatureOperation,
 ) -> FamilyDefinition {
     FamilyDefinition {
+        history: Default::default(),
         references: Vec::new(),
         feature_colors: Default::default(),
         assumptions: Vec::new(),

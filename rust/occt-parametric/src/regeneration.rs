@@ -288,9 +288,43 @@ impl<'session> FeatureBuild<'session> {
             .map(|datum| (datum.id.as_str(), datum))
             .collect::<HashMap<_, _>>();
         let definitions = Features::new(definition);
-        let mut pending: Vec<&FeatureDefinition> = definition.features.iter().collect();
-        while !pending.is_empty() {
-            let before = pending.len();
+        // The feature history (schema 182): only active features run; a
+        // suppressed modifier passes its input on under its own id, once
+        // that input exists; the rest are left out.
+        let mut passes: Vec<(&str, String)> = Vec::new();
+        let mut pending: Vec<&FeatureDefinition> = if definition.history.is_empty() {
+            definition.features.iter().collect()
+        } else {
+            let states = definition.history_states()?;
+            let mut active = Vec::new();
+            for (feature, (_, state)) in definition.features.iter().zip(states) {
+                match state {
+                    FeatureState::Active => active.push(feature),
+                    FeatureState::Suppressed {
+                        passes: Some(input),
+                    } => {
+                        passes.push((feature.id.as_str(), input));
+                    }
+                    _ => {}
+                }
+            }
+            active
+        };
+        while !pending.is_empty() || !passes.is_empty() {
+            let before = pending.len() + passes.len();
+            let mut index = 0;
+            while index < passes.len() {
+                let (id, input) = &passes[index];
+                if let Some(shape) = self.shapes.get(input.as_str()) {
+                    let copy = session.duplicate(shape)?;
+                    self.shapes.insert((*id).to_owned(), copy);
+                    // Later features rebuild over the substituted body.
+                    self.dirty_features.insert((*id).to_owned());
+                    passes.remove(index);
+                } else {
+                    index += 1;
+                }
+            }
             let mut index = 0;
             while index < pending.len() {
                 if self.is_ready(pending[index], &definitions) {
@@ -307,10 +341,11 @@ impl<'session> FeatureBuild<'session> {
                     index += 1;
                 }
             }
-            if pending.len() == before {
+            if pending.len() + passes.len() == before {
                 let blocked = pending
                     .iter()
                     .map(|feature| feature.id.as_str())
+                    .chain(passes.iter().map(|(id, _)| *id))
                     .collect::<Vec<_>>();
                 return Err(ModelError::new(format!(
                     "feature dependency cycle or unresolved input: {}",

@@ -14,6 +14,7 @@ fn document() -> ModelDocument {
         maximum: None,
     };
     let family = FamilyDefinition {
+        history: Default::default(),
         references: Vec::new(),
         feature_colors: Default::default(),
         assumptions: Vec::new(),

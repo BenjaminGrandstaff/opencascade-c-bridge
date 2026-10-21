@@ -14,6 +14,7 @@ fn point(x: f64, y: f64, z: f64) -> VectorQuantity {
 }
 fn fixture() -> ModelDocument {
     let family = FamilyDefinition {
+        history: Default::default(),
         references: Vec::new(),
         assumptions: Vec::new(),
         feature_colors: Default::default(),

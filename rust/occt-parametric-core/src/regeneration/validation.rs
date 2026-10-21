@@ -16,6 +16,9 @@ pub fn validate_definition(definition: &FamilyDefinition) -> Result<(), ModelErr
         "feature ids must be nonempty and unique",
     )?;
     let references = validate_references(definition, &feature_ids)?;
+    if !definition.history.is_empty() {
+        definition.history_states()?;
+    }
     for (feature, color) in &definition.feature_colors {
         if !feature_ids.contains(feature.as_str()) {
             return Err(ModelError::new(format!(

@@ -15,6 +15,7 @@ fn at(x: f64, y: f64, z: f64) -> VectorExpr {
 }
 fn family(features: Vec<FeatureDefinition>, requirements: Vec<Requirement>) -> FamilyDefinition {
     FamilyDefinition {
+        history: Default::default(),
         references: Vec::new(),
         feature_colors: Default::default(),
         assumptions: Vec::new(),
