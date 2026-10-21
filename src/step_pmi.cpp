@@ -617,53 +617,72 @@ struct ReadSize {
 // from the entities: a DATUM related to its DATUM_FEATURE, whose faces (and
 // those of shape aspects it is composed of) a geometric item specific usage
 // identifies. O(entities) plus the faces found.
+struct DatumGraph {
+    std::map<const Standard_Transient*, std::vector<Handle(StepRepr_ShapeAspect)>> parts;
+    std::map<const Standard_Transient*, Prints> faces;
+    std::vector<std::pair<std::string, Handle(StepRepr_ShapeAspect)>> datums;
+};
+
+void read_datum_relation(const Handle(StepRepr_ShapeAspectRelationship)& relation, DatumGraph& graph) {
+    const auto datum = Handle(StepDimTol_Datum)::DownCast(relation->RelatedShapeAspect());
+    if (!datum.IsNull()) {
+        graph.datums.emplace_back(name_of(datum->Identification()), relation->RelatingShapeAspect());
+    } else if (!relation->RelatingShapeAspect().IsNull()) {
+        graph.parts[relation->RelatingShapeAspect().get()].push_back(relation->RelatedShapeAspect());
+    }
+}
+
+void read_datum_faces(
+    const Handle(StepAP242_GeometricItemSpecificUsage)& usage,
+    const Handle(Transfer_TransientProcess)& process,
+    DatumGraph& graph) {
+    Prints& found = graph.faces[usage->Definition().Value().get()];
+    for (int item = 1; item <= usage->NbIdentifiedItem(); ++item) {
+        const TopoDS_Shape shape = TransferBRep::ShapeResult(process, usage->IdentifiedItemValue(item));
+        found.push_back(!shape.IsNull() && shape.ShapeType() == TopAbs_FACE ? print(shape) : Print{-1.0, gp_XYZ()});
+    }
+}
+
+Prints datum_faces(const DatumGraph& graph, const Standard_Transient* feature) {
+    Prints all;
+    std::vector<const Standard_Transient*> pending{feature};
+    std::set<const Standard_Transient*> seen;
+    while (!pending.empty()) {
+        const Standard_Transient* aspect = pending.back();
+        pending.pop_back();
+        if (aspect == nullptr || !seen.insert(aspect).second) {
+            continue;
+        }
+        if (const auto found = graph.faces.find(aspect); found != graph.faces.end()) {
+            all.insert(all.end(), found->second.begin(), found->second.end());
+        }
+        if (const auto found = graph.parts.find(aspect); found != graph.parts.end()) {
+            for (const auto& part : found->second) {
+                pending.push_back(part.get());
+            }
+        }
+    }
+    sort_prints(all);
+    return all;
+}
+
 std::multimap<std::string, Prints> read_datums(const STEPControl_Reader& reader) {
     const Handle(XSControl_WorkSession)& session = reader.WS();
     const Handle(Interface_InterfaceModel) model = session->Model();
     const Handle(Transfer_TransientProcess) process = session->TransferReader()->TransientProcess();
-    std::map<const Standard_Transient*, std::vector<Handle(StepRepr_ShapeAspect)>> parts;
-    std::map<const Standard_Transient*, Prints> faces;
-    std::vector<std::pair<std::string, Handle(StepRepr_ShapeAspect)>> datums;
+    DatumGraph graph;
     for (int index = 1; index <= model->NbEntities(); ++index) {
         const Handle(Standard_Transient)& entity = model->Value(index);
         if (const auto relation = Handle(StepRepr_ShapeAspectRelationship)::DownCast(entity); !relation.IsNull()) {
-            const auto datum = Handle(StepDimTol_Datum)::DownCast(relation->RelatedShapeAspect());
-            if (!datum.IsNull()) {
-                datums.emplace_back(name_of(datum->Identification()), relation->RelatingShapeAspect());
-            } else if (!relation->RelatingShapeAspect().IsNull()) {
-                parts[relation->RelatingShapeAspect().get()].push_back(relation->RelatedShapeAspect());
-            }
+            read_datum_relation(relation, graph);
         } else if (const auto usage = Handle(StepAP242_GeometricItemSpecificUsage)::DownCast(entity);
                    !usage.IsNull()) {
-            Prints& found = faces[usage->Definition().Value().get()];
-            for (int item = 1; item <= usage->NbIdentifiedItem(); ++item) {
-                const TopoDS_Shape shape = TransferBRep::ShapeResult(process, usage->IdentifiedItemValue(item));
-                found.push_back(!shape.IsNull() && shape.ShapeType() == TopAbs_FACE ? print(shape) : Print{-1.0, gp_XYZ()});
-            }
+            read_datum_faces(usage, process, graph);
         }
     }
     std::multimap<std::string, Prints> result;
-    for (const auto& [label, feature] : datums) {
-        Prints all;
-        std::vector<const Standard_Transient*> pending{feature.get()};
-        std::set<const Standard_Transient*> seen;
-        while (!pending.empty()) {
-            const Standard_Transient* aspect = pending.back();
-            pending.pop_back();
-            if (aspect == nullptr || !seen.insert(aspect).second) {
-                continue;
-            }
-            if (const auto found = faces.find(aspect); found != faces.end()) {
-                all.insert(all.end(), found->second.begin(), found->second.end());
-            }
-            if (const auto found = parts.find(aspect); found != parts.end()) {
-                for (const auto& part : found->second) {
-                    pending.push_back(part.get());
-                }
-            }
-        }
-        sort_prints(all);
-        result.emplace(label, std::move(all));
+    for (const auto& [label, feature] : graph.datums) {
+        result.emplace(label, datum_faces(graph, feature.get()));
     }
     return result;
 }
@@ -1031,7 +1050,25 @@ Handle(StepBasic_NamedUnit) length_unit(const Handle(StepRepr_RepresentationCont
 
 constexpr const char* kPresentationLink = "PMI representation to presentation link";
 
-// The segments of a callout's tessellated curves.
+void append_curve_segments(const Handle(StepVisual_TessellatedCurveSet)& curves, std::vector<Segment>& result) {
+    if (curves.IsNull() || curves->CoordList().IsNull() || curves->Curves().IsNull()) {
+        return;
+    }
+    const Handle(TColgp_HArray1OfXYZ) points = curves->CoordList()->Points();
+    for (const auto& curve : *curves->Curves()) {
+        for (int index = 2; !curve.IsNull() && index <= curve->Length(); ++index) {
+            const int a = curve->Value(index - 1);
+            const int b = curve->Value(index);
+            if (points.IsNull() || a < points->Lower() || a > points->Upper() || b < points->Lower()
+                || b > points->Upper()) {
+                continue;
+            }
+            result.push_back({points->Value(a), points->Value(b)});
+        }
+    }
+}
+
+// The segments of a callout's tessellated curves, in their original order.
 std::vector<Segment> callout_segments(const Handle(StepVisual_DraughtingCallout)& callout) {
     std::vector<Segment> result;
     for (int content = 1; content <= callout->NbContents(); ++content) {
@@ -1044,22 +1081,7 @@ std::vector<Segment> callout_segments(const Handle(StepVisual_DraughtingCallout)
             continue;
         }
         for (const auto& item : *set->Items()) {
-            const auto curves = Handle(StepVisual_TessellatedCurveSet)::DownCast(item);
-            if (curves.IsNull() || curves->CoordList().IsNull() || curves->Curves().IsNull()) {
-                continue;
-            }
-            const Handle(TColgp_HArray1OfXYZ) points = curves->CoordList()->Points();
-            for (const auto& curve : *curves->Curves()) {
-                for (int index = 2; !curve.IsNull() && index <= curve->Length(); ++index) {
-                    const int a = curve->Value(index - 1);
-                    const int b = curve->Value(index);
-                    if (points.IsNull() || a < points->Lower() || a > points->Upper() || b < points->Lower()
-                        || b > points->Upper()) {
-                        continue;
-                    }
-                    result.push_back({points->Value(a), points->Value(b)});
-                }
-            }
+            append_curve_segments(Handle(StepVisual_TessellatedCurveSet)::DownCast(item), result);
         }
     }
     return result;
@@ -1088,37 +1110,45 @@ struct ReadPresentations {
     std::map<std::string, std::set<std::string>> views;
 };
 
+void read_presentation_link(
+    const Handle(StepAP242_DraughtingModelItemAssociation)& link, ReadPresentations& result) {
+    // OCCT's reader lowercases the names of links it has followed.
+    if (link->Name().IsNull() || !link->Name()->IsSameString(text(kPresentationLink), Standard_False)
+        || link->Definition().Value().IsNull()) {
+        return;
+    }
+    for (int item = 1; item <= link->NbIdentifiedItem(); ++item) {
+        const auto callout = Handle(StepVisual_DraughtingCallout)::DownCast(link->IdentifiedItemValue(item));
+        if (!callout.IsNull()) {
+            result.callouts[name_of(callout->Name())].push_back(callout_segments(callout));
+        }
+    }
+}
+
+void read_drawing_callouts(const Handle(StepVisual_DraughtingModel)& drawing, ReadPresentations& result) {
+    std::vector<std::string> cameras;
+    std::set<std::string> callouts;
+    for (int item = 1; item <= drawing->NbItems(); ++item) {
+        const Handle(StepRepr_RepresentationItem) value = drawing->ItemsValue(item);
+        if (const auto camera_entity = Handle(StepVisual_CameraModelD3)::DownCast(value); !camera_entity.IsNull()) {
+            cameras.push_back(name_of(camera_entity->Name()));
+        } else if (const auto callout = Handle(StepVisual_DraughtingCallout)::DownCast(value); !callout.IsNull()) {
+            callouts.insert(name_of(callout->Name()));
+        }
+    }
+    for (const std::string& camera_name : cameras) {
+        result.views[camera_name].insert(callouts.begin(), callouts.end());
+    }
+}
+
 ReadPresentations read_presentations(const Handle(Interface_InterfaceModel)& model) {
     ReadPresentations result;
     for (int index = 1; index <= model->NbEntities(); ++index) {
         const Handle(Standard_Transient)& entity = model->Value(index);
         if (const auto link = Handle(StepAP242_DraughtingModelItemAssociation)::DownCast(entity); !link.IsNull()) {
-            // OCCT's reader lowercases the names of links it has followed.
-            if (link->Name().IsNull() || !link->Name()->IsSameString(text(kPresentationLink), Standard_False)
-                || link->Definition().Value().IsNull()) {
-                continue;
-            }
-            for (int item = 1; item <= link->NbIdentifiedItem(); ++item) {
-                const auto callout = Handle(StepVisual_DraughtingCallout)::DownCast(link->IdentifiedItemValue(item));
-                if (!callout.IsNull()) {
-                    result.callouts[name_of(callout->Name())].push_back(callout_segments(callout));
-                }
-            }
+            read_presentation_link(link, result);
         } else if (const auto drawing = Handle(StepVisual_DraughtingModel)::DownCast(entity); !drawing.IsNull()) {
-            std::vector<std::string> cameras;
-            std::set<std::string> callouts;
-            for (int item = 1; item <= drawing->NbItems(); ++item) {
-                const Handle(StepRepr_RepresentationItem) value = drawing->ItemsValue(item);
-                if (const auto camera = Handle(StepVisual_CameraModelD3)::DownCast(value); !camera.IsNull()) {
-                    cameras.push_back(name_of(camera->Name()));
-                } else if (const auto callout = Handle(StepVisual_DraughtingCallout)::DownCast(value);
-                           !callout.IsNull()) {
-                    callouts.insert(name_of(callout->Name()));
-                }
-            }
-            for (const std::string& camera : cameras) {
-                result.views[camera].insert(callouts.begin(), callouts.end());
-            }
+            read_drawing_callouts(drawing, result);
         }
     }
     return result;

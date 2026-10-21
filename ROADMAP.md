@@ -19,12 +19,29 @@ tracks status and order.
 |---|---|---|
 | Tests | C 8/8, bridge 177 + first-use integration 1 (+1 doc test), recipes 3, parametric core 66 + kernel 804 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 101 + viewer Node 475 + branch command 2 + model command 105, MCP Python 29, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
-| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 40 clang-tidy warnings (39 complexity warnings and one public ABI padding warning) plus 85 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
+| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 37 clang-tidy warnings (36 complexity warnings and one public ABI padding warning) plus 83 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all five crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 2026-10-21: 92.79% lines overall; C++ 94.46% lines, 82.35% branches, 99.87% functions; Rust 92.37% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
+| Coverage | 2026-10-21: 92.80% lines overall; C++ 94.50% lines, 82.52% branches, 99.87% functions; Rust 92.37% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
 | Scale benchmarks | Current run: all 137 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
 
 ## Done
+
+- STEP datum/presentation reader refactor (schema 182 and ABI 85 unchanged):
+  datum relationship collection, cycle-safe face traversal, tessellated curve
+  decoding and view-callout collection are separate stages. Complexity falls
+  from 33 to 5 for datum reading, 26 to 8 for callout segments, and 26 to 4 for
+  presentation reading; every new helper is at most 11 against the unchanged
+  limit of 25. The regression now covers 38 read-back comparisons and 26
+  validation checks, including removed datum/presentation links, case-insensitive
+  link names, reversed segments and out-of-bounds coordinate indices. Invalid
+  segments still allow later valid segments, and missing presentation links do
+  not change view visibility. All cases pass against the previous implementation;
+  normalized AP242 exports and all 140 public C exports match. All eight native
+  tests and the full instrumented C++/Rust suite pass with unchanged timing
+  limits. Full analysis removes three complexity warnings and two shadowing
+  findings without adding any new findings; remaining totals are 37 clang-tidy
+  warnings and 83 cppcheck findings. Writer finalization remains the next STEP
+  complexity cleanup.
 
 - STEP tolerance/view validation and dataset verification refactor (schema 182
   and ABI 85 unchanged): scalar tolerance checks and datum-reference checks are
@@ -39,8 +56,7 @@ tracks status and order.
   the previous implementation, and AP242 exports match after timestamp
   normalization. All eight native tests and the full instrumented C++/Rust
   suite pass; the 140 public exports, numeric
-  thresholds and error precedence are unchanged. Remaining STEP complexity is
-  in datum/presentation readers and writer finalization.
+  thresholds and error precedence are unchanged.
 
 - STEP PMI validation and verification refactor (schema 182 and ABI 85
   unchanged): datum/tolerance/size validation, presentation/view validation,
@@ -54,8 +70,7 @@ tracks status and order.
   document cleanup. It passes against the previous implementation as well.
   The AP242 fixture exports match after timestamp normalization, and all 140
   public C exports are unchanged. All eight native tests and the full
-  instrumented C++/Rust suite pass. Remaining STEP entity readers, dataset
-  verification and writer finalization still have complexity findings.
+  instrumented C++/Rust suite pass.
 
 - Constrained loft refactor (schema 182 and ABI 85 unchanged): section
   validation/copying, profile correspondence, rational Hermite spans, independent

@@ -292,25 +292,23 @@ void view_validation_precedence() {
 }
 
 // Remove a complete association record from this controlled STEP fixture.
-// The approval itself remains, so verification must detect the missing link.
+// Referenced entities remain, so verification must detect the missing link.
 std::string without_record(std::string text, const std::string& type) {
     const size_t at = text.find(" = " + type + "(");
-    if (at == std::string::npos) throw std::runtime_error("approval record not found");
+    if (at == std::string::npos) throw std::runtime_error("STEP record not found");
     const size_t newline = text.rfind('\n', at);
     const size_t begin = newline == std::string::npos ? 0 : newline + 1;
     const size_t end = text.find(';', at);
-    if (end == std::string::npos) throw std::runtime_error("approval record is incomplete");
+    if (end == std::string::npos) throw std::runtime_error("STEP record is incomplete");
     text.erase(begin, end - begin + 1);
     return text;
 }
 
-void verify_altered_file(const std::string& path, const std::string& text, const char* test) {
+void verify_altered_file(const std::string& path, const std::string& text, const char* test, const Losses& expected) {
     std::ofstream stream(path, std::ios::binary);
     stream << text;
     stream.close();
     if (!stream) throw std::runtime_error("cannot write altered STEP fixture");
-    Losses expected;
-    expected.dataset = OCCT_BRIDGE_DATASET_LOST_APPROVALS;
     Fixture fixture;
     ++comparisons;
     fixture.verify(path.c_str(), test, expected);
@@ -322,15 +320,51 @@ void approval_file_cases(const char* path) {
     const std::string text((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
     if (stream.bad() || text.empty()) throw std::runtime_error("cannot read STEP fixture");
     const std::string altered = std::string(path) + ".altered";
+    Losses expected;
+    expected.dataset = OCCT_BRIDGE_DATASET_LOST_APPROVALS;
     for (const char* type : {"APPROVAL_DATE_TIME", "APPROVAL_PERSON_ORGANIZATION", "APPLIED_APPROVAL_ASSIGNMENT"}) {
-        verify_altered_file(altered, without_record(text, type), type);
+        verify_altered_file(altered, without_record(text, type), type, expected);
     }
     std::string rejected = text;
     const std::string approved = "APPROVAL_STATUS('approved')";
     const size_t at = rejected.find(approved);
     if (at == std::string::npos) throw std::runtime_error("approval status not found");
     rejected.replace(at, approved.size(), "APPROVAL_STATUS('rejected')");
-    verify_altered_file(altered, rejected, "rejected approval status");
+    verify_altered_file(altered, rejected, "rejected approval status", expected);
+}
+
+std::string replace_first(std::string text, const std::string& from, const std::string& to) {
+    const size_t at = text.find(from);
+    if (at == std::string::npos) throw std::runtime_error("STEP fixture text not found");
+    text.replace(at, from.size(), to);
+    return text;
+}
+
+void reader_file_cases(const char* path) {
+    std::ifstream stream(path, std::ios::binary);
+    const std::string text((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+    if (stream.bad() || text.empty()) throw std::runtime_error("cannot read STEP fixture");
+    const std::string altered = std::string(path) + ".altered";
+    Losses expected;
+    expected.datums[0] = OCCT_BRIDGE_PMI_LOST_ITEM;
+    verify_altered_file(altered, without_record(text, "SHAPE_ASPECT_RELATIONSHIP"),
+                        "missing datum relationship", expected);
+    expected.datums[0] = OCCT_BRIDGE_PMI_LOST_PRESENTATION;
+    verify_altered_file(altered, without_record(text, "DRAUGHTING_MODEL_ITEM_ASSOCIATION"),
+                        "missing presentation link retains view visibility", expected);
+    const std::string link = "PMI representation to presentation link";
+    verify_altered_file(altered, replace_first(text, link, "unrelated presentation link"),
+                        "unrelated presentation link", expected);
+    verify_altered_file(altered, replace_first(text, link, "PMI REPRESENTATION TO PRESENTATION LINK"),
+                        "case insensitive presentation link", {});
+    verify_altered_file(altered, replace_first(text, ",((1,2)))", ",((2,1)))"),
+                        "reversed presentation segment", expected);
+    verify_altered_file(altered, replace_first(text, ",((1,2)))", ",((0,2)))"),
+                        "presentation index below coordinate bounds", expected);
+    verify_altered_file(altered, replace_first(text, ",((1,2)))", ",((1,3)))"),
+                        "presentation index above coordinate bounds", expected);
+    verify_altered_file(altered, replace_first(text, ",((1,2)))", ",((0,1,2)))"),
+                        "invalid segment does not discard following valid segment", {});
 }
 
 void validation_precedence() {
@@ -370,6 +404,7 @@ int run(const char* path) {
     view_cases(path);
     dataset_cases(path);
     approval_file_cases(path);
+    reader_file_cases(path);
     validation_precedence();
     tolerance_reference_precedence();
     view_validation_precedence();
