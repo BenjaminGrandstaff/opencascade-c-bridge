@@ -1583,3 +1583,106 @@ fn closest_parameter_canonicalizes_seams_and_rejects_nonunique_circle_center() {
     drop((curve, circle, multi));
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn discovered_regions_keep_nested_holes_and_cell_order_across_seed_permutations() {
+    let s = Session::new().unwrap();
+    for (origin, normal, x_axis, delta) in [
+        (
+            Vec3::new(0., 0., 0.),
+            Vec3::new(0., 0., 2.),
+            Vec3::new(3., 0., 0.),
+            Vec3::new(1., 0., 0.),
+        ),
+        (
+            Vec3::new(4., 5., 6.),
+            Vec3::new(2., 0., 0.),
+            Vec3::new(0., 0., 3.),
+            Vec3::new(0., 0., 1.),
+        ),
+    ] {
+        let outer = s.create_circle_wire(origin, normal, 10.).unwrap();
+        let middle = s.create_circle_wire(origin, normal, 3.).unwrap();
+        let inner = s.create_circle_wire(origin, normal, 1.).unwrap();
+        let inputs = [&outer, &middle, &inner];
+        let seed = |r: f64| {
+            Vec3::new(
+                origin.x + r * delta.x,
+                origin.y + r * delta.y,
+                origin.z + r * delta.z,
+            )
+        };
+        let all = s
+            .discover_planar_regions(&inputs, origin, normal, x_axis, &[])
+            .unwrap();
+        assert!(s.is_valid(&all).unwrap());
+        assert_eq!(s.subshape_count(&all, ShapeType::Face).unwrap(), 3);
+        assert_eq!(s.subshape_count(&all, ShapeType::Wire).unwrap(), 5);
+        assert!((s.surface_area(&all).unwrap() - 100. * PI).abs() < 1e-7);
+        let areas = |shape: &Shape<'_>| {
+            s.subshapes(shape, ShapeType::Face)
+                .unwrap()
+                .iter()
+                .map(|face| s.surface_area(face).unwrap())
+                .collect::<Vec<_>>()
+        };
+        let expected = areas(&all);
+        for seeds in [
+            vec![seed(5.), seed(2.), seed(0.)],
+            vec![seed(0.), seed(5.), seed(2.), seed(5.)],
+        ] {
+            let selected = s
+                .discover_planar_regions(&inputs, origin, normal, x_axis, &seeds)
+                .unwrap();
+            assert_eq!(areas(&selected), expected);
+        }
+        let separated = s
+            .discover_planar_regions(
+                &inputs,
+                origin,
+                normal,
+                x_axis,
+                &[seed(0.), seed(5.), seed(0.)],
+            )
+            .unwrap();
+        assert_eq!(s.subshape_count(&separated, ShapeType::Face).unwrap(), 2);
+        assert_eq!(s.subshape_count(&separated, ShapeType::Wire).unwrap(), 3);
+        assert!((s.surface_area(&separated).unwrap() - 92. * PI).abs() < 1e-7);
+        assert_eq!(s.subshape_count(&outer, ShapeType::Edge).unwrap(), 1);
+        assert_eq!(s.subshape_count(&middle, ShapeType::Edge).unwrap(), 1);
+        assert_eq!(s.subshape_count(&inner, ShapeType::Edge).unwrap(), 1);
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn discovered_regions_reject_partial_selections_without_storing_results() {
+    let s = Session::new().unwrap();
+    {
+        let origin = Vec3::new(0., 0., 0.);
+        let normal = Vec3::new(0., 0., 1.);
+        let x_axis = Vec3::new(1., 0., 0.);
+        let circle = s.create_circle_wire(origin, normal, 10.).unwrap();
+        let count = s.shape_count().unwrap();
+        for (seeds, message) in [
+            (vec![origin, Vec3::new(10., 0., 0.)], "boundary"),
+            (vec![origin, Vec3::new(20., 0., 0.)], "outside"),
+            (
+                vec![Vec3::new(20., 0., 0.), Vec3::new(10., 0., 0.)],
+                "outside",
+            ),
+        ] {
+            let error = s
+                .discover_planar_regions(&[&circle], origin, normal, x_axis, &seeds)
+                .unwrap_err();
+            assert!(error.message.contains(message), "{}", error.message);
+            assert_eq!(s.shape_count().unwrap(), count);
+        }
+        let raised = s.translate(&circle, Vec3::new(0., 0., 1.)).unwrap();
+        let error = s
+            .discover_planar_regions(&[&raised], origin, normal, x_axis, &[Vec3::new(0., 0., 1.)])
+            .unwrap_err();
+        assert!(error.message.contains("seeds must lie in the plane"));
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
