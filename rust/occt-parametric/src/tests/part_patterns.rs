@@ -74,6 +74,7 @@ fn part_patterns_validate_counts_units_steps_and_nested_topology_before_expansio
     document.family.features.push(FeatureDefinition {
         id: "copies".into(),
         operation: FeatureOperation::LinearPattern {
+            skip: Vec::new(),
             input: "source".into(),
             step: VectorExpr::Literal(VectorQuantity::lengths(
                 40.0,
@@ -150,6 +151,7 @@ fn part_patterns_validate_counts_units_steps_and_nested_topology_before_expansio
     document.family.features.push(FeatureDefinition {
         id: "nested".into(),
         operation: FeatureOperation::LinearPattern {
+            skip: Vec::new(),
             input: "copies".into(),
             step: VectorExpr::Literal(VectorQuantity::lengths(
                 0.0,

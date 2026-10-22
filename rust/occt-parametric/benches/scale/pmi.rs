@@ -55,6 +55,7 @@ fn drilled(definition: &FamilyDefinition) -> FamilyDefinition {
         feature(
             "row",
             FeatureOperation::LinearPattern {
+                skip: Vec::new(),
                 input: "pin".into(),
                 step: mm(20.0, 0.0, 0.0),
                 count: ScalarExpr::Literal(Quantity::scalar(SIDE as f64)),
@@ -63,6 +64,7 @@ fn drilled(definition: &FamilyDefinition) -> FamilyDefinition {
         feature(
             "grid",
             FeatureOperation::LinearPattern {
+                skip: Vec::new(),
                 input: "row".into(),
                 step: mm(0.0, 20.0, 0.0),
                 count: ScalarExpr::Literal(Quantity::scalar(SIDE as f64)),

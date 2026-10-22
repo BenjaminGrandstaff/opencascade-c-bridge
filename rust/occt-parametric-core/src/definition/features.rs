@@ -110,6 +110,32 @@ pub enum ThickenSide {
     Symmetric,
 }
 
+/// How curve pattern copies follow their path.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum CurvePatternOrientation {
+    /// Copies keep the input's orientation and only move.
+    #[default]
+    Fixed,
+    /// Copies turn with the path's tangent, carried along it without twist.
+    Tangent,
+}
+
+/// How fill pattern sites are laid out.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum FillPatternLayout {
+    /// Rows directly above one another.
+    #[default]
+    Grid,
+    /// Every other row shifted by half a spacing.
+    Staggered,
+}
+
 /// Which side of a split plane a `Split` keeps.
 #[derive(
     Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
@@ -498,6 +524,10 @@ pub enum FeatureOperation {
         axis: VectorExpr,
         count: ScalarExpr,
         angle_step_radians: ScalarExpr,
+        /// Copy indices to leave out (schema 184); 0 is the seed.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[schemars(length(max = 10000))]
+        skip: Vec<usize>,
     },
     /// Repeats the input at i*step, including i=0, into an unfused compound.
     /// Step is a length vector. Count is an integer-valued scalar in 1..=10000.
@@ -505,6 +535,55 @@ pub enum FeatureOperation {
         input: String,
         step: VectorExpr,
         count: ScalarExpr,
+        /// Copy indices to leave out (schema 184); 0 is the seed.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[schemars(length(max = 10000))]
+        skip: Vec<usize>,
+    },
+    /// Copies spaced evenly by arc length along `path` (schema 184), a
+    /// feature whose output is one edge or wire, such as a sketch open wire.
+    /// The input is modeled at the path's start; copy i moves to the point
+    /// i/(count-1) of the way along an open path, or i/count around a closed
+    /// one. With `tangent` orientation each copy also turns with the path,
+    /// carried along it without twist; `fixed` copies only move. Count is in
+    /// 1..=10000; `skip` leaves out copy indices.
+    CurvePattern {
+        input: String,
+        path: String,
+        count: ScalarExpr,
+        #[serde(default)]
+        orientation: CurvePatternOrientation,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[schemars(length(max = 10000))]
+        skip: Vec<usize>,
+    },
+    /// Copies at the sites of a grid that lie inside a planar region
+    /// (schema 184): the face of `region` (its only face, or the one `face`
+    /// selects). The grid passes through `anchor` projected onto the face's
+    /// plane, the point of the input that marks its site; its rows run along
+    /// `direction` (projected into the plane) every `spacing`, and rows are
+    /// `row_spacing` apart. `staggered` shifts every other row by half a
+    /// spacing. A site is kept when it lies inside the face at least
+    /// `margin` from its boundary, holes included. At most 10,000 sites.
+    FillPattern {
+        input: String,
+        region: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        face: Option<FaceSelector>,
+        anchor: VectorExpr,
+        direction: VectorExpr,
+        spacing: ScalarExpr,
+        row_spacing: ScalarExpr,
+        #[serde(default)]
+        layout: FillPatternLayout,
+        margin: ScalarExpr,
+    },
+    /// Copies moved by each listed offset (schema 184), for uneven spacing.
+    /// Include a zero offset to keep the input's own place.
+    TablePattern {
+        input: String,
+        #[schemars(length(min = 1, max = 10000))]
+        offsets: Vec<VectorExpr>,
     },
     /// Groups child shapes without fusing or sewing. Useful as a multi-tool
     /// input to Cut. Children keep geometry and locations; overlaps remain.
@@ -669,6 +748,9 @@ impl FeatureOperation {
                     projection.edge.names(&mut names);
                 }
             }
+            Self::FillPattern {
+                face: Some(face), ..
+            } => face.names(&mut names),
             Self::Hollow { faces, .. }
             | Self::Draft { faces, .. }
             | Self::RemoveFaces { faces, .. }
@@ -699,7 +781,9 @@ impl FeatureOperation {
             | Self::Draft { input, .. }
             | Self::RemoveFaces { input, .. }
             | Self::OffsetFaces { input, .. }
-            | Self::MoveFaces { input, .. } => vec![input],
+            | Self::MoveFaces { input, .. }
+            | Self::CurvePattern { input, .. }
+            | Self::FillPattern { input, .. } => vec![input],
             _ => self.dependencies(),
         }
     }
@@ -757,10 +841,24 @@ impl FeatureOperation {
             | Self::Revolve { input, .. }
             | Self::CircularPattern { input, .. }
             | Self::LinearPattern { input, .. }
+            | Self::TablePattern { input, .. }
             | Self::Offset { input, .. }
             | Self::Split { input, .. }
             | Self::Thicken { input, .. }
             | Self::Unify { input, .. } => vec![input],
+            Self::CurvePattern { input, path, .. } => vec![input, path],
+            Self::FillPattern {
+                input,
+                region,
+                face,
+                ..
+            } => {
+                let mut dependencies = vec![input.as_str(), region.as_str()];
+                if let Some(face) = face {
+                    face.dependencies(&mut dependencies);
+                }
+                dependencies
+            }
             Self::Fillet { input, edges, .. }
             | Self::VariableFillet { input, edges, .. }
             | Self::Chamfer { input, edges, .. } => {

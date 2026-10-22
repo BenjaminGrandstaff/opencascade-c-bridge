@@ -481,7 +481,7 @@ the analytic 8,249.3 mm³.
 
 ### Shells, drafts, face edits, mirrors and patterns
 
-**Solid feature** also offers eight operations on an accepted solid. Each
+**Solid feature** also offers eleven operations on an accepted solid. Each
 names its **Source solid**:
 
 - **Shell (hollow) a solid** removes the picked faces and leaves walls of
@@ -494,6 +494,13 @@ names its **Source solid**:
   direction's side.
 - **Mirror a solid** reflects it across a principal plane (YZ, XZ, XY) or a
   custom one through an entered point.
+- **Pattern along a curve**, **Fill a region with copies** and **Copies at
+  listed offsets** (schema 184) copy along a chosen sketch wire (keeping
+  their orientation or turning with it), onto a grid inside a region (a
+  sketch face, or a picked face of a solid, with spacing, row spacing, grid
+  or staggered layout and an edge margin), or by offsets typed one per line.
+  Linear, circular and curve patterns take **Skip copies**, a list of copy
+  numbers to leave out (0 is the original).
 - **Linear pattern of a solid** repeats it along a direction at a spacing.
   **Circular pattern of a solid** repeats it about an axis, evenly round a
   full turn or at an entered angle. The copy count includes the original,

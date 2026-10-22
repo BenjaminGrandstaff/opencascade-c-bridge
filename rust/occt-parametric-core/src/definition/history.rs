@@ -67,6 +67,9 @@ impl FeatureOperation {
             | Self::Hole { input, .. }
             | Self::CircularPattern { input, .. }
             | Self::LinearPattern { input, .. }
+            | Self::CurvePattern { input, .. }
+            | Self::FillPattern { input, .. }
+            | Self::TablePattern { input, .. }
             | Self::Fillet { input, .. }
             | Self::VariableFillet { input, .. }
             | Self::Chamfer { input, .. }

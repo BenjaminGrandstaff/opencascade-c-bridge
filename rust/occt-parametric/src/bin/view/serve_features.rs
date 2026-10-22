@@ -76,6 +76,9 @@ impl Studio {
                 | FeatureOperation::Mirror { .. }
                 | FeatureOperation::LinearPattern { .. }
                 | FeatureOperation::CircularPattern { .. }
+                | FeatureOperation::CurvePattern { .. }
+                | FeatureOperation::FillPattern { .. }
+                | FeatureOperation::TablePattern { .. }
                 | FeatureOperation::SheetMetal { .. }
                 | FeatureOperation::SheetMetalFlat { .. } => (),
                 _ => {

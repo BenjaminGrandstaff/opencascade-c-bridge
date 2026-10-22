@@ -118,7 +118,7 @@
   "request": {
     "schema": "occb-model-request-v1",
     "model": {
-      "schema_version": 183,
+      "schema_version": 184,
       "family": {
         "id": "l-bracket",
         "version": 1,

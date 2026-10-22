@@ -56,6 +56,7 @@ fn main() {
     family.features.push(FeatureDefinition {
         id: "pattern".into(),
         operation: FeatureOperation::CircularPattern {
+            skip: Vec::new(),
             input: "cutter".into(),
             origin: VectorExpr::Literal(VectorQuantity::lengths(
                 0.0,

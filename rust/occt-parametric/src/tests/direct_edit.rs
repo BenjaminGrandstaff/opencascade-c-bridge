@@ -319,6 +319,7 @@ fn removals_beyond_the_face_limit_are_refused_before_the_kernel_runs() {
     // An 11 × 10 grid of Ø2 holes: 110 walls, over the 100-face limit.
     let mut definition = family(vec![]);
     let pattern = |input: &str, step: VectorExpr, count: f64| FeatureOperation::LinearPattern {
+        skip: Vec::new(),
         input: input.into(),
         step,
         count: ScalarExpr::Literal(Quantity::scalar(count)),

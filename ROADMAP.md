@@ -12,19 +12,31 @@ tracks status and order.
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 183 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 183 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 184 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 184 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 8/8, bridge 189 + first-use integration 1 (+1 doc test), recipes 3, parametric core 75 + kernel 813 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 103 + viewer Node 477 + branch command 2 + model command 112, MCP Python 30, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 8/8, bridge 189 + first-use integration 1 (+1 doc test), recipes 3, parametric core 75 + kernel 818 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 103 + viewer Node 478 + branch command 2 + model command 113, MCP Python 30, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 29 clang-tidy warnings (28 complexity warnings and one public ABI padding warning) plus 82 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all five crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 2026-10-21: 92.81% lines overall; C++ 94.48% lines, 82.71% branches, 99.88% functions; Rust 92.39% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
-| Scale benchmarks | Current run: all 138 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
+| Scale benchmarks | Current run: all 139 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
 
 ## Done
+
+- Pattern types (schema 184, ABI 86 unchanged): `curve_pattern` spaces copies
+  by arc length along a sketch wire, either fixed or turning with the path
+  through a twist-free carried rotation. `fill_pattern` keeps grid or
+  staggered sites inside a planar face at least a margin from its edges and
+  holes; sampled tests are confirmed exactly near the boundary. `table_pattern`
+  copies by listed offsets, and `skip` leaves out copies of linear, circular
+  and curve patterns. The studio solid editor offers all three, with skip
+  lists, and the `vent-panel` example uses each. Fill sites match a
+  brute-force count at five margins. The scale gate places 9,668 fill copies,
+  1,000 tangent copies and 10,000 table copies in 11.7 s (60 s budget). See
+  [part patterns](docs/PART_PATTERNS.md#skipped-copies-curves-fills-and-tables-schema-184).
 
 - DXF import (schema 183 and ABI 86 unchanged): a kernel-free reader turns
   ASCII DXF lines, arcs, circles, ellipses, bulged polylines, clamped and

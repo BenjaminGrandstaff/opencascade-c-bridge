@@ -1,7 +1,7 @@
 // Shell, draft, direct face edit, mirror and pattern features in the solid
 // editor: the engine's hollow, draft, remove_faces, offset_faces,
-// move_faces, mirror, linear_pattern and circular_pattern operations on an
-// accepted solid. Pure state helpers plus one renderer
+// move_faces, mirror, linear_pattern, circular_pattern, curve_pattern,
+// fill_pattern and table_pattern operations on an accepted solid. Pure state helpers plus one renderer
 // that uses the editor's own select/number/button rows.
 const quantity = (value,dimension='length',unit='millimeter') => ({literal:{value,dimension,unit}});
 const vector = (values,dimension) => ({components:Object.fromEntries(['x','y','z'].map((key,i)=>[key,quantity(values[i],dimension,dimension==='length'?'millimeter':null)]))});
@@ -20,6 +20,9 @@ export const SOLID_TOOLS = {
   mirror:{name:'mirror',inPlace:false},
   linear_pattern:{name:'linear pattern',inPlace:false},
   circular_pattern:{name:'circular pattern',inPlace:false},
+  curve_pattern:{name:'curve pattern',inPlace:false},
+  fill_pattern:{name:'fill pattern',inPlace:false},
+  table_pattern:{name:'table pattern',inPlace:false},
 };
 export const isSolidTool = kind => Object.hasOwn(SOLID_TOOLS,kind);
 export const inPlaceTool = kind => SOLID_TOOLS[kind]?.inPlace===true;
@@ -68,6 +71,16 @@ export function readSolidTool(kind,body,source='') {
     if(kind==='move_faces')state.offset=vectorState(body?.offset,'length',[5,0,0]);
   }else if(kind==='mirror'){
     Object.assign(state,{origin:vectorState(body?.origin,'length',[0,0,0]),normal:vectorState(body?.normal,'scalar',[1,0,0])});
+  }else if(kind==='curve_pattern'){
+    Object.assign(state,{path:body?.path??'',count:scalarState(body?.count,q=>q.value,5),orientation:body?.orientation??'fixed'});
+  }else if(kind==='fill_pattern'){
+    Object.assign(state,{region:body?.region??'',face:structuredClone(body?.face??null),anchor:vectorState(body?.anchor,'length',[0,0,0]),
+      direction:vectorState(body?.direction,'scalar',[1,0,0]),spacing:scalarState(body?.spacing,mm,10),row:scalarState(body?.row_spacing,mm,10),
+      layout:body?.layout??'grid',margin:scalarState(body?.margin,mm,2)});
+  }else if(kind==='table_pattern'){
+    const rows=(body?.offsets??[[0,0,0],[10,0,0]].map(v=>vector(v,'length'))).map(o=>readVector(o,'length'));
+    // Offsets that are not plain entered vectors are kept as saved.
+    state.offsets=rows.every(Boolean)?{text:rows.map(r=>r.join(', ')).join('\n'),saved:null}:{text:'',saved:structuredClone(body.offsets)};
   }else if(kind==='linear_pattern'){
     const step=readVector(body?.step,'length');const spacing=step?Math.hypot(...step):10;
     Object.assign(state,{direction:step&&spacing>0?step.map(v=>v/spacing):[1,0,0],spacing:{source:body&&!step?'preserve':'literal',value:spacing,saved:body&&!step?body.step:null},
@@ -78,8 +91,19 @@ export function readSolidTool(kind,body,source='') {
       count:scalarState(body?.count,q=>q.value,6),spacing:body&&!step?.literal?'step':body?'step':'full',
       angle:scalarState(step,q=>q.dimension==='scalar'?q.value/DEGREE:NaN,60)});
   }
+  if(['linear_pattern','circular_pattern','curve_pattern'].includes(kind))state.skip=(body?.skip??[]).join(', ');
   return state;
 }
+
+/** Copy indices to skip from "1, 3, 7"; 0 is the original. */
+function skipList(text,count){
+  const items=(text??'').split(/[\s,]+/).filter(Boolean);
+  const skip=items.map(Number);
+  if(skip.some(v=>!Number.isInteger(v)||v<0))throw Error('Skip copies takes whole numbers from 0 (the original), separated by commas.');
+  if(Number.isInteger(count)&&skip.some(v=>v>=count))throw Error(`Skip copies must be below the copy count (${count}).`);
+  return [...new Set(skip)].sort((a,b)=>a-b);
+}
+const withSkip=(operation,state,count)=>{const skip=skipList(state.skip,count?.literal?.value);if(skip.length)operation.skip=skip;return operation;};
 
 const finite = (values,what) => {if(values.length!==3||!values.every(Number.isFinite))throw Error(`Enter a finite ${what}.`);return values;};
 const direction = (values,what) => {finite(values,what);const m=Math.hypot(...values);if(!(m>0))throw Error(`Enter a nonzero ${what}.`);return values.map(v=>v/m);};
@@ -124,6 +148,22 @@ export function solidToolOperation(kind,state,features) {
     return {move_faces:{input,faces,offset}};
   }
   if(kind==='mirror')return {mirror:{input,origin:keptVector(state.origin,'length','mirror plane point'),normal:keptVector(state.normal,'scalar','mirror plane normal',true)}};
+  if(kind==='table_pattern'){
+    if(state.offsets.saved)return {table_pattern:{input,offsets:structuredClone(state.offsets.saved)}};
+    const rows=state.offsets.text.split('\n').map(l=>l.trim()).filter(Boolean);
+    if(!rows.length||rows.length>10000)throw Error('Enter 1 to 10000 offsets, one "x, y, z" (mm) per line.');
+    const offsets=rows.map((row,i)=>{const v=row.split(/[\s,]+/).filter(Boolean).map(Number);if(v.length!==3||!v.every(Number.isFinite))throw Error(`Offset line ${i+1} needs three numbers: x, y, z in mm.`);return vector(v,'length');});
+    return {table_pattern:{input,offsets}};
+  }
+  if(kind==='fill_pattern'){
+    if(!features.some(f=>f.id===state.region))throw Error('Choose the region to fill: a sketch face, or a solid with a picked face.');
+    const operation={input,region:state.region,anchor:keptVector(state.anchor,'length','site point on the source'),
+      direction:keptVector(state.direction,'scalar','row direction',true),
+      spacing:scalar(state.spacing,'spacing along rows',v=>quantity(v),v=>v>0),row_spacing:scalar(state.row,'row spacing',v=>quantity(v),v=>v>0),
+      layout:state.layout,margin:scalar(state.margin,'margin from the edge (zero or more)',v=>quantity(v),v=>v>=0)};
+    if(state.face)operation.face=structuredClone(state.face);
+    return {fill_pattern:operation};
+  }
   const count=scalar(state.count,'copy count (a whole number from 2 to 10000, including the original)',v=>quantity(v,'scalar',null),v=>Number.isInteger(v)&&v>=2&&v<=10000);
   if(kind==='linear_pattern'){
     let step;
@@ -133,18 +173,22 @@ export function solidToolOperation(kind,state,features) {
       if(!(state.spacing.value>0))throw Error('Enter a positive spacing.');
       step=vector(unit.map(v=>v*state.spacing.value),'length');
     }
-    return {linear_pattern:{input,step,count}};
+    return {linear_pattern:withSkip({input,step,count},state,count)};
+  }
+  if(kind==='curve_pattern'){
+    if(!features.some(f=>f.id===state.path))throw Error('Choose the path: a sketch wire or open wire to copy along.');
+    return {curve_pattern:withSkip({input,path:state.path,count,orientation:state.orientation},state,count)};
   }
   let angle;
   if(state.spacing==='full'){
     if(!count.literal)throw Error('An even spread round a full turn needs an entered count.');
     angle=quantity(2*Math.PI/count.literal.value,'scalar',null);
   }else angle=scalar(state.angle,'angle between copies',v=>quantity(v*DEGREE,'scalar',null),v=>v!==0&&Math.abs(v)<=360);
-  return {circular_pattern:{input,origin:keptVector(state.origin,'length','axis point'),axis:keptVector(state.axis,'scalar','axis direction',true),count,angle_step_radians:angle}};
+  return {circular_pattern:withSkip({input,origin:keptVector(state.origin,'length','axis point'),axis:keptVector(state.axis,'scalar','axis direction',true),count,angle_step_radians:angle},state,count)};
 }
 
 /** The tool's rows after the editor's name row. */
-export function renderSolidTool({kind,state,features,parameters,select,number,button,content,render,pickFace,message,invalidate}) {
+export function renderSolidTool({kind,state,features,allFeatures=features,parameters,select,number,button,content,render,pickFace,message,invalidate}) {
   const note=document.createElement('p');
   note.textContent={
     hollow:'Removes the picked faces and leaves walls of the given thickness, inside or outside the original surface. Pick planar faces of the source; Preview checks every instance.',
@@ -155,6 +199,9 @@ export function renderSolidTool({kind,state,features,parameters,select,number,bu
     mirror:'Reflects the source across the plane. Choose Add material with the source as target to make a symmetric part.',
     linear_pattern:'Copies the source along the direction at the spacing; the count includes the original. Add material with the source as target to join the copies.',
     circular_pattern:'Copies the source about the axis; the count includes the original. Add material with the source as target to join the copies.',
+    curve_pattern:'Copies the source evenly along a sketch wire, from its start to its end (or evenly round a closed one). Model the source at the start of the path. Turning copies follow the path; fixed ones only move.',
+    fill_pattern:'Copies the source to the sites of a grid that lie inside a planar region, at least the margin from its edges and holes. The grid passes through the site point; rows run along the direction.',
+    table_pattern:'Copies the source by each listed offset, one "x, y, z" in mm per line. Include 0, 0, 0 to keep the original place. Cut with the copies to make uneven hole layouts.',
   }[kind];
   content.append(note);
   const solids=features.map(f=>[f.id,f.id]);
@@ -210,10 +257,40 @@ export function renderSolidTool({kind,state,features,parameters,select,number,bu
     select('Mirror plane',[['yz','YZ (normal X)'],['xz','XZ (normal Y)'],['xy','XY (normal Z)'],['custom','Custom normal']],current||'custom',value=>{if(principal[value]){state.normal={values:[...principal[value]],saved:null};}else if(state.normal.saved===null&&current)state.normal.values=[1,1,0];render();});
     vectorRows('Plane point',state.origin,' (mm)');
     if(!current)vectorRows('Plane normal',state.normal,'');
+  }else if(kind==='table_pattern'){
+    if(state.offsets.saved){const kept=document.createElement('p');kept.textContent='Offsets keep their formulas.';content.append(kept,button('Enter offsets instead',()=>{state.offsets={text:'0, 0, 0',saved:null};invalidate();render();}));}
+    else{
+      const row=document.createElement('label');row.textContent='Offsets (x, y, z in mm, one per line)';
+      const area=document.createElement('textarea');area.rows=6;area.value=state.offsets.text;area.setAttribute('aria-label','Offsets (x, y, z in mm, one per line)');
+      area.oninput=()=>{state.offsets.text=area.value;invalidate();};row.append(area);content.append(row);
+    }
+  }else if(kind==='fill_pattern'){
+    select('Region to fill',[['','Choose region'],...allFeatures.map(f=>[f.id,f.id])],state.region,value=>{if(state.region!==value)state.face=null;state.region=value;render();});
+    if(state.face){const kept=document.createElement('p');kept.textContent='Fills the picked face of the region.';content.append(kept,button('Use the region\'s only face instead',()=>{state.face=null;invalidate();render();}));}
+    if(pickFace)content.append(button('Pick the face to fill',async()=>{
+      if(!state.region)throw Error('Choose the region first.');
+      message('Click a planar face of the amber region. Escape cancels the pick.');
+      const picked=await pickFace(state.region);
+      if(!picked)return;
+      state.face=structuredClone(picked.face);invalidate();render();
+    }));
+    vectorRows('Site point on the source',state.anchor,' (mm)');
+    vectorRows('Row direction',state.direction,'');
+    for(const [label,option] of [['Spacing along rows (mm)',state.spacing],['Row spacing (mm)',state.row],['Margin from the edge (mm)',state.margin]]){
+      select(`${label.replace(' (mm)','')} source`,sources(option,'Entered length',lengths,''),option.source,value=>{option.source=value;render();});
+      number(label,option.value,value=>option.value=value).disabled=option.source!=='literal';
+    }
+    select('Layout',[['grid','Grid'],['staggered','Staggered rows']],state.layout,value=>state.layout=value);
   }else{
     select('Copy count source',sources(state.count,'Entered count',scalars,''),state.count.source,value=>{state.count.source=value;render();});
     number('Copies (including the original)',state.count.value,value=>state.count.value=value).disabled=state.count.source!=='literal';
-    if(kind==='linear_pattern'){
+    const skip=document.createElement('label');skip.textContent='Skip copies (0 is the original)';
+    const skipInput=document.createElement('input');skipInput.value=state.skip??'';skipInput.placeholder='for example 2, 5';skipInput.setAttribute('aria-label','Skip copies (0 is the original)');
+    skipInput.oninput=()=>{state.skip=skipInput.value;invalidate();};skip.append(skipInput);content.append(skip);
+    if(kind==='curve_pattern'){
+      select('Path',[['','Choose path'],...allFeatures.map(f=>[f.id,f.id])],state.path,value=>state.path=value);
+      select('Copies',[['fixed','Keep their orientation'],['tangent','Turn with the path']],state.orientation,value=>state.orientation=value);
+    }else if(kind==='linear_pattern'){
       if(state.spacing.source==='preserve'){const kept=document.createElement('p');kept.textContent='Step keeps its formula.';content.append(kept,button('Enter direction and spacing instead',()=>{state.spacing.source='literal';invalidate();render();}));}
       else{
         for(const [i,key] of ['X','Y','Z'].entries())number(`Direction ${key}`,state.direction[i],value=>state.direction[i]=value);

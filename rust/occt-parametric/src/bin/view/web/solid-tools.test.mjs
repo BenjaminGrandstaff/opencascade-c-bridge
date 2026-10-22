@@ -80,3 +80,38 @@ test('face edits delete, offset and move picked faces and refuse empty edits',()
   assert.equal(solidToolOperation('move_faces',move,features).move_faces.offset.components.y.literal.value,-4);
   move.offset.values=[0,0,0];assert.throws(()=>solidToolOperation('move_faces',move,features),/nonzero move offset/);
 });
+
+test('curve, fill and table patterns and skipped copies write the engine operations',()=>{
+  const all=[...features,{id:'path',operation:{sketch_open_wire:{sketch:{}}}},{id:'plate',operation:{sketch_face:{sketch:{}}}}];
+  // Skip lists on the existing patterns.
+  const linear=readSolidTool('linear_pattern',null,'body');linear.count.value=5;linear.skip='3, 1, 3';
+  assert.deepEqual(solidToolOperation('linear_pattern',linear,all).linear_pattern.skip,[1,3]);
+  linear.skip='';assert.equal(solidToolOperation('linear_pattern',linear,all).linear_pattern.skip,undefined);
+  linear.skip='5';assert.throws(()=>solidToolOperation('linear_pattern',linear,all),/below the copy count/);
+  linear.skip='-1';assert.throws(()=>solidToolOperation('linear_pattern',linear,all),/whole numbers/);
+  // Curve: a path, count, orientation and skips; saved ones read back.
+  const curve=readSolidTool('curve_pattern',null,'body');
+  assert.throws(()=>solidToolOperation('curve_pattern',curve,all),/Choose the path/);
+  Object.assign(curve,{path:'path',orientation:'tangent',skip:'0'});
+  const along=solidToolOperation('curve_pattern',curve,all).curve_pattern;
+  assert.deepEqual([along.path,along.orientation,along.count.literal.value,along.skip],['path','tangent',5,[0]]);
+  assert.deepEqual(solidToolOperation('curve_pattern',readSolidTool('curve_pattern',along),all).curve_pattern,along);
+  // Fill: region, grid, margin; a picked face is kept.
+  const fill=readSolidTool('fill_pattern',null,'body');
+  assert.throws(()=>solidToolOperation('fill_pattern',fill,all),/region to fill/);
+  fill.region='plate';fill.layout='staggered';fill.margin.value=3;fill.direction.values=[0,2,0];
+  const filled=solidToolOperation('fill_pattern',fill,all).fill_pattern;
+  assert.deepEqual([filled.region,filled.layout,filled.margin.literal.value,filled.spacing.literal.value],['plate','staggered',3,10]);
+  assert.equal(filled.direction.components.y.literal.value,1);
+  assert.equal(filled.face,undefined);
+  fill.face={at_extreme:{axis:'z'}};assert.deepEqual(solidToolOperation('fill_pattern',fill,all).fill_pattern.face,{at_extreme:{axis:'z'}});
+  fill.spacing.value=0;assert.throws(()=>solidToolOperation('fill_pattern',fill,all),/spacing along rows/);
+  // Table: one offset per line.
+  const table=readSolidTool('table_pattern',null,'body');
+  table.offsets.text='0, 0, 0\n7 0 0\n\n19, 3, 0';
+  const listed=solidToolOperation('table_pattern',table,all).table_pattern.offsets;
+  assert.deepEqual(listed.map(o=>['x','y','z'].map(k=>o.components[k].literal.value)),[[0,0,0],[7,0,0],[19,3,0]]);
+  assert.equal(readSolidTool('table_pattern',{input:'body',offsets:listed}).offsets.text,'0, 0, 0\n7, 0, 0\n19, 3, 0');
+  table.offsets.text='1, 2';assert.throws(()=>solidToolOperation('table_pattern',table,all),/line 1 needs three numbers/);
+  for(const kind of ['curve_pattern','fill_pattern','table_pattern'])assert.ok(isSolidTool(kind)&&!inPlaceTool(kind));
+});

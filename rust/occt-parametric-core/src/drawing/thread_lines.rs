@@ -30,6 +30,9 @@ fn moves(operation: &FeatureOperation) -> bool {
             | FeatureOperation::Scale { .. }
             | FeatureOperation::LinearPattern { .. }
             | FeatureOperation::CircularPattern { .. }
+            | FeatureOperation::CurvePattern { .. }
+            | FeatureOperation::FillPattern { .. }
+            | FeatureOperation::TablePattern { .. }
     )
 }
 

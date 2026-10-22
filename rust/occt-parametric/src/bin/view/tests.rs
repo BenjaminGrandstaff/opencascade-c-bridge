@@ -7422,6 +7422,16 @@ fn studio_shells_drafts_mirrors_and_patterns_preview_exact_solids() {
         "pushed",
     );
     close(pushed, 30000.0);
+    // Copies at listed offsets, joined to the block: one shares it, one
+    // touches it and one stands apart.
+    let listed = preview(
+        &mut studio,
+        json!([
+        {"id": "spread-table-pattern", "operation": {"table_pattern": {"input": "block", "offsets": [lengths(0.0, 0.0, 0.0), lengths(40.0, 0.0, 0.0), lengths(100.0, 0.0, 0.0)]}}},
+        {"id": "spread", "operation": {"fuse": {"left": "block", "right": "spread-table-pattern"}}}]),
+        "spread",
+    );
+    close(listed, 72000.0);
     // Previews leave the accepted model alone.
     assert_eq!(get(&mut studio, "/api/state").1, state);
 }

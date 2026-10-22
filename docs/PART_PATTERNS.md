@@ -1,4 +1,4 @@
-# Linear patterns inside a part
+# Patterns inside a part
 
 Schema 88 adds `LinearPattern { input, step, count }`, using the existing native
 translation and compound APIs. Native ABI remains 52. This creates repeated
@@ -93,6 +93,108 @@ radial copies, each within 15 seconds.
 Circular release gates passed in 0.946 seconds for 100 bolt-circle cuts and
 2.267 seconds for 10,000 radial copies, with only source/output handles retained.
 
+
+## Skipped copies, curves, fills and tables (schema 184)
+
+All patterns make an unfused compound of copies. Fuse it with the source or
+cut with it, as with linear and circular patterns.
+
+### Skipped copies
+
+`linear_pattern`, `circular_pattern` and `curve_pattern` take an optional
+`skip` list of copy indices to leave out; copy 0 is the original. Indices must
+be below the count, and at least one copy must remain.
+
+### Along a curve: `curve_pattern`
+
+```json
+{ "curve_pattern": { "input": "bolt", "path": "bolt-arc", "count": { "literal": { "value": 7, "dimension": "scalar", "unit": null } },
+                     "orientation": "fixed", "skip": [3] } }
+```
+
+`path` is a feature whose output is one edge or wire, such as a
+`sketch_open_wire` or `sketch_wire`. Model the input at the path's start:
+- On an open path, copy *i* moves to the point *i*/(count − 1) of the way
+  along by arc length, ends included.
+- On a closed path, copies divide it into count equal arcs, with none
+  doubled at the seam.
+
+`fixed` copies only move. `tangent` copies also turn with the path. Their
+rotation is carried from the start in at least 256 small steps (at least 8
+per gap), always the least turn from one tangent to the next, so copies do not
+twist about the path and a U-turn is unambiguous. A path that turns back on
+itself (a cusp) is refused. Count is 1 to 10,000.
+
+### Fill a region: `fill_pattern`
+
+```json
+{ "fill_pattern": { "input": "vent", "region": "vent-region", "anchor": { "...": "site point of the input" },
+                    "direction": { "...": "row direction" }, "spacing": { "parameter": "pitch" },
+                    "row_spacing": { "parameter": "pitch" }, "layout": "staggered",
+                    "margin": { "literal": { "value": 3, "dimension": "length", "unit": "millimeter" } } } }
+```
+
+**The region.** It is a planar face: the only face of `region` (a sketch face,
+for example), or the one an optional `face` selector picks on a solid (the
+top of a plate, say).
+
+**The grid.** It passes through `anchor` projected onto the face's plane.
+`anchor` is the point of the input that marks its site, such as a hole's
+axis. Rows run along `direction`, projected into the plane, with sites every
+`spacing`. Rows are `row_spacing` apart, along the plane normal × direction.
+`staggered` shifts every other row by half a spacing.
+
+**Which sites are kept.** A site is kept when it lies inside the face at
+least `margin` from its boundary, holes included; set the margin to the
+copy's radius plus the web you need. Copies move by site − anchor, all in
+the plane.
+
+**How sites are tested.** The boundary is sampled into segments in the plane.
+Each row is tested against its own crossings, and a spatial hash finds
+boundary segments within the margin. The sampled answer decides only sites
+clearly away from the boundary and from the margin. Sites within the
+sampling error of either are decided by OCCT's exact face classification and
+distance, so a site exactly at the margin is kept and one on the boundary is
+not.
+
+**Limits.** At most 1,000,000 grid sites are examined and 10,000 copies
+placed.
+
+### Listed offsets: `table_pattern`
+
+`offsets` is 1 to 10,000 length vectors; the input is copied by each. Include
+a zero offset to keep its own place. Use it for uneven spacing or a hand-placed
+layout.
+
+### Example, tests and scale
+
+[`vent-panel`](../tools/model/vent-panel.request.json) cuts a 160 × 100 × 3
+panel with:
+- a staggered vent field, filled into a square kept clear of a cable hole and
+  driven by `pitch`;
+- six bolt holes on an arc, with the middle of seven skipped;
+- three mounting holes at listed offsets.
+
+A command test matches its volume to a grid counted independently, at two
+pitches.
+
+Kernel tests check skipped copies and positions on open and closed paths,
+and that tangent copies turn. Fill sites are compared with a brute-force
+count from the exact rectangle-with-hole geometry, for grid and staggered
+layouts at five margins, including a margin exactly reaching the outer
+sites. Further checks cover a face selected on a solid, table offsets, and
+refused grids.
+
+The scale suite (`--pattern-types-only`, release build) runs:
+
+| Pattern | Copies | Time |
+|---|---|---|
+| fill: 1,000 mm region with a hole | 9,668 | 5.6 s |
+| curve: tangent copies round a circle | 1,000 | 0.6 s |
+| table: listed offsets | 10,000 | 5.4 s |
+
+The budget is 60 s. Most of the time is placing and validating the solids, as
+for linear patterns.
 
 ## Retained pattern ancestry
 

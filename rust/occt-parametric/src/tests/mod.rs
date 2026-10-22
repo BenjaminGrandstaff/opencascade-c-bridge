@@ -177,6 +177,7 @@ mod offsets;
 mod compounds;
 
 mod part_patterns;
+mod pattern_types;
 
 mod circular_part_patterns;
 

@@ -52,6 +52,7 @@ pub(crate) fn exact_wall_case() -> Outcome {
             let pattern = |id: &str, input: &str, step: (f64, f64, f64)| FeatureDefinition {
                 id: id.into(),
                 operation: FeatureOperation::LinearPattern {
+                    skip: Vec::new(),
                     input: input.into(),
                     step: at(step.0, step.1, step.2),
                     count: ScalarExpr::Literal(Quantity::scalar(20.0)),

@@ -199,6 +199,32 @@ pub fn collect_operation_parameters<'a>(
             collect_vector_parameters(step, names);
             collect_scalar_parameters(count, names);
         }
+        FeatureOperation::CurvePattern { count, .. } => {
+            collect_scalar_parameters(count, names);
+        }
+        FeatureOperation::FillPattern {
+            face,
+            anchor,
+            direction,
+            spacing,
+            row_spacing,
+            margin,
+            ..
+        } => {
+            if let Some(face) = face {
+                collect_face_selector_parameters(face, names);
+            }
+            collect_vector_parameters(anchor, names);
+            collect_vector_parameters(direction, names);
+            collect_scalar_parameters(spacing, names);
+            collect_scalar_parameters(row_spacing, names);
+            collect_scalar_parameters(margin, names);
+        }
+        FeatureOperation::TablePattern { offsets, .. } => {
+            for offset in offsets {
+                collect_vector_parameters(offset, names);
+            }
+        }
         FeatureOperation::Scale { center, factor, .. } => {
             collect_vector_parameters(center, names);
             collect_scalar_parameters(factor, names);

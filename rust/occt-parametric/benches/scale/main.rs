@@ -45,6 +45,7 @@ mod memory;
 mod mesh;
 mod motion;
 mod parts_list;
+mod pattern_types;
 mod persistent;
 mod pmi;
 mod primitives;
@@ -163,6 +164,9 @@ fn main() -> ExitCode {
             design_knowledge::standard_parts_case(),
         ]);
     }
+    if std::env::args().any(|arg| arg == "--pattern-types-only") {
+        return report(&[pattern_types::pattern_types_case()]);
+    }
     if std::env::args().any(|arg| arg == "--direct-edit-only") {
         return report(&[direct_edit::direct_edit_case()]);
     }
@@ -209,6 +213,7 @@ fn main() -> ExitCode {
     outcomes.push(hole_features_case());
     outcomes.push(draft::draft_features_case());
     outcomes.push(direct_edit::direct_edit_case());
+    outcomes.push(pattern_types::pattern_types_case());
     outcomes.push(ribs::rib_features_case(false));
     outcomes.push(ribs::rib_features_case(true));
     outcomes.push(ribs::open_rib_features_case());

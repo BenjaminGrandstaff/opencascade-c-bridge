@@ -252,3 +252,50 @@ fn direct_edit_example_lifts_the_top_and_moves_the_hole_by_parameter() {
         json!(["plate/moved-volume"])
     );
 }
+
+#[test]
+fn vent_panel_example_fills_curves_and_tables_its_holes() {
+    // Vent sites: a staggered grid through (14, 14) at `pitch`, inside
+    // 10..90 square at least 3 mm from its edges and 3 mm from the Ø24
+    // keep-out circle at (50, 50).
+    let vents = |pitch: f64| {
+        let mut count = 0;
+        for j in -20..40 {
+            for i in -20..40 {
+                let x = 14.0 + pitch * i as f64 + if j % 2 != 0 { pitch / 2.0 } else { 0.0 };
+                let y = 14.0 + pitch * j as f64;
+                let edge = (x - 10.0).min(90.0 - x).min(y - 10.0).min(90.0 - y);
+                if edge >= 3.0 - 1e-9 && (x - 50.0).hypot(y - 50.0) >= 15.0 - 1e-9 {
+                    count += 1;
+                }
+            }
+        }
+        count as f64
+    };
+    let pi = std::f64::consts::PI;
+    let volume = |pitch: f64| {
+        let holes = vents(pitch) * 4.0 * pi + 64.0 * pi + 6.0 * 1.6 * 1.6 * pi + 3.0 * 6.25 * pi;
+        3.0 * (160.0 * 100.0 - holes)
+    };
+    let dir = Directory::new();
+    let mut example = view_example("vent-panel");
+    example["step"] = json!(false);
+    example["preview"] = json!(false);
+    let built = invoke(&dir, example.clone(), "default").unwrap();
+    assert_eq!(built["status"], "built", "{built}");
+    let measured = built["outputs"][0]["volume_mm3"].as_f64().unwrap();
+    assert!(
+        (measured - volume(8.0)).abs() < 1e-6,
+        "{measured} vs {}",
+        volume(8.0)
+    );
+    example["edits"] = json!([{"instance":"panel","parameter":"pitch","value":ParameterValue::Scalar(Quantity::length(11.0,LengthUnit::Millimeter))}]);
+    let wider = invoke(&dir, example, "wider").unwrap();
+    let measured = wider["outputs"][0]["volume_mm3"].as_f64().unwrap();
+    assert!(
+        (measured - volume(11.0)).abs() < 1e-6,
+        "{measured} vs {}",
+        volume(11.0)
+    );
+    assert!(vents(11.0) < vents(8.0));
+}

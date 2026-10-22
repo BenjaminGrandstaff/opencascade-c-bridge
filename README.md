@@ -6,7 +6,7 @@ On top of it sits a parametric CAD engine: versioned JSON documents for
 sketches, solids, sheet metal, assemblies and drawings, a local studio for
 editing them, and an AI authoring loop (`occt-model` and its MCP server).
 
-The current C ABI version is **86** and the document schema is **183**.
+The current C ABI version is **86** and the document schema is **184**.
 
 ## Status
 
@@ -14,18 +14,22 @@ The current C ABI version is **86** and the document schema is **183**.
 |---|---|---|
 | C ABI (`src/`, `include/`) | ABI 86 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | ABI 86 | Covers the full ABI |
-| `occt-parametric-core` (kernel-free) | Schema 183 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 183 | Active development |
+| `occt-parametric-core` (kernel-free) | Schema 184 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 184 | Active development |
 | Sketch studio and viewer (`occt-view --serve`) | — | Edits the same documents; adds no capability of its own |
 
-Tests: C 8/8, bridge 189, parametric core 75, kernel 813, view command 103,
-model command 112, viewer Node 477 and MCP Python 30, all passing. The scale
+Tests: C 8/8, bridge 189, parametric core 75, kernel 818, view command 103,
+model command 113, viewer Node 478 and MCP Python 30, all passing. The scale
 benchmark suite covers geometry, document operations, sketch authoring, MCP
 and model-command publication, with enforced time budgets. Formatting and Clippy are clean across all crates. Full
 gate results and history live in [the roadmap](ROADMAP.md#current-status).
 
 Recently landed:
 
+- **Pattern types (schema 184):** copies along a curve (optionally turning
+  with it), grid or staggered fills of a planar region with an exact edge
+  margin, copies at listed offsets, and skipped copies in linear, circular
+  and curve patterns. See [part patterns](docs/PART_PATTERNS.md#skipped-copies-curves-fills-and-tables-schema-184).
 - **DXF import:** 2D outlines from ASCII DXF files (lines, arcs, circles,
   ellipses, bulged polylines, splines, block inserts) become sketches. Loops
   are sorted into boundaries, holes and regions, with units and layers
