@@ -12,12 +12,12 @@ tracks status and order.
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 184 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 184 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 185 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 185 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 8/8, bridge 189 + first-use integration 1 (+1 doc test), recipes 3, parametric core 75 + kernel 818 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 103 + viewer Node 478 + branch command 2 + model command 113, MCP Python 30, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 8/8, bridge 189 + first-use integration 1 (+1 doc test), recipes 3, parametric core 79 + kernel 818 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 104 + viewer Node 479 + branch command 2 + model command 114, MCP Python 30, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 29 clang-tidy warnings (28 complexity warnings and one public ABI padding warning) plus 82 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all five crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,22 @@ tracks status and order.
 | Scale benchmarks | Current run: all 139 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
 
 ## Done
+
+- Timeline bookmarks and branches (schema 185, ABI 86 unchanged):
+  - **Bookmarks** name a checkout and its suppressions.
+  - **Branches** keep alternative continuations after a shared feature. The
+    active one is the family's feature list; stored ones keep only their tail
+    and timeline state. Switching swaps tails, so edits before the base reach
+    every branch.
+  - **Merging** appends the features the active branch lacks, and refuses
+    with the features named when both define one differently.
+  - **Where:** one guarded `timeline` edit change for the CLI and MCP, and
+    studio Feature history controls with Undo/Redo.
+  - **Reports** show the branch, stored branches and bookmarks.
+  - **Scale:** 100 switches of a 5,000-feature tail validate in 58 ms (5 s
+    budget).
+  - See
+    [feature history](docs/FEATURE_HISTORY.md#bookmarks-and-branches-schema-185).
 
 - Pattern types (schema 184, ABI 86 unchanged): `curve_pattern` spaces copies
   by arc length along a sketch wire, either fixed or turning with the path

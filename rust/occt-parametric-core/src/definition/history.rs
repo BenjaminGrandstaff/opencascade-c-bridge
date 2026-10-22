@@ -9,7 +9,7 @@
 
 use super::*;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FeatureHistory {
     /// The feature the timeline is checked out at: features declared after it
@@ -19,10 +19,28 @@ pub struct FeatureHistory {
     /// Features turned off without being deleted, in any order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub suppressed: Vec<String>,
+    /// Named timeline states of the active branch (schema 185).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 1000))]
+    pub bookmarks: Vec<TimelineBookmark>,
+    /// The active branch's name; none is `main` (schema 185).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    /// Stored, inactive branches (schema 185).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 100))]
+    pub branches: Vec<TimelineBranch>,
 }
 
 impl FeatureHistory {
     pub fn is_empty(&self) -> bool {
+        self.builds_everything()
+            && self.bookmarks.is_empty()
+            && self.branch.is_none()
+            && self.branches.is_empty()
+    }
+    /// Whether no checkout or suppression limits the active branch.
+    pub fn builds_everything(&self) -> bool {
         self.head.is_none() && self.suppressed.is_empty()
     }
 }
@@ -92,7 +110,7 @@ impl FamilyDefinition {
     /// Every feature's state in declaration order, in O(features + inputs).
     pub fn history_states(&self) -> Result<Vec<(&str, FeatureState)>, ModelError> {
         let history = &self.history;
-        if history.is_empty() {
+        if history.builds_everything() {
             return Ok(self
                 .features
                 .iter()
@@ -430,14 +448,17 @@ mod tests {
             FeatureHistory {
                 head: Some("nope".into()),
                 suppressed: vec![],
+                ..Default::default()
             },
             FeatureHistory {
                 head: None,
                 suppressed: vec!["nope".into()],
+                ..Default::default()
             },
             FeatureHistory {
                 head: None,
                 suppressed: vec!["base".into(), "base".into()],
+                ..Default::default()
             },
         ] {
             family.history = history;

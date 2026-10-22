@@ -1,7 +1,7 @@
 {
   "schema": "occb-inspection-report-request-v1",
   "model": {
-    "schema_version": 184,
+    "schema_version": 185,
     "family": {
       "id": "dimension-layout",
       "version": 1,

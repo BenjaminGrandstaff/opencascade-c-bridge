@@ -72,6 +72,7 @@ fn document() -> ModelDocument {
 }
 fn main() {
     feature_timeline_scale();
+    timeline_branch_scale();
     let base = document();
     let mut after = base.clone();
     if let InstanceNode::Base { overrides, .. } = after
@@ -229,5 +230,44 @@ fn feature_timeline_scale() {
     }
     let elapsed = start.elapsed();
     println!("100 history state walks across 10,000 reverse-ordered features: {elapsed:?} / 5 s");
+    assert!(elapsed < Duration::from_secs(5));
+}
+
+/// Branch switches swap a 5,000-feature tail of a 10,000-feature family; each
+/// switch and its validation are linear in the features.
+fn timeline_branch_scale() {
+    let mut family = document().family;
+    let root = family.features[0].clone();
+    let mut features = vec![FeatureDefinition {
+        id: "feature-0000".into(),
+        operation: root.operation.clone(),
+    }];
+    features.extend((1..10_000).map(|i| FeatureDefinition {
+        id: format!("feature-{i:04}"),
+        operation: FeatureOperation::Translate {
+            input: format!("feature-{:04}", i - 1),
+            offset: VectorExpr::Literal(VectorQuantity::lengths(
+                1.0,
+                0.0,
+                0.0,
+                LengthUnit::Millimeter,
+            )),
+        },
+    }));
+    family.features = features;
+    family.create_branch("alt", Some("feature-4999")).unwrap();
+    for i in 0..100 {
+        family.bookmark_timeline(&format!("mark {i}")).unwrap();
+    }
+    let start = Instant::now();
+    for i in 0..100 {
+        family
+            .switch_branch(if i % 2 == 0 { "alt" } else { "main" })
+            .unwrap();
+        family.validate_timeline().unwrap();
+        assert_eq!(family.features.len(), 10_000);
+    }
+    let elapsed = start.elapsed();
+    println!("100 branch switches of a 5,000-feature tail with validation: {elapsed:?} / 5 s");
     assert!(elapsed < Duration::from_secs(5));
 }

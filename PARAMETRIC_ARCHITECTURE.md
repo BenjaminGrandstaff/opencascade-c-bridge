@@ -1666,8 +1666,9 @@ moves across regeneration, reports, guarded CLI/MCP edits and the studio (schema
 face edits that need no feature history: `remove_faces` (OCCT defeaturing),
 `offset_faces` (per-face skin offsets that keep face identity) and
 `move_faces` (removal, then a cut and a fuse at the moved place), on native
-ABI 86. See [direct editing](docs/DIRECT_EDITING.md). Next refinements include
-named timeline bookmarks and feature branches; manufacturing work should target
+ABI 86. See [direct editing](docs/DIRECT_EDITING.md). Schema 185 adds timeline bookmarks and branches (see
+[feature history](docs/FEATURE_HISTORY.md#bookmarks-and-branches-schema-185)).
+Manufacturing work should target
 remaining datum/GD&T cases and global freeform draft proofs. Existing material
 presets, drawing conventions and structured PMI are documented below. Schema 57 integrates true planar slice drawings with
 the geometry branch's schema 56 features; the

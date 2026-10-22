@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-request-v1",
   "model": {
-    "schema_version": 184,
+    "schema_version": 185,
     "family": {
       "id": "history-part",
       "version": 1,
@@ -243,6 +243,83 @@
         "suppressed": [
           "notched",
           "spare"
+        ],
+        "bookmarks": [
+          {
+            "name": "notch reverted",
+            "head": "moved",
+            "suppressed": [
+              "notched",
+              "spare"
+            ]
+          }
+        ],
+        "branches": [
+          {
+            "name": "further",
+            "base": "spare-moved",
+            "features": [
+              {
+                "id": "moved",
+                "operation": {
+                  "translate": {
+                    "input": "notched",
+                    "offset": {
+                      "literal": {
+                        "x": {
+                          "value": 4,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        },
+                        "y": {
+                          "value": 0,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        },
+                        "z": {
+                          "value": 0,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "id": "later",
+                "operation": {
+                  "translate": {
+                    "input": "moved",
+                    "offset": {
+                      "literal": {
+                        "x": {
+                          "value": 0,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        },
+                        "y": {
+                          "value": 0,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        },
+                        "z": {
+                          "value": 10,
+                          "dimension": "length",
+                          "unit": "millimeter"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ],
+            "head": "moved",
+            "suppressed": [
+              "notched",
+              "spare"
+            ]
+          }
         ]
       },
       "references": [],

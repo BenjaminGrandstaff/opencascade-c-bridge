@@ -2,12 +2,29 @@ use occt_parametric::*;
 use serde_json::{Value, json};
 
 pub fn feature_states(document: &ModelDocument) -> Value {
-    json!(std::iter::once(&document.family).chain(&document.additional_families)
-        .map(|family| json!({"family": family.id, "head": family.history.head,
-            "features": family.history_states().expect("validated history").into_iter()
-                .map(|(id, state)| { let mut value = serde_json::to_value(state).expect("feature state");
-                    value["feature"] = json!(id); value }).collect::<Vec<_>>() }))
-        .collect::<Vec<_>>())
+    json!(
+        std::iter::once(&document.family)
+            .chain(&document.additional_families)
+            .map(|family| {
+                let history = &family.history;
+                let mut value = json!({"family": family.id, "head": history.head,
+                "features": family.history_states().expect("validated history").into_iter()
+                    .map(|(id, state)| { let mut value = serde_json::to_value(state).expect("feature state");
+                        value["feature"] = json!(id); value }).collect::<Vec<_>>() });
+                // Branches and bookmarks (schema 185), when the family has any.
+                if history.branch.is_some() || !history.branches.is_empty() {
+                    value["branch"] = json!(history.branch_name());
+                    value["branches"] =
+                        json!(history.branches.iter().map(|b| &b.name).collect::<Vec<_>>());
+                }
+                if !history.bookmarks.is_empty() {
+                    value["bookmarks"] =
+                        json!(history.bookmarks.iter().map(|b| &b.name).collect::<Vec<_>>());
+                }
+                value
+            })
+            .collect::<Vec<_>>()
+    )
 }
 
 pub fn diagnostics(items: &[FeatureDiagnostic]) -> Value {

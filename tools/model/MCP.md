@@ -825,6 +825,9 @@ a successful merge.
 
 ## Feature timeline edits
 
+Schema 185 adds one `timeline` change for bookmarks and branches (bookmark,
+checkout or delete a bookmark; create, switch, merge or delete a branch); see
+[bookmarks and branches](../../docs/FEATURE_HISTORY.md#bookmarks-and-branches-schema-185).
 Schema 182 adds `checkout_feature`, `suppress_feature`, and `move_feature` changes
 in the existing `occt_edit_build` / `occt_preview_edit_build` tools. Checkout and
 suppression guard the original family history; moves guard the ordered feature

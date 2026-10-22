@@ -6,7 +6,7 @@ On top of it sits a parametric CAD engine: versioned JSON documents for
 sketches, solids, sheet metal, assemblies and drawings, a local studio for
 editing them, and an AI authoring loop (`occt-model` and its MCP server).
 
-The current C ABI version is **86** and the document schema is **184**.
+The current C ABI version is **86** and the document schema is **185**.
 
 ## Status
 
@@ -14,18 +14,23 @@ The current C ABI version is **86** and the document schema is **184**.
 |---|---|---|
 | C ABI (`src/`, `include/`) | ABI 86 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | ABI 86 | Covers the full ABI |
-| `occt-parametric-core` (kernel-free) | Schema 184 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 184 | Active development |
+| `occt-parametric-core` (kernel-free) | Schema 185 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 185 | Active development |
 | Sketch studio and viewer (`occt-view --serve`) | — | Edits the same documents; adds no capability of its own |
 
-Tests: C 8/8, bridge 189, parametric core 75, kernel 818, view command 103,
-model command 113, viewer Node 478 and MCP Python 30, all passing. The scale
+Tests: C 8/8, bridge 189, parametric core 79, kernel 818, view command 104,
+model command 114, viewer Node 479 and MCP Python 30, all passing. The scale
 benchmark suite covers geometry, document operations, sketch authoring, MCP
 and model-command publication, with enforced time budgets. Formatting and Clippy are clean across all crates. Full
 gate results and history live in [the roadmap](ROADMAP.md#current-status).
 
 Recently landed:
 
+- **Timeline bookmarks and branches (schema 185):** name timeline states
+  and check them out; keep alternative feature continuations as branches,
+  switch between them, and merge one back, with conflicts reported. Edits to
+  shared features reach every branch. Available in the studio, CLI and MCP.
+  See [feature history](docs/FEATURE_HISTORY.md#bookmarks-and-branches-schema-185).
 - **Pattern types (schema 184):** copies along a curve (optionally turning
   with it), grid or staggered fills of a planar region with an exact edge
   margin, copies at listed offsets, and skipped copies in linear, circular

@@ -10,6 +10,13 @@ impl Studio {
             Checkout,
             Suppress,
             Move,
+            Bookmark,
+            DeleteBookmark,
+            CheckoutBookmark,
+            CreateBranch,
+            SwitchBranch,
+            DeleteBranch,
+            MergeBranch,
         }
         #[derive(serde::Deserialize)]
         #[serde(deny_unknown_fields)]
@@ -26,6 +33,13 @@ impl Studio {
             after: Option<String>,
             #[serde(default)]
             suppressed: Option<bool>,
+            /// Bookmark or branch name (schema 185).
+            #[serde(default)]
+            name: Option<String>,
+            /// The feature a new branch continues after; none branches from
+            /// the start.
+            #[serde(default)]
+            base: Option<String>,
         }
         let request: Request = serde_json::from_slice(body)
             .map_err(|e| format!("invalid feature history edit: {e}"))?;
@@ -43,8 +57,33 @@ impl Studio {
         }
         let mut document = self.document.clone();
         let family = &mut document.family;
-        let checkout = matches!(request.action, Action::Checkout);
+        // Checkout-like edits show the last available output.
+        let checkout = matches!(
+            request.action,
+            Action::Checkout | Action::CheckoutBookmark | Action::SwitchBranch
+        );
+        let name = || request.name.as_deref().ok_or("Name is required.");
         match request.action {
+            Action::Bookmark => family.bookmark_timeline(name()?),
+            Action::DeleteBookmark => family.delete_bookmark(name()?),
+            Action::CheckoutBookmark => family.checkout_bookmark(name()?),
+            Action::CreateBranch => family.create_branch(name()?, request.base.as_deref()),
+            Action::SwitchBranch => family.switch_branch(name()?),
+            Action::DeleteBranch => family.delete_branch(name()?),
+            Action::MergeBranch => match family.merge_branch(name()?).map_err(|e| e.to_string())? {
+                Ok(_) => Ok(()),
+                Err(conflicts) => {
+                    return Err(format!(
+                        "Branch '{}' defines {} differently; resolve them on one branch first.",
+                        name()?,
+                        conflicts
+                            .iter()
+                            .map(|c| format!("'{}'", c.feature))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
+                }
+            },
             Action::Checkout => family.checkout_feature(request.head),
             Action::Suppress => family.set_feature_suppressed(
                 request.feature.as_deref().ok_or("Feature is required.")?,
