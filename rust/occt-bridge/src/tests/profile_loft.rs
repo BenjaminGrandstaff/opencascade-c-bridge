@@ -834,3 +834,116 @@ fn profile_partition_accepts_exactly_128_result_edges_without_partial_failure_st
     }
     assert_eq!(s.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn translated_periodic_alignment_keeps_seams_tangents_and_direct_edge_history() {
+    let s = Session::new().unwrap();
+    {
+        for minor in [2., 5.] {
+            let base = s
+                .create_ellipse_wire_axes(
+                    Vec3::new(0., 0., 0.),
+                    Vec3::new(0., 0., 1.),
+                    Vec3::new(1., 0., 0.),
+                    5.,
+                    minor,
+                )
+                .unwrap();
+            let source = s.translate(&base, Vec3::new(100., -20., 7.)).unwrap();
+            let source_edge = s.subshape(&source, ShapeType::Edge, 0).unwrap();
+            let before = s.curve_end_data(&source_edge).unwrap();
+            for angle in [0.4_f64, 1.8, 3.4, 5.5] {
+                let anchor = Vec3::new(100. + 5. * angle.cos(), -20. + minor * angle.sin(), 7.);
+                for reverse in [false, true] {
+                    let aligned = s
+                        .align_profile_wire(&source, Some(anchor), reverse)
+                        .unwrap();
+                    assert_eq!(
+                        s.history_count(&aligned, &source, HistoryRelation::Modified)
+                            .unwrap(),
+                        1
+                    );
+                    assert_eq!(
+                        s.history_count(&aligned, &source_edge, HistoryRelation::Modified)
+                            .unwrap(),
+                        1
+                    );
+                    assert_eq!(
+                        s.history_count(&aligned, &source_edge, HistoryRelation::Generated)
+                            .unwrap(),
+                        0
+                    );
+                    assert!(!s.history_is_deleted(&aligned, &source_edge).unwrap());
+                    let edge = s
+                        .history(&aligned, &source_edge, HistoryRelation::Modified, 0)
+                        .unwrap();
+                    let (start, end, tangent, _) = s.curve_end_data(&edge).unwrap();
+                    for point in [start, end] {
+                        assert!((point.x - anchor.x).abs() < 1e-7);
+                        assert!((point.y - anchor.y).abs() < 1e-7);
+                        assert!((point.z - anchor.z).abs() < 1e-7);
+                    }
+                    let dot = tangent.x * (-5. * angle.sin()) + tangent.y * minor * angle.cos();
+                    assert!(if reverse { dot < 0. } else { dot > 0. });
+                    let face = s.create_face_from_wire(&aligned).unwrap();
+                    assert!(
+                        (s.surface_area(&face).unwrap() - std::f64::consts::PI * 5. * minor).abs()
+                            < 1e-7
+                    );
+                }
+            }
+            assert_eq!(s.curve_end_data(&source_edge).unwrap(), before);
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn alignment_preserves_edge_ancestry_at_the_boundary_size_limit() {
+    let s = Session::new().unwrap();
+    {
+        for count in [128, 129] {
+            let points: Vec<_> = (0..count)
+                .map(|i| {
+                    let angle = std::f64::consts::TAU * i as f64 / count as f64;
+                    Vec3::new(10. * angle.cos(), 10. * angle.sin(), 0.)
+                })
+                .collect();
+            let source = s.create_polyline_wire(&points, true).unwrap();
+            for reverse in [false, true] {
+                let before = s.shape_count().unwrap();
+                let result = s.align_profile_wire(&source, Some(points[63]), reverse);
+                if count == 129 {
+                    assert!(result.is_err());
+                    assert_eq!(s.shape_count().unwrap(), before);
+                    continue;
+                }
+                let aligned = result.unwrap();
+                assert_eq!(s.subshape_count(&aligned, ShapeType::Edge).unwrap(), count);
+                let first = s.subshape(&aligned, ShapeType::Edge, 0).unwrap();
+                let (start, _, _, _) = s.curve_end_data(&first).unwrap();
+                assert!((start.x - points[63].x).abs() < 1e-7);
+                assert!((start.y - points[63].y).abs() < 1e-7);
+                for edge in s.subshapes(&source, ShapeType::Edge).unwrap() {
+                    assert_eq!(
+                        s.history_count(&aligned, &edge, HistoryRelation::Modified)
+                            .unwrap(),
+                        1
+                    );
+                    assert!(!s.history_is_deleted(&aligned, &edge).unwrap());
+                    let mapped = s
+                        .history(&aligned, &edge, HistoryRelation::Modified, 0)
+                        .unwrap();
+                    assert_eq!(
+                        s.exact_bounds(&mapped).unwrap(),
+                        s.exact_bounds(&edge).unwrap()
+                    );
+                    let (a, b, _, _) = s.curve_end_data(&edge).unwrap();
+                    let (c, d, _, _) = s.curve_end_data(&mapped).unwrap();
+                    assert_eq!((c, d), if reverse { (b, a) } else { (a, b) });
+                }
+            }
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}

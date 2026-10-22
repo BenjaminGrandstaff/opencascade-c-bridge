@@ -17,11 +17,104 @@
 
 using namespace occt_bridge_internal;
 
-occt_bridge_status_t occt_bridge_align_profile_wire(
-    occt_bridge_session_t* session, occt_bridge_shape_id_t input,
-    const occt_bridge_vec3_t* start_point, int reverse,
-    occt_bridge_shape_id_t* out_shape) {
-    return guarded(session, [&] {
+namespace {
+    struct CopiedBoundary {
+        std::vector<TopoDS_Edge> original;
+        std::vector<TopoDS_Edge> copied;
+        std::vector<TopoDS_Edge> edges;
+    };
+
+    occt_bridge_status_t copy_boundary(occt_bridge_session_t* session, const TopoDS_Shape& source,
+        int reverse, CopiedBoundary& boundary) {
+        // Face construction may add pcurves: work only on copied topology/geometry.
+        BRepBuilderAPI_Copy copy(source);
+        for (BRepTools_WireExplorer it(TopoDS::Wire(source)); it.More(); it.Next()) {
+            boundary.original.push_back(it.Current());
+            boundary.copied.push_back(TopoDS::Edge(copy.ModifiedShape(it.Current())));
+            boundary.copied.back().Orientation(it.Current().Orientation());
+        }
+        if (boundary.original.empty() || boundary.original.size() > 128)
+            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "alignment supports 1-128 boundary edges");
+        boundary.edges = boundary.copied;
+        if (reverse) {
+            std::reverse(boundary.edges.begin(), boundary.edges.end());
+            for (auto& edge : boundary.edges) edge.Reverse();
+        }
+        return OCCT_BRIDGE_OK;
+    }
+
+    occt_bridge_status_t move_periodic_seam(occt_bridge_session_t* session,
+        TopoDS_Edge& edge, const gp_Pnt& anchor) {
+        Standard_Real first, last;
+        TopLoc_Location location;
+        auto base = BRep_Tool::Curve(edge, location, first, last);
+        if (base.IsNull() || !base->IsPeriodic() ||
+            std::abs(last - first - base->Period()) > 1e-8 * std::max(1.0, base->Period()))
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "continuous seam anchors require one full periodic boundary edge");
+        auto curve = Handle(Geom_Curve)::DownCast(base->Transformed(location.Transformation()));
+        GeomAPI_ProjectPointOnCurve projection(anchor, curve, first, last);
+        if (projection.NbPoints() == 0 || projection.LowerDistance() > 1e-6)
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "alignment start point is not on the boundary");
+        const double parameter = projection.LowerDistanceParameter();
+        BRepBuilderAPI_MakeEdge builder(curve, parameter, parameter + curve->Period());
+        if (!builder.IsDone())
+            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "periodic seam construction failed");
+        const auto orientation = edge.Orientation();
+        edge = builder.Edge();
+        edge.Orientation(orientation);
+        return OCCT_BRIDGE_OK;
+    }
+
+    occt_bridge_status_t anchor_boundary(occt_bridge_session_t* session,
+        std::vector<TopoDS_Edge>& edges, const gp_Pnt& anchor) {
+        auto selected = edges.end();
+        size_t matches = 0;
+        for (auto edge = edges.begin(); edge != edges.end(); ++edge) {
+            const auto vertex = TopExp::FirstVertex(*edge, Standard_True);
+            if (!vertex.IsNull() && BRep_Tool::Pnt(vertex).Distance(anchor) <= 1e-6) {
+                selected = edge;
+                ++matches;
+            }
+        }
+        if (matches > 1)
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "alignment start point matches multiple boundary vertices");
+        if (matches == 1) {
+            std::rotate(edges.begin(), selected, edges.end());
+        } else if (edges.size() == 1) {
+            return move_periodic_seam(session, edges[0], anchor);
+        } else {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "alignment start point must match an existing boundary vertex");
+        }
+        return OCCT_BRIDGE_OK;
+    }
+
+    occt_bridge_status_t build_aligned_wire(occt_bridge_session_t* session,
+        const std::vector<TopoDS_Edge>& edges, TopoDS_Wire& wire) {
+        BRep_Builder builder;
+        builder.MakeWire(wire);
+        for (const auto& edge : edges) builder.Add(wire, edge);
+        wire.Closed(Standard_True);
+        BRepBuilderAPI_MakeFace face(wire, Standard_True);
+        if (!ShapeValidator(wire).IsValid() || !face.IsDone() || !ShapeValidator(face.Face()).IsValid())
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "aligned profile is not a valid closed planar boundary");
+        return OCCT_BRIDGE_OK;
+    }
+
+    std::vector<occt_bridge_history_entry> alignment_history(const TopoDS_Shape& source,
+        const TopoDS_Wire& wire, const CopiedBoundary& boundary) {
+        std::vector<occt_bridge_history_entry> history;
+        history.push_back({source, {}, {wire}, false});
+        for (size_t i = 0; i < boundary.original.size(); ++i) {
+            std::vector<TopoDS_Shape> mapped;
+            for (const auto& edge : boundary.edges) if (boundary.copied[i].IsSame(edge)) mapped.push_back(edge);
+            if (boundary.original.size() == 1 && mapped.empty()) mapped.push_back(boundary.edges[0]);
+            history.push_back({boundary.original[i], {}, mapped, mapped.empty()});
+        }
+        return history;
+    }
+
+    occt_bridge_status_t align_profile_wire(occt_bridge_session_t* session, occt_bridge_shape_id_t input,
+        const occt_bridge_vec3_t* start_point, int reverse, occt_bridge_shape_id_t* out_shape) {
         if (!out_shape) return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
         *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
         if ((reverse != 0 && reverse != 1) || (start_point &&
@@ -31,74 +124,23 @@ occt_bridge_status_t occt_bridge_align_profile_wire(
         if (!source) return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "alignment profile was not found");
         if (source->ShapeType() != TopAbs_WIRE || !BRep_Tool::IsClosed(*source) || !ShapeValidator(*source).IsValid())
             return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "alignment requires one valid closed wire");
-        // Face construction may add pcurves: work only on copied topology/geometry.
-        BRepBuilderAPI_Copy copy(*source);
-        std::vector<TopoDS_Edge> original, copied, edges;
-        for (BRepTools_WireExplorer it(TopoDS::Wire(*source)); it.More(); it.Next()) {
-            original.push_back(it.Current());
-            copied.push_back(TopoDS::Edge(copy.ModifiedShape(it.Current())));
-            copied.back().Orientation(it.Current().Orientation());
-        }
-        if (original.empty() || original.size() > 128)
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "alignment supports 1-128 boundary edges");
-        edges = copied;
-        if (reverse) {
-            std::reverse(edges.begin(), edges.end());
-            for (auto& edge : edges) edge.Reverse();
-        }
+        CopiedBoundary boundary;
+        const auto copy_status = copy_boundary(session, *source, reverse, boundary);
+        if (copy_status != OCCT_BRIDGE_OK) return copy_status;
         if (start_point) {
-            const gp_Pnt anchor(start_point->x, start_point->y, start_point->z);
-            auto selected = edges.end();
-            size_t matches = 0;
-            for (auto edge = edges.begin(); edge != edges.end(); ++edge) {
-                const auto vertex = TopExp::FirstVertex(*edge, Standard_True);
-                if (!vertex.IsNull() && BRep_Tool::Pnt(vertex).Distance(anchor) <= 1e-6) {
-                    selected = edge;
-                    ++matches;
-                }
-            }
-            if (matches > 1)
-                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "alignment start point matches multiple boundary vertices");
-            if (matches == 1) {
-                std::rotate(edges.begin(), selected, edges.end());
-            } else if (edges.size() == 1) {
-                Standard_Real first, last;
-                TopLoc_Location location;
-                auto base = BRep_Tool::Curve(edges[0], location, first, last);
-                if (base.IsNull() || !base->IsPeriodic() ||
-                    std::abs(last - first - base->Period()) > 1e-8 * std::max(1.0, base->Period()))
-                    return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "continuous seam anchors require one full periodic boundary edge");
-                auto curve = Handle(Geom_Curve)::DownCast(base->Transformed(location.Transformation()));
-                GeomAPI_ProjectPointOnCurve projection(anchor, curve, first, last);
-                if (projection.NbPoints() == 0 || projection.LowerDistance() > 1e-6)
-                    return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "alignment start point is not on the boundary");
-                const double parameter = projection.LowerDistanceParameter();
-                BRepBuilderAPI_MakeEdge builder(curve, parameter, parameter + curve->Period());
-                if (!builder.IsDone())
-                    return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "periodic seam construction failed");
-                const auto orientation = edges[0].Orientation();
-                edges[0] = builder.Edge();
-                edges[0].Orientation(orientation);
-            } else {
-                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "alignment start point must match an existing boundary vertex");
-            }
+            const auto status = anchor_boundary(session, boundary.edges, to_point(*start_point));
+            if (status != OCCT_BRIDGE_OK) return status;
         }
         TopoDS_Wire wire;
-        BRep_Builder builder;
-        builder.MakeWire(wire);
-        for (const auto& edge : edges) builder.Add(wire, edge);
-        wire.Closed(Standard_True);
-        BRepBuilderAPI_MakeFace face(wire, Standard_True);
-        if (!ShapeValidator(wire).IsValid() || !face.IsDone() || !ShapeValidator(face.Face()).IsValid())
-            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "aligned profile is not a valid closed planar boundary");
-        std::vector<occt_bridge_history_entry> history;
-        history.push_back({*source, {}, {wire}, false});
-        for (size_t i = 0; i < original.size(); ++i) {
-            std::vector<TopoDS_Shape> mapped;
-            for (const auto& edge : edges) if (copied[i].IsSame(edge)) mapped.push_back(edge);
-            if (original.size() == 1 && mapped.empty()) mapped.push_back(edges[0]);
-            history.push_back({original[i], {}, mapped, mapped.empty()});
-        }
-        return store_shape_with_entries(session, wire, out_shape, std::move(history));
-    });
+        const auto status = build_aligned_wire(session, boundary.edges, wire);
+        if (status != OCCT_BRIDGE_OK) return status;
+        return store_shape_with_entries(session, wire, out_shape, alignment_history(*source, wire, boundary));
+    }
+}
+
+occt_bridge_status_t occt_bridge_align_profile_wire(
+    occt_bridge_session_t* session, occt_bridge_shape_id_t input,
+    const occt_bridge_vec3_t* start_point, int reverse,
+    occt_bridge_shape_id_t* out_shape) {
+    return guarded(session, [&] { return align_profile_wire(session, input, start_point, reverse, out_shape); });
 }
