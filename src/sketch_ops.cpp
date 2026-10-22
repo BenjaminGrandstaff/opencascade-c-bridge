@@ -369,6 +369,151 @@ namespace {
         return store_shape(s,result,out);
     }
 
+    occt_bridge_status_t offset_plane(occt_bridge_session_t* s, const TopoDS_Wire& wire,
+        const gp_Vec& n, gp_Pln& plane) {
+        BRepTools_WireExplorer first_edge(wire);
+        if (!first_edge.More()) {
+            return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "offset wire is empty");
+        }
+        double first, last;
+        auto curve = BRep_Tool::Curve(first_edge.Current(), first, last);
+        if (curve.IsNull()) {
+            return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "offset curve has no geometry");
+        }
+        plane = gp_Pln(curve->Value(first), gp_Dir(n));
+        for (TopExp_Explorer edges(wire, TopAbs_EDGE); edges.More(); edges.Next()) {
+            double a, b;
+            auto c = BRep_Tool::Curve(TopoDS::Edge(edges.Current()), a, b);
+            if (c.IsNull()) {
+                return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "offset edge has no curve");
+            }
+            for (int i = 0; i <= 8; ++i) {
+                if (plane.Distance(c->Value(a + (b-a) * i / 8.0)) > Precision::Confusion()) {
+                    return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "offset wire is not in its plane");
+                }
+            }
+        }
+        return OCCT_BRIDGE_OK;
+    }
+
+    bool circular_offset_boundary(const TopoDS_Edge& edge, gp_Circ& circle) {
+        BRepAdaptor_Curve analytic(edge);
+        const bool is_circle = analytic.GetType() == GeomAbs_Circle;
+        const bool circular_ellipse = analytic.GetType() == GeomAbs_Ellipse
+            && analytic.Ellipse().MajorRadius() == analytic.Ellipse().MinorRadius();
+        if (!is_circle && !circular_ellipse) return false;
+        circle = is_circle ? analytic.Circle()
+            : gp_Circ(analytic.Ellipse().Position(), analytic.Ellipse().MajorRadius());
+        return true;
+    }
+
+    occt_bridge_status_t offset_circle(occt_bridge_session_t* s, const TopoDS_Edge& source,
+        gp_Circ& circle, double distance, occt_bridge_shape_id_t* out) {
+        const double radius = circle.Radius() + distance;
+        if (radius <= Precision::Confusion())
+            return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "circular offset collapses its boundary");
+        circle.SetRadius(radius);
+        auto edge = BRepBuilderAPI_MakeEdge(circle).Edge();
+        if (source.Orientation() == TopAbs_REVERSED) edge.Reverse();
+        return store_shape(s, BRepBuilderAPI_MakeWire(edge).Wire(), out);
+    }
+
+    occt_bridge_status_t offset_open_curve(occt_bridge_session_t* s, const TopoDS_Edge& edge,
+        const gp_Vec& normal, double distance, occt_bridge_shape_id_t* out) {
+        double first, last;
+        const auto source = BRep_Tool::Curve(edge, first, last);
+        const bool reversed = edge.Orientation() == TopAbs_REVERSED;
+        Handle(Geom_Curve) parallel = new Geom_OffsetCurve(source, reversed ? -distance : distance, gp_Dir(normal));
+        return store_curve(s, parallel, first, last, reversed, out);
+    }
+
+    occt_bridge_status_t offset_profile(occt_bridge_session_t* s, const TopoDS_Wire& wire,
+        const gp_Pln& plane, double distance, GeomAbs_JoinType join, bool closed, TopoDS_Shape& edited) {
+        if (closed) {
+            BRepOffsetAPI_MakeOffset offset(wire, join, Standard_False);
+            offset.Perform(distance);
+            if (!offset.IsDone()) {
+                return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "closed profile offset failed");
+            }
+            edited = offset.Shape();
+        } else {
+            auto spine = wire;
+            // The planar face's wire is a left-region boundary. Reverse it
+            // for a right-side offset, and restore output traversal below.
+            if (distance > 0.0) {
+                spine.Reverse();
+            }
+            BRepBuilderAPI_MakeFace support(plane, spine, Standard_False);
+            if (!support.IsDone()) {
+                return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "offset support face failed");
+            }
+            BRepFill_OffsetWire offset(support.Face(), join, Standard_True);
+            offset.Perform(std::abs(distance));
+            if (!offset.IsDone()) {
+                return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "open profile offset failed");
+            }
+            edited = offset.Shape();
+        }
+        return OCCT_BRIDGE_OK;
+    }
+
+    bool single_offset_wire(const TopoDS_Shape& edited, TopoDS_Wire& result) {
+        if (edited.ShapeType() == TopAbs_WIRE) {
+            result = TopoDS::Wire(edited);
+            return true;
+        }
+        size_t wires = 0;
+        for (TopExp_Explorer it(edited, TopAbs_WIRE); it.More(); it.Next()) {
+            result = TopoDS::Wire(it.Current());
+            ++wires;
+        }
+        return wires == 1;
+    }
+
+    occt_bridge_status_t offset_wire(occt_bridge_session_t* s, occt_bridge_shape_id_t id,
+        occt_bridge_vec3_t normal, double distance, int join, occt_bridge_shape_id_t* out) {
+        if (out == nullptr) {
+            return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+        }
+        *out = OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if (!finite(normal) || !std::isfinite(distance) || std::abs(distance) <= Precision::Confusion() || (join != 0 && join != 1)) {
+            return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid planar offset inputs");
+        }
+        const auto* shape = find_shape(s, id);
+        if (shape == nullptr) {
+            return fail(s, OCCT_BRIDGE_SHAPE_NOT_FOUND, "offset wire was not found");
+        }
+        if (shape->ShapeType() != TopAbs_WIRE) {
+            return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "offset requires a wire");
+        }
+        gp_Vec n(normal.x, normal.y, normal.z);
+        if (n.Magnitude() <= Precision::Confusion()) {
+            return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "offset normal is zero");
+        }
+        const auto wire = TopoDS::Wire(*shape);
+        gp_Pln plane;
+        const auto plane_status = offset_plane(s, wire, n, plane);
+        if (plane_status != OCCT_BRIDGE_OK) return plane_status;
+        const bool closed = BRep_Tool::IsClosed(*shape);
+        const auto only = single_edge(*shape);
+        // OCCT 7.9's medial-axis construction can crash on a full equal-radius
+        // ellipse. Exact circular offsets expand positive distances regardless
+        // of traversal, including face hole wires.
+        gp_Circ circle;
+        if (closed && !only.IsNull() && circular_offset_boundary(only, circle))
+            return offset_circle(s, only, circle, distance, out);
+        if (!closed && !only.IsNull()) return offset_open_curve(s, only, n, distance, out);
+        TopoDS_Shape edited;
+        const auto status = offset_profile(s, wire, plane, distance,
+            join == 0 ? GeomAbs_Arc : GeomAbs_Intersection, closed, edited);
+        if (status != OCCT_BRIDGE_OK) return status;
+        TopoDS_Wire result;
+        if (!single_offset_wire(edited, result))
+            return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "offset must produce exactly one connected profile");
+        if (!closed && distance > 0.0) result.Reverse();
+        return store_shape(s, result, out);
+    }
+
 }
 extern "C" {
     occt_bridge_status_t occt_bridge_fillet_wire_corner(occt_bridge_session_t* s, occt_bridge_shape_id_t id, occt_bridge_vec3_t point, double radius, occt_bridge_shape_id_t* out) {
@@ -520,123 +665,8 @@ extern "C" {
             return store_shape(s,builder.Wire(),out);
         });
     }
-    occt_bridge_status_t occt_bridge_offset_wire( occt_bridge_session_t* s, occt_bridge_shape_id_t id, occt_bridge_vec3_t normal, double distance, int join, occt_bridge_shape_id_t* out) {
-        return guarded(s, [&] {
-            if (out == nullptr) {
-                return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
-            }
-            *out = OCCT_BRIDGE_INVALID_SHAPE_ID;
-            if (!finite(normal) || !std::isfinite(distance) || std::abs(distance) <= Precision::Confusion() || (join != 0 && join != 1)) {
-                return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid planar offset inputs");
-            }
-            const auto* shape = find_shape(s, id);
-            if (shape == nullptr) {
-                return fail(s, OCCT_BRIDGE_SHAPE_NOT_FOUND, "offset wire was not found");
-            }
-            if (shape->ShapeType() != TopAbs_WIRE) {
-                return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "offset requires a wire");
-            }
-            gp_Vec n(normal.x, normal.y, normal.z);
-            if (n.Magnitude() <= Precision::Confusion()) {
-                return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "offset normal is zero");
-            }
-            BRepTools_WireExplorer first_edge(TopoDS::Wire(*shape));
-            if (!first_edge.More()) {
-                return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "offset wire is empty");
-            }
-            double first, last;
-            auto curve = BRep_Tool::Curve(first_edge.Current(), first, last);
-            if (curve.IsNull()) {
-                return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "offset curve has no geometry");
-            }
-            const gp_Pln plane(curve->Value(first), gp_Dir(n));
-            for (TopExp_Explorer edges(*shape, TopAbs_EDGE); edges.More(); edges.Next()) {
-                double a, b;
-                auto c = BRep_Tool::Curve(TopoDS::Edge(edges.Current()), a, b);
-                if (c.IsNull()) {
-                    return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "offset edge has no curve");
-                }
-                for (int i = 0; i <= 8; ++i) {
-                    if (plane.Distance(c->Value(a + (b-a) * i / 8.0)) > Precision::Confusion()) {
-                        return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "offset wire is not in its plane");
-                    }
-                }
-            }
-            const bool closed = BRep_Tool::IsClosed(*shape);
-            const auto only = single_edge(*shape);
-            // OCCT 7.9's general medial-axis offset can crash on a full
-            // equal-radius ellipse. Circular offsets are exact and need no
-            // medial-axis construction; positive distance expands the loop
-            // regardless of its traversal (including face hole wires).
-            if (closed && !only.IsNull()) {
-                BRepAdaptor_Curve analytic(only);
-                const bool is_circle = analytic.GetType() == GeomAbs_Circle;
-                const bool circular_ellipse = analytic.GetType() == GeomAbs_Ellipse
-                    && analytic.Ellipse().MajorRadius() == analytic.Ellipse().MinorRadius();
-                if (is_circle || circular_ellipse) {
-                    gp_Circ circle = is_circle ? analytic.Circle()
-                        : gp_Circ(analytic.Ellipse().Position(), analytic.Ellipse().MajorRadius());
-                    const double radius = circle.Radius() + distance;
-                    if (radius <= Precision::Confusion()) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "circular offset collapses its boundary");
-                    circle.SetRadius(radius);
-                    auto edge = BRepBuilderAPI_MakeEdge(circle).Edge();
-                    if (only.Orientation() == TopAbs_REVERSED) edge.Reverse();
-                    return store_shape(s, BRepBuilderAPI_MakeWire(edge).Wire(), out);
-                }
-            }
-            if (!closed && !only.IsNull()) {
-                double a, b;
-                auto source = BRep_Tool::Curve(only, a, b);
-                const bool reversed = only.Orientation() == TopAbs_REVERSED;
-                Handle(Geom_Curve) parallel = new Geom_OffsetCurve( source, reversed ? -distance : distance, gp_Dir(n));
-                return store_curve(s, parallel, a, b, reversed, out);
-            }
-            const auto join_type = join == 0 ? GeomAbs_Arc : GeomAbs_Intersection;
-            TopoDS_Shape edited;
-            if (closed) {
-                BRepOffsetAPI_MakeOffset offset(TopoDS::Wire(*shape), join_type, Standard_False);
-                offset.Perform(distance);
-                if (!offset.IsDone()) {
-                    return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "closed profile offset failed");
-                }
-                edited = offset.Shape();
-            } else {
-                auto spine = TopoDS::Wire(*shape);
-                // The planar face's wire is a left-region boundary. Reverse it
-                // for a right-side offset, and restore output traversal below.
-                if (distance > 0.0) {
-                    spine.Reverse();
-                }
-                BRepBuilderAPI_MakeFace support(plane, spine, Standard_False);
-                if (!support.IsDone()) {
-                    return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "offset support face failed");
-                }
-                BRepFill_OffsetWire offset(support.Face(), join_type, Standard_True);
-                offset.Perform(std::abs(distance));
-                if (!offset.IsDone()) {
-                    return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "open profile offset failed");
-                }
-                edited = offset.Shape();
-            }
-            TopoDS_Wire result;
-            size_t wires = 0;
-            if (edited.ShapeType() == TopAbs_WIRE) {
-                result = TopoDS::Wire(edited);
-                wires = 1;
-            } else {
-                for (TopExp_Explorer it(edited, TopAbs_WIRE); it.More(); it.Next()) {
-                    result = TopoDS::Wire(it.Current());
-                    ++wires;
-                }
-            }
-            if (wires != 1) {
-                return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "offset must produce exactly one connected profile");
-            }
-            if (!closed && distance > 0.0) {
-                result.Reverse();
-            }
-            return store_shape(s, result, out);
-        });
+    occt_bridge_status_t occt_bridge_offset_wire(occt_bridge_session_t* s, occt_bridge_shape_id_t id, occt_bridge_vec3_t normal, double distance, int join, occt_bridge_shape_id_t* out) {
+        return guarded(s, [&] { return offset_wire(s, id, normal, distance, join, out); });
     }
     occt_bridge_status_t occt_bridge_curve_closest_fraction(
         occt_bridge_session_t* s, occt_bridge_shape_id_t id, occt_bridge_vec3_t hint,

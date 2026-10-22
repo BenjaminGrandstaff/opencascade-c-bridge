@@ -827,3 +827,91 @@ fn spline_loop_chamfers_preserve_asymmetric_distances_when_reversed() {
     }
     assert_eq!(s.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn circular_offsets_preserve_radius_and_orientation_across_traversals() {
+    let s = Session::new().unwrap();
+    let center = Vec3::new(12., -7., 3.);
+    let normal = Vec3::new(0., 0., 1.);
+    {
+        let circle = s.create_circle_wire(center, normal, 5.).unwrap();
+        let ellipse = s
+            .create_ellipse_wire_axes(center, normal, Vec3::new(1., 0., 0.), 5., 5.)
+            .unwrap();
+        for source in [&circle, &ellipse] {
+            for reverse in [false, true] {
+                let input = s.align_profile_wire(source, None, reverse).unwrap();
+                for normal in [normal, Vec3::new(0., 0., -1.)] {
+                    for intersection in [false, true] {
+                        for distance in [-2., 2.] {
+                            let edited = s
+                                .offset_wire(&input, normal, distance, intersection)
+                                .unwrap();
+                            let bounds = s.exact_bounds(&edited).unwrap();
+                            let radius = 5. + distance;
+                            assert!((bounds.min.x - (center.x - radius)).abs() < 1e-7);
+                            assert!((bounds.max.y - (center.y + radius)).abs() < 1e-7);
+                            assert!(s.wire_is_closed(&edited).unwrap());
+                            let (_, _, input_tangent, _) = s.curve_end_data(&input).unwrap();
+                            let (_, _, tangent, _) = s.curve_end_data(&edited).unwrap();
+                            assert!(input_tangent.x * tangent.x + input_tangent.y * tangent.y > 0.);
+                        }
+                    }
+                }
+                let count = s.shape_count().unwrap();
+                assert!(s.offset_wire(&input, normal, -5., false).is_err());
+                assert_eq!(s.shape_count().unwrap(), count);
+                assert!((s.exact_bounds(&input).unwrap().max.x - 17.).abs() < 1e-7);
+            }
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn open_offsets_follow_traversal_normal_and_join_style() {
+    let s = Session::new().unwrap();
+    let p = |x, y| Vec3::new(x, y, 0.);
+    {
+        for points in [
+            vec![p(0., 0.), p(10., 0.)],
+            vec![p(0., 0.), p(10., 0.), p(10., 10.)],
+        ] {
+            for reverse in [false, true] {
+                let mut points = points.clone();
+                if reverse {
+                    points.reverse();
+                }
+                let input = s.create_polyline_wire(&points, false).unwrap();
+                for nz in [-1., 1.] {
+                    for distance in [-1., 1.] {
+                        for intersection in [false, true] {
+                            let edited = s
+                                .offset_wire(&input, Vec3::new(0., 0., nz), distance, intersection)
+                                .unwrap();
+                            let nearest = s.curve_closest_point(&edited, p(5., 0.)).unwrap();
+                            let expected_y = if reverse {
+                                nz * distance
+                            } else {
+                                -nz * distance
+                            };
+                            assert!((nearest.y - expected_y).abs() < 1e-7);
+                            assert!(!s.wire_is_closed(&edited).unwrap());
+                            let expected_edges =
+                                if points.len() == 3 && expected_y < 0. && !intersection {
+                                    3
+                                } else {
+                                    points.len() - 1
+                                };
+                            assert_eq!(
+                                s.subshapes(&edited, ShapeType::Edge).unwrap().len(),
+                                expected_edges
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
