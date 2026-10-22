@@ -929,6 +929,18 @@ on it, Offset from it starts a new plane based on it, and Delete removes it
 when no sketch uses it. A plane that fails (its face is gone) is listed in
 red with the reason, and so is each sketch on it.
 
+## Importing DXF outlines
+
+New sketch can start from a DXF file. **DXF layers** (comma separated, empty
+for all) and **DXF unit** (from the file, or millimeters, centimeters, meters,
+inches or feet) narrow the import, and **Import DXF** reads the file through
+`POST /api/dxf-import`. The panel shows what came in: curves, closed loops,
+holes, further regions, open curves, skipped entities and the unit. **Start
+sketch** puts that geometry on the chosen plane as the new layer's first
+draft and previews it at once. It is then an ordinary draft: edit, constrain
+or delete curves, then Apply. Files up to 32 MB are read here. See
+[DXF import](DXF_IMPORT.md).
+
 ## Deleting
 
 With Select, Delete or Backspace removes the selection, and the inspector

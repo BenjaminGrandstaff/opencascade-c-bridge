@@ -159,6 +159,17 @@ failures reject a build; preferred and advisory failures stay in an accepted
 build's table. Failed geometry or failed requirement evaluation still fail
 with their own message and kernel diagnostics.
 
+## DXF import
+
+`occt-model --import-dxf REQUEST.json NEW_RESULT.json` turns a DXF file's 2D
+outlines into a `sketch_face` feature. The request is
+`{"schema": "occb-dxf-import-v1", "dxf": "<file text>", "feature_id": "outline", "options": {"layers": [...], "unit": "inch", "tolerance_mm": 0.001}}`.
+The result (`occb-dxf-import-report-v1`) holds the feature, the import report
+(units, imported and skipped entities, loops, holes, regions, open curves,
+bounds) and `face`: whether the face builds, with its area. Nothing else is
+built or published. The example drawing is
+[`dxf/bracket.dxf`](dxf/bracket.dxf); see [DXF import](../../docs/DXF_IMPORT.md).
+
 ## Edit and repair loop
 
 1. Build `bracket.request.json` into a new directory.

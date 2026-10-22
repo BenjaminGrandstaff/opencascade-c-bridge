@@ -844,3 +844,14 @@ face. Prefer a `persistent` selector on the feature that made the face, so a
 later edit still finds it. A removal the kernel cannot complete fails with the
 OCCT alert and the selector at fault. Retrieve `direct-edit` with
 `occt_get_example`; see [direct editing](../../docs/DIRECT_EDITING.md).
+
+## DXF import
+
+`occt_import_dxf` turns the 2D outlines of an ASCII DXF file into a
+`sketch_face` feature: lines, arcs, circles, ellipses, polylines with bulges,
+splines and block inserts, in millimeters. Closed loops become the outer
+boundary, its holes and further regions. Pass the file text as `dxf`, and
+optionally `feature_id` and `options` (`layers`, `unit`, `tolerance_mm`). The
+result reports what was imported and skipped, and whether the face builds,
+with its area. Add the feature to a model or with an `add_feature` edit, then
+extrude or cut it. See [DXF import](../../docs/DXF_IMPORT.md).

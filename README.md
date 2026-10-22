@@ -18,14 +18,19 @@ The current C ABI version is **86** and the document schema is **183**.
 | `occt-parametric` (kernel regeneration) | Schema 183 | Active development |
 | Sketch studio and viewer (`occt-view --serve`) | — | Edits the same documents; adds no capability of its own |
 
-Tests: C 8/8, bridge 189, parametric core 66, kernel 809, view command 102,
-model command 109, viewer Node 476 and MCP Python 29, all passing. The scale
+Tests: C 8/8, bridge 189, parametric core 75, kernel 813, view command 103,
+model command 112, viewer Node 477 and MCP Python 30, all passing. The scale
 benchmark suite covers geometry, document operations, sketch authoring, MCP
 and model-command publication, with enforced time budgets. Formatting and Clippy are clean across all crates. Full
 gate results and history live in [the roadmap](ROADMAP.md#current-status).
 
 Recently landed:
 
+- **DXF import:** 2D outlines from ASCII DXF files (lines, arcs, circles,
+  ellipses, bulged polylines, splines, block inserts) become sketches. Loops
+  are sorted into boundaries, holes and regions, with units and layers
+  handled, through the command line, MCP and the studio's New sketch. See
+  [DXF import](docs/DXF_IMPORT.md).
 - **Direct editing (schema 183, ABI 86):** delete, offset and move faces of
   any solid without its history, such as holes, bosses, fillets and pushed or
   pulled faces, with curved-face picking in the studio. See

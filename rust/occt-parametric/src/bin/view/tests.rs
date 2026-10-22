@@ -7799,3 +7799,46 @@ fn curved_face_picks_drive_direct_face_edits() {
         24000.0 - hole,
     );
 }
+
+#[test]
+fn dxf_files_import_into_a_new_sketch_that_previews_and_applies() {
+    let directory = Directory::new();
+    let model = PathBuf::from(directory.model(&sketch_block_document()));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let state = get(&mut studio, "/api/state").1;
+    let dxf = include_str!("../../../../../tools/model/dxf/bracket.dxf");
+    let body = json!({"dxf": dxf, "options": {"id": "bracket", "layers": ["OUTLINE", "HOLES"]}});
+    let response = studio.handle("POST", "/api/dxf-import", body.to_string().as_bytes());
+    assert_eq!(response.status, 200);
+    let imported: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(imported["report"]["holes"], 3);
+    assert_eq!(imported["sketch"]["id"], "bracket");
+    // Importing changes nothing; the sketch then goes through New sketch.
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    let mut definition: SketchDefinition =
+        serde_json::from_value(imported["sketch"].clone()).unwrap();
+    definition.id = "new-profile".into();
+    let mut edit = new_sketch_request(&mut studio, &definition);
+    let (status, preview) = create_sketch(&mut studio, &edit);
+    assert_eq!(status, 200, "{preview}");
+    assert_eq!(preview["can_apply"], true, "{preview}");
+    edit["apply"] = json!(true);
+    let (status, applied) = create_sketch(&mut studio, &edit);
+    assert_eq!(status, 200, "{applied}");
+    let sketches = get(&mut studio, "/api/sketches").1;
+    assert!(
+        sketches["sketches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["feature"] == "new-profile")
+    );
+    // Bad files say why.
+    let response = studio.handle(
+        "POST",
+        "/api/dxf-import",
+        json!({"dxf": "AutoCAD Binary DXF"}).to_string().as_bytes(),
+    );
+    assert_eq!(response.status, 422);
+    assert!(String::from_utf8_lossy(&response.body).contains("binary DXF"));
+}

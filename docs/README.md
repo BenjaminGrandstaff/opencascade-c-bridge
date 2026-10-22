@@ -10,6 +10,7 @@ examples. Project-wide status lives in [the roadmap](../ROADMAP.md) and
 - [Hollow sketch profiles](PLANAR_REGIONS.md)
 - [Sketches attached to planar faces](FACE_SKETCHES.md)
 - [Linked edge projections into sketches](SKETCH_PROJECTIONS.md)
+- [DXF import into sketches](DXF_IMPORT.md)
 
 ## Features
 

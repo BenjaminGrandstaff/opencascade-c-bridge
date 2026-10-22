@@ -1,4 +1,6 @@
 //! One-shot, machine-readable model build, parameter edit, and export workflow.
+#[path = "model/dxf_import.rs"]
+mod dxf_import;
 #[path = "model/inspect.rs"]
 mod inspect;
 #[path = "model/patch.rs"]
@@ -111,6 +113,9 @@ fn main() -> ExitCode {
     }
     let outcome = match args.as_slice() {
         [flag, request, destination] if flag == "--inspect" => inspect::run(request, destination),
+        [flag, request, destination] if flag == "--import-dxf" => {
+            dxf_import::run(request, destination)
+        }
         [flag, request, destination] if flag == "--preview-edit" => {
             patch::preview(request, destination)
         }

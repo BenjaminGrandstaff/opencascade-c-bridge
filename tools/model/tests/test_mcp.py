@@ -38,7 +38,7 @@ class McpTests(unittest.TestCase):
         self.assertEqual(result['result']['protocolVersion'], '2025-06-18')
         self.assertEqual(self.client.call('tools/list')['error']['code'], -32600)
         self.client.send(dict(jsonrpc='2.0', method='notifications/initialized'))
-        self.assertEqual(len(self.client.call('tools/list')['result']['tools']), 18)
+        self.assertEqual(len(self.client.call('tools/list')['result']['tools']), 19)
         self.assertEqual(self.client.call('initialize')['error']['code'], -32600)
 
     def test_loft_diagnosis_inspection_schema_and_failed_loft_sources(self):
@@ -97,7 +97,7 @@ class McpTests(unittest.TestCase):
 
     def test_discovery_schemas_and_complete_examples(self):
         tools = self.client.call('tools/list')['result']['tools']
-        self.assertEqual({tool['name'] for tool in tools}, {'occt_get_schema', 'occt_get_example', 'occt_build', 'occt_inspect_model', 'occt_inspect_build', 'occt_edit_build', 'occt_preview_edit_build', 'occt_visualize_model', 'occt_export_drawings', 'occt_inspection_report', 'occt_motion_study', 'occt_balance_report', 'occt_joint_branches', 'occt_merge_documents', 'occt_session_read', 'occt_session_apply', 'occt_list_templates', 'occt_instantiate_template'})
+        self.assertEqual({tool['name'] for tool in tools}, {'occt_get_schema', 'occt_get_example', 'occt_build', 'occt_inspect_model', 'occt_inspect_build', 'occt_edit_build', 'occt_preview_edit_build', 'occt_visualize_model', 'occt_export_drawings', 'occt_inspection_report', 'occt_motion_study', 'occt_balance_report', 'occt_joint_branches', 'occt_merge_documents', 'occt_session_read', 'occt_session_apply', 'occt_list_templates', 'occt_instantiate_template', 'occt_import_dxf'})
         schema = next(tool['inputSchema'] for tool in tools if tool['name'] == 'occt_build')
         jsonschema.Draft202012Validator.check_schema(schema)
         self.assertEqual(schema['properties']['model']['$ref'], '#/$defs/ModelDocument')
@@ -1251,6 +1251,33 @@ class McpTests(unittest.TestCase):
         response = self.client.call('tools/call', dict(name='occt_instantiate_template', arguments=dict(template='teapot')))
         self.assertEqual(response['error']['code'], -32602)
 
+    def test_dxf_outlines_import_as_sketch_features_that_build(self):
+        dxf = (ROOT / 'tools/model/dxf/bracket.dxf').read_text()
+        result = self.client.tool('occt_import_dxf', dict(dxf=dxf, feature_id='bracket-outline', options=dict(layers=['OUTLINE', 'HOLES'])))
+        self.assertFalse(result['isError'], result)
+        imported = result['structuredContent']
+        self.assertEqual(imported['report']['holes'], 3)
+        self.assertTrue(imported['face']['built'])
+        area = 2525 - 33.25 * math.pi
+        self.assertAlmostEqual(imported['face']['area_mm2'], area, places=6)
+        # The feature drops into a model: extrude it 5 mm and build.
+        jsonschema.validate(imported['feature']['operation'], self.client.tool('occt_get_schema', dict(name='feature'))['structuredContent'])
+        catalog = json.loads(self.client.call('resources/read', dict(uri='occt://catalog'))['result']['contents'][0]['text'])
+        mm = lambda v: dict(value=v, dimension='length', unit='millimeter')
+        extrude = dict(id='plate', operation=dict(extrude=dict(input='bracket-outline', direction=dict(literal=dict(x=mm(0), y=mm(0), z=mm(5))))))
+        model = dict(schema_version=catalog['schema_version'], family=dict(id='bracket', version=1, parameters=[], derived_parameters=[],
+                     derived_vector_parameters=[], constraints=[], requirements=[], datums=[], features=[imported['feature'], extrude]),
+                     instances=[dict(base=dict(id='bracket', overrides={}, provenance='dxf import'))])
+        built = self.client.tool('occt_build', dict(schema='occb-model-request-v1', model=model, outputs=[dict(instance='bracket', output='plate')], step=False, preview=False))
+        self.assertFalse(built['isError'], built)
+        self.assertAlmostEqual(built['structuredContent']['report']['outputs'][0]['volume_mm3'], 5 * area, places=5)
+        # Problems come back as tool errors with their stage.
+        refused = self.client.tool('occt_import_dxf', dict(dxf='AutoCAD Binary DXF'))
+        self.assertTrue(refused['isError'])
+        self.assertEqual(refused['structuredContent']['stage'], 'import')
+        response = self.client.call('tools/call', dict(name='occt_import_dxf', arguments=dict(path='/etc/passwd')))
+        self.assertEqual(response['error']['code'], -32602)
+
     def command_example(self, name):
         return self.client.tool('occt_get_example', dict(name=name))['structuredContent']
 
@@ -1387,7 +1414,7 @@ class McpTests(unittest.TestCase):
         self.client.close()
         self.client = Client(self.root / 'minimal', commands_dir=commands)
         catalog = json.loads(self.client.call('resources/read', dict(uri='occt://catalog'))['result']['contents'][0]['text'])
-        self.assertEqual(catalog['counts']['tools'], 12)
+        self.assertEqual(catalog['counts']['tools'], 13)
         self.assertEqual(len(catalog['unavailable_tools']), 6)
         self.client.close()
         executable = commands / 'occt-drawing-export'

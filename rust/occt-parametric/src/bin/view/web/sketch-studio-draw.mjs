@@ -14,8 +14,20 @@ const SNAP_PIXELS = 8;
 /** Clicks closer together than this, in time and pixels, are a double-click. */
 const DOUBLE_CLICK_MS = 350;
 
-/** An empty sketch definition on a local layer's plane, for its first draft. */
+/** Geometry an imported DXF file brings to a new layer's first draft. */
+const IMPORTED = ['points', 'lines', 'arcs', 'circles', 'ellipses', 'splines', 'profile', 'holes', 'regions'];
+
+/** A local layer's first draft: empty on its plane, or holding the
+ * geometry of a DXF file imported when the layer was created. */
 export function localDefinition(layer) {
+  const definition = emptyDefinition(layer);
+  const imported = layer.create.imported;
+  if (imported) for (const key of IMPORTED) if (imported[key]?.length) definition[key] = structuredClone(imported[key]);
+  return definition;
+}
+
+/** An empty sketch definition on a local layer's plane. */
+function emptyDefinition(layer) {
   const create = layer.create;
   if (create.plane === 'datum') {
     // On a datum plane the kernel takes the origin and normal from the
@@ -115,6 +127,18 @@ export function installDrawing(studio, document) {
     if (!beginModelOperation(label)) throw Error('Wait for the current model operation.');
     try { return await operation(); }
     finally { endModelOperation(); }
+  };
+
+  /** Starts the active local layer's draft at once and previews it: an
+   * imported DXF layer has geometry before the first edit. */
+  studio.seedDraft = () => {
+    const d = draft();
+    if (!d) return false;
+    d.dirty = true;
+    studio.busy = true;
+    schedulePreview();
+    studio.refresh();
+    return true;
   };
 
   // ── Draft ────────────────────────────────────────────────────────────
