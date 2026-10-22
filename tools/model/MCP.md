@@ -120,7 +120,9 @@ measured values, witnesses and output measurements in the failure, with
 3. Call `occt_build` with explicit units and selected final outputs.
 4. Inspect the verification table and its exact/sampled evidence. Set
    `renders` to look at the result: standard views, plus section planes
-   through walls, bores or bends. Read model/report resources for details.
+   through walls, bores or bends. Add `"dimensions": true` to read overall
+   sizes and hole diameters off the images, and compare them with each
+   render's `dimensions` list. Read model/report resources for details.
 5. Read accepted `model.json`, put it into the next request, and provide typed
    parameter edits. Required failures preserve the preceding accepted build.
 6. Return STEP/STL artifacts and the editable model to the user.

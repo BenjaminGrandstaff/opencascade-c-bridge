@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 8/8, bridge 189 + first-use integration 1 (+1 doc test), recipes 3, parametric core 66 + kernel 809 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 102 + viewer Node 476 + branch command 2 + model command 106, MCP Python 29, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 8/8, bridge 189 + first-use integration 1 (+1 doc test), recipes 3, parametric core 66 + kernel 809 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 102 + viewer Node 476 + branch command 2 + model command 109, MCP Python 29, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 29 clang-tidy warnings (28 complexity warnings and one public ABI padding warning) plus 82 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all five crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,16 @@ tracks status and order.
 | Scale benchmarks | Current run: all 138 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
 
 ## Done
+
+- Dimensioned renders (schema 183 and ABI 86 unchanged): `"dimensions": true`
+  in `renders` draws the overall width and height on orthographic views,
+  grouped Ø labels on visible circles seen end-on, and the X × Y × Z size on
+  the iso view, with a built-in bitmap font. Values come from exact bounds and
+  analytic circle edges and are listed per image in the report. Labels avoid
+  each other, and hidden circles are skipped. Tests check the values, the
+  drawn ink, unchanged images without the option, and that a bolt's hidden
+  clearance hole is not labelled. There is no measurable cost on a 400-hole
+  plate. See [rendered views](tools/model/README.md#rendered-views-and-sections).
 
 - Advanced sweep refactor (schema 183 and ABI 86 unchanged): section-position
   validation, input lookup, section conversion, station calculation, folding
@@ -3760,8 +3770,8 @@ ordered by priority; the catalog/documentation foundation is complete.
    previews render shaded PNG views and hatched section planes on request,
    and MCP returns them as image content. Flat patterns render as ordinary
    outputs, with dashed bend lines, and scenes of several outputs with
-   their interference in red. Remaining refinement: dimension labels in the
-   images.
+   their interference in red. Optional dimension labels give overall
+   sizes and visible hole diameters from exact geometry.
 4. **Complete failure reports — complete.** Builds and edits rejected by
    required requirements return the whole verification table with measured
    values, evidence and witnesses, plus output measurements, bounded at 500

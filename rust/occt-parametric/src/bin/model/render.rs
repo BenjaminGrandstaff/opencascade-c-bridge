@@ -4,11 +4,14 @@
 //! silhouettes are outlined, and section caps are hatched. Visual review only;
 //! measurements stay in the report. O(triangles + pixels) time per image and
 //! about 12 bytes per supersampled pixel (50 MB at the 1024 px maximum).
-use occt_bridge::{MeshOptions, MeshTriangle, Session, Shape, ShapeType, Vec3};
+use annotate::{Circle, Dimensions};
+use occt_bridge::{AnalyticCurve, MeshOptions, MeshTriangle, Session, Shape, ShapeType, Vec3};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{error::Error, path::Path};
 
+#[path = "render/annotate.rs"]
+pub mod annotate;
 #[path = "render/png.rs"]
 pub mod png;
 
@@ -47,6 +50,14 @@ pub struct RenderOptions {
     /// report's `scene` lists each output's color and each interference.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub scene: bool,
+    /// Draw dimensions on each output's standard views: overall width and
+    /// height in the front, back, top, bottom, left and right views, a Ø
+    /// label (with a count) for each diameter of full circles seen end-on,
+    /// at most 8, and the overall X × Y × Z size in the iso view. Values
+    /// come from exact bounds and circle edges, in millimeters, and are
+    /// listed under each render's `dimensions` in the report.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub dimensions: bool,
 }
 
 impl Default for RenderOptions {
@@ -56,6 +67,7 @@ impl Default for RenderOptions {
             sections: Vec::new(),
             size_px: default_size(),
             scene: false,
+            dimensions: false,
         }
     }
 }
@@ -215,19 +227,40 @@ pub fn write(
     let mut entries = Vec::new();
     if !options.views.is_empty() {
         let triangles = session.surface_mesh(shape, mesh_options)?;
+        let dimensions = if options.dimensions {
+            Some(Dimensions {
+                lo,
+                hi,
+                circles: circles(session, shape)?,
+            })
+        } else {
+            None
+        };
         for &view in &options.views {
             let (direction, up) = view.camera();
             let layer = Layer {
                 triangles: &triangles,
                 color: BODY,
             };
-            let image = draw(&[layer], &[], None, direction, up, size, bend_lines)?;
+            let (image, labels) = draw(
+                &[layer],
+                &[],
+                None,
+                direction,
+                up,
+                size,
+                bend_lines,
+                dimensions.as_ref(),
+            )?;
             let file = format!("{:04}-{}.png", index + 1, view.name());
             std::fs::write(destination.join(&file), &image)?;
             let mut entry =
                 json!({"view": view.name(), "file": file, "width_px": size, "height_px": size});
             if !bend_lines.is_empty() {
                 entry["bend_lines"] = json!(bend_lines.len());
+            }
+            if dimensions.is_some() {
+                entry["dimensions"] = json!(labels);
             }
             entries.push(entry);
         }
@@ -256,15 +289,19 @@ pub fn write(
                 triangles: &triangles,
                 color: BODY,
             };
-            Some(draw(
-                &[layer],
-                &[],
-                Some((section.origin_mm, normal)),
-                direction,
-                up,
-                size,
-                &[],
-            )?)
+            Some(
+                draw(
+                    &[layer],
+                    &[],
+                    Some((section.origin_mm, normal)),
+                    direction,
+                    up,
+                    size,
+                    &[],
+                    None,
+                )?
+                .0,
+            )
         };
         let mut entry = json!({"section": section.id, "width_px": size, "height_px": size});
         match image {
@@ -369,7 +406,7 @@ pub fn write_scene(
             .collect();
         for &view in &options.views {
             let (direction, up) = view.camera();
-            let image = draw(&layers, &xray, None, direction, up, size, &[])?;
+            let (image, _) = draw(&layers, &xray, None, direction, up, size, &[], None)?;
             let file = format!("scene-{}.png", view.name());
             std::fs::write(destination.join(&file), &image)?;
             renders.push(
@@ -414,7 +451,7 @@ pub fn write_scene(
             } else {
                 [0.0, 0.0, 1.0]
             };
-            let image = draw(
+            let (image, _) = draw(
                 &layers,
                 &xray,
                 Some((section.origin_mm, normal)),
@@ -422,6 +459,7 @@ pub fn write_scene(
                 up,
                 size,
                 &[],
+                None,
             )?;
             let file = format!("scene-section-{}.png", section.id);
             std::fs::write(destination.join(&file), &image)?;
@@ -443,6 +481,38 @@ pub fn write_scene(
         "interference_color": "#e41e24",
         "renders": renders,
     }))
+}
+
+/// Full circles among the shape's edges: holes, bosses and shafts. One
+/// analytic query per edge, O(edges).
+fn circles(session: &Session, shape: &Shape<'_>) -> Result<Vec<Circle>, Box<dyn Error>> {
+    let mut found = Vec::new();
+    for edge in session.subshapes(shape, ShapeType::Edge)? {
+        let Some(AnalyticCurve::Conic {
+            center,
+            major,
+            minor,
+            first,
+            last,
+        }) = session.edge_analytic_curve(&edge)?
+        else {
+            continue;
+        };
+        let (a, b) = ([major.x, major.y, major.z], [minor.x, minor.y, minor.z]);
+        let radius = norm(a);
+        let full = ((last - first).abs() - std::f64::consts::TAU).abs() < 1e-9;
+        if !full || (norm(b) - radius).abs() > 1e-9 * radius.max(1.0) {
+            continue;
+        }
+        if let Some(axis) = unit(cross(a, b)) {
+            found.push(Circle {
+                center: [center.x, center.y, center.z],
+                axis,
+                radius,
+            });
+        }
+    }
+    Ok(found)
 }
 
 /// A prism covering the half of the bounding box the normal points into,
@@ -555,6 +625,9 @@ fn fill(s: [[f64; 3]; 3], n: usize, mut pixel: impl FnMut(usize, usize, f32)) {
 /// B-rep faces outlined, `xray` triangles (interference volumes) tinted red
 /// through everything, and `overlays` dashed where they lie on visible
 /// surface. `section` marks triangles on the cut plane as hatched caps.
+/// With `dimensions`, the part is drawn smaller and up-left to leave room for
+/// them, and the labels drawn are returned.
+#[allow(clippy::too_many_arguments)]
 fn draw(
     parts: &[Layer<'_>],
     xray: &[MeshTriangle],
@@ -563,7 +636,8 @@ fn draw(
     up_hint: [f64; 3],
     size: usize,
     overlays: &[[Vec3; 2]],
-) -> Result<Vec<u8>, Box<dyn Error>> {
+    dimensions: Option<&Dimensions>,
+) -> Result<(Vec<u8>, Vec<Value>), Box<dyn Error>> {
     let view = unit(direction).ok_or("zero view direction")?;
     let right = unit(cross(view, up_hint)).ok_or("view direction parallel to up")?;
     let up = cross(right, view);
@@ -586,10 +660,15 @@ fn draw(
     }
     let n = size * SS;
     let extent = (hi[0] - lo[0]).max(hi[1] - lo[1]).max(1e-9);
-    let scale = n as f64 * 0.86 / extent;
+    let (fill_share, shift) = if dimensions.is_some() {
+        (0.66, n as f64 * 0.06)
+    } else {
+        (0.86, 0.0)
+    };
+    let scale = n as f64 * fill_share / extent;
     let offset = [
-        n as f64 / 2.0 - (lo[0] + hi[0]) / 2.0 * scale,
-        n as f64 / 2.0 + (lo[1] + hi[1]) / 2.0 * scale,
+        n as f64 / 2.0 - (lo[0] + hi[0]) / 2.0 * scale - shift,
+        n as f64 / 2.0 + (lo[1] + hi[1]) / 2.0 * scale - shift,
     ];
     let depth_span = (hi[2] - lo[2]).max(extent * 1e-6);
     let screen = |p: Vec3| {
@@ -756,8 +835,41 @@ fn draw(
             }
         }
     }
+    let labels = match dimensions {
+        Some(dimensions) => {
+            let pixel = |p: [f64; 3]| {
+                let q = screen(Vec3::new(p[0], p[1], p[2]));
+                [q[0] / SS as f64, q[1] / SS as f64]
+            };
+            // Not behind the surface at, or next to, its pixel: rims sit on
+            // the boundary between faces.
+            let visible = |p: [f64; 3]| {
+                let q = screen(Vec3::new(p[0], p[1], p[2]));
+                let (x, y) = (q[0].floor() as isize, q[1].floor() as isize);
+                (-1..=1).any(|dy| {
+                    (-1..=1).any(|dx| {
+                        let (x, y) = (x + dx, y + dy);
+                        if x < 0 || y < 0 || x >= n as isize || y >= n as isize {
+                            return false;
+                        }
+                        let at = y as usize * n + x as usize;
+                        face[at] != 0 && q[2] as f32 <= depth[at] + 2e-3
+                    })
+                })
+            };
+            let camera = annotate::Camera {
+                right,
+                up,
+                view,
+                pixel: &pixel,
+                visible: &visible,
+            };
+            annotate::annotate(&mut rgb, size, &camera, dimensions)
+        }
+        None => Vec::new(),
+    };
     triad(&mut rgb, size, right, up);
-    Ok(png::encode(size as u32, size as u32, &rgb))
+    Ok((png::encode(size as u32, size as u32, &rgb), labels))
 }
 
 /// Draws model X (red), Y (green) and Z (blue) axes in the lower-left corner.
