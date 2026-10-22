@@ -58,6 +58,15 @@ pub enum Change {
         expected: Vec<String>,
         after: Option<String>,
     },
+    /// A bookmark, branch or merge action on the family's timeline (schema
+    /// 185), guarded by its whole history and feature order. It must be the
+    /// family's only change in the transaction.
+    Timeline {
+        family: String,
+        expected: Box<FeatureHistory>,
+        expected_order: Vec<String>,
+        timeline: TimelineAction,
+    },
     AddFeature {
         family: String,
         feature: Box<FeatureDefinition>,
@@ -106,10 +115,45 @@ pub enum Change {
         expected: Box<DatumDefinition>,
     },
 }
+/// What a timeline change does.
+#[derive(Deserialize, schemars::JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum TimelineAction {
+    /// Save the current head and suppressions under a name.
+    Bookmark {
+        name: String,
+    },
+    DeleteBookmark {
+        name: String,
+    },
+    /// Restore a bookmark's head and suppressions.
+    CheckoutBookmark {
+        name: String,
+    },
+    /// Store a branch continuing after `base` (from the start when absent)
+    /// as the active branch does now.
+    CreateBranch {
+        name: String,
+        #[serde(default)]
+        base: Option<String>,
+    },
+    /// Make a stored branch active, storing the active one.
+    SwitchBranch {
+        name: String,
+    },
+    DeleteBranch {
+        name: String,
+    },
+    /// Append the stored branch's features the active branch lacks.
+    MergeBranch {
+        name: String,
+    },
+}
 impl Change {
     fn family(&self) -> &str {
         match self {
-            Self::CheckoutFeature { family, .. }
+            Self::Timeline { family, .. }
+            | Self::CheckoutFeature { family, .. }
             | Self::SuppressFeature { family, .. }
             | Self::MoveFeature { family, .. }
             | Self::EditSketch { family, .. }
@@ -128,6 +172,7 @@ impl Change {
     }
     fn identity(&self) -> (&str, &str) {
         match self {
+            Self::Timeline { .. } => ("timeline", "timeline"),
             Self::CheckoutFeature { .. } => ("checkout", "head"),
             Self::SuppressFeature { feature, .. } => ("suppression", feature),
             Self::MoveFeature { feature, .. } => ("order", feature),
@@ -421,6 +466,23 @@ fn apply(model: &mut ModelDocument, changes: &[Change]) -> Result<(), Failure> {
     Ok(())
 }
 fn apply_family(family: &mut FamilyDefinition, changes: &[&Change]) -> Result<bool, Failure> {
+    if let Some(Change::Timeline {
+        expected,
+        expected_order,
+        timeline,
+        ..
+    }) = changes
+        .iter()
+        .find(|c| matches!(c, Change::Timeline { .. }))
+    {
+        if changes.len() != 1 {
+            return Err(failure(
+                "request",
+                "a timeline change must be the family's only change in the transaction",
+            ));
+        }
+        return apply_timeline(family, expected, expected_order, timeline);
+    }
     let mut changed = false;
     // All guards compare against the same original snapshot, before any mutation.
     let original_history = family.history.clone();
@@ -710,4 +772,52 @@ fn apply_family(family: &mut FamilyDefinition, changes: &[&Change]) -> Result<bo
         }
     }
     Ok(changed)
+}
+
+/// One guarded bookmark, branch or merge action.
+fn apply_timeline(
+    family: &mut FamilyDefinition,
+    expected: &FeatureHistory,
+    expected_order: &[String],
+    action: &TimelineAction,
+) -> Result<bool, Failure> {
+    let order: Vec<&str> = family.features.iter().map(|f| f.id.as_str()).collect();
+    if &family.history != expected || order != expected_order {
+        return Err(failure(
+            "conflict",
+            "feature history or order differs from expected snapshot",
+        ));
+    }
+    let before = (family.features.clone(), family.history.clone());
+    let patch = |e| model_failure("patch", e);
+    match action {
+        TimelineAction::Bookmark { name } => family.bookmark_timeline(name).map_err(patch)?,
+        TimelineAction::DeleteBookmark { name } => family.delete_bookmark(name).map_err(patch)?,
+        TimelineAction::CheckoutBookmark { name } => {
+            family.checkout_bookmark(name).map_err(patch)?
+        }
+        TimelineAction::CreateBranch { name, base } => {
+            family.create_branch(name, base.as_deref()).map_err(patch)?
+        }
+        TimelineAction::SwitchBranch { name } => family.switch_branch(name).map_err(patch)?,
+        TimelineAction::DeleteBranch { name } => family.delete_branch(name).map_err(patch)?,
+        TimelineAction::MergeBranch { name } => {
+            if let Err(conflicts) = family.merge_branch(name).map_err(patch)? {
+                let mut error = failure(
+                    "conflict",
+                    format!(
+                        "branch '{name}' and the active branch define {} differently",
+                        conflicts
+                            .iter()
+                            .map(|c| format!("'{}'", c.feature))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                );
+                error.details = json!({"branch_conflicts": conflicts});
+                return Err(error);
+            }
+        }
+    }
+    Ok((family.features.clone(), family.history.clone()) != before)
 }

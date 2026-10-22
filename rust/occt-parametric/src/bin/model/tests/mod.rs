@@ -6,6 +6,7 @@ use std::{
 };
 
 mod build;
+mod dxf_import;
 mod edge_treatment_views;
 mod failure_reports;
 mod helix_views;

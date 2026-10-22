@@ -606,6 +606,7 @@ fn circular_pattern_dimensions(
         axis,
         count,
         angle_step_radians,
+        ..
     } = &feature.operation
     else {
         return Ok(());
@@ -698,7 +699,10 @@ fn linear_pattern_dimensions(
         center,
         ..
     } = *scene;
-    let FeatureOperation::LinearPattern { input, step, count } = &feature.operation else {
+    let FeatureOperation::LinearPattern {
+        input, step, count, ..
+    } = &feature.operation
+    else {
         return Ok(());
     };
     let step_mm = vector(step, parameters)?;

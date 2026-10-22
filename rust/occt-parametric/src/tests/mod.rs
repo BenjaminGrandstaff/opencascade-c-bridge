@@ -13,6 +13,7 @@ mod documents;
 mod draft;
 mod draw_view;
 mod drawing;
+mod dxf_import;
 mod exact_walls;
 mod expressions;
 mod face_colors;
@@ -176,6 +177,7 @@ mod offsets;
 mod compounds;
 
 mod part_patterns;
+mod pattern_types;
 
 mod circular_part_patterns;
 

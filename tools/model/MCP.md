@@ -120,7 +120,9 @@ measured values, witnesses and output measurements in the failure, with
 3. Call `occt_build` with explicit units and selected final outputs.
 4. Inspect the verification table and its exact/sampled evidence. Set
    `renders` to look at the result: standard views, plus section planes
-   through walls, bores or bends. Read model/report resources for details.
+   through walls, bores or bends. Add `"dimensions": true` to read overall
+   sizes and hole diameters off the images, and compare them with each
+   render's `dimensions` list. Read model/report resources for details.
 5. Read accepted `model.json`, put it into the next request, and provide typed
    parameter edits. Required failures preserve the preceding accepted build.
 6. Return STEP/STL artifacts and the editable model to the user.
@@ -823,6 +825,9 @@ a successful merge.
 
 ## Feature timeline edits
 
+Schema 185 adds one `timeline` change for bookmarks and branches (bookmark,
+checkout or delete a bookmark; create, switch, merge or delete a branch); see
+[bookmarks and branches](../../docs/FEATURE_HISTORY.md#bookmarks-and-branches-schema-185).
 Schema 182 adds `checkout_feature`, `suppress_feature`, and `move_feature` changes
 in the existing `occt_edit_build` / `occt_preview_edit_build` tools. Checkout and
 suppression guard the original family history; moves guard the ordered feature
@@ -842,3 +847,14 @@ face. Prefer a `persistent` selector on the feature that made the face, so a
 later edit still finds it. A removal the kernel cannot complete fails with the
 OCCT alert and the selector at fault. Retrieve `direct-edit` with
 `occt_get_example`; see [direct editing](../../docs/DIRECT_EDITING.md).
+
+## DXF import
+
+`occt_import_dxf` turns the 2D outlines of an ASCII DXF file into a
+`sketch_face` feature: lines, arcs, circles, ellipses, polylines with bulges,
+splines and block inserts, in millimeters. Closed loops become the outer
+boundary, its holes and further regions. Pass the file text as `dxf`, and
+optionally `feature_id` and `options` (`layers`, `unit`, `tolerance_mm`). The
+result reports what was imported and skipped, and whether the face builds,
+with its area. Add the feature to a model or with an `add_feature` edit, then
+extrude or cut it. See [DXF import](../../docs/DXF_IMPORT.md).

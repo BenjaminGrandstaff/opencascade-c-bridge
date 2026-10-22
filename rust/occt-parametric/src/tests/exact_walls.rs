@@ -210,6 +210,7 @@ fn exact_walls_scale_to_hundreds_of_holes() {
     let pattern = |id: &str, input: &str, step: (f64, f64, f64)| FeatureDefinition {
         id: id.into(),
         operation: FeatureOperation::LinearPattern {
+            skip: Vec::new(),
             input: input.into(),
             step: at(step.0, step.1, step.2),
             count: ScalarExpr::Literal(Quantity::scalar(20.0)),

@@ -44,6 +44,7 @@ pub(crate) fn split_plate_case(definition: &FamilyDefinition) -> Outcome {
                 feature(
                     "row",
                     FeatureOperation::LinearPattern {
+                        skip: Vec::new(),
                         input: "pin".into(),
                         step: mm(20.0, 0.0, 0.0),
                         count: ScalarExpr::Literal(Quantity::scalar(20.0)),
@@ -52,6 +53,7 @@ pub(crate) fn split_plate_case(definition: &FamilyDefinition) -> Outcome {
                 feature(
                     "grid",
                     FeatureOperation::LinearPattern {
+                        skip: Vec::new(),
                         input: "row".into(),
                         step: mm(0.0, 20.0, 0.0),
                         count: ScalarExpr::Literal(Quantity::scalar(20.0)),

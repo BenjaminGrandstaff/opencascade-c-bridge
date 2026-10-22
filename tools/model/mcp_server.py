@@ -171,6 +171,17 @@ class Server:
                  inputSchema=self.build_edit_schema, annotations=dict(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)),
             dict(name='occt_build', description='Validate/migrate a model, apply typed parameter edits, verify requirements, and build selected parts into a new server-owned directory. Returns report and artifact resource URIs. Failed edits preserve previous builds. Set renders (for example {} or views plus section planes) to get shaded PNG views of each output; up to eight come back as image content and all stay readable as resources.',
                  inputSchema=self.schemas['request'], annotations=dict(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)),
+            dict(name='occt_import_dxf', description='Turn the 2D outlines of an ASCII DXF file into a sketch_face feature: lines, arcs, circles, ellipses, polylines with bulges, clamped and fit-point splines, and block inserts, converted to millimeters. Closed loops become the outer boundary, its holes and further regions; text, dimensions and other annotation are skipped and counted. Returns the feature, an import report and whether the face builds (with its area). Add the feature with an add_feature edit or into a model, then extrude or cut it. Does not build or change a model.',
+                 inputSchema=object_schema({
+                     'dxf': dict(type='string', description='The DXF file text (ASCII DXF; binary DXF is refused).'),
+                     'feature_id': dict(type='string', description='Id of the returned sketch_face feature; default outline.'),
+                     'options': object_schema({
+                         'id': dict(type='string', description='Sketch id; default dxf.'),
+                         'layers': dict(type='array', items=dict(type='string'), description='Only these layers; default all.'),
+                         'unit': dict(type='string', enum=['millimeter', 'centimeter', 'meter', 'inch', 'foot'], description='Coordinate unit; default from $INSUNITS, else millimeters.'),
+                         'tolerance_mm': dict(type='number', exclusiveMinimum=0, maximum=1, description='Endpoints closer than this merge; default 0.001.'),
+                     }, []),
+                 }, ['dxf']), annotations=read),
             dict(name='occt_list_templates', description='List parameterized design templates (brackets, enclosures, shafts, sheet-metal channels): what each is for and not for, the checks it carries, and its typed inputs with units, ranges, choices and defaults. Start a new design here when one fits.',
                  inputSchema=object_schema({}, []), annotations=read),
             dict(name='occt_instantiate_template', description='Fill a template\'s inputs (defaults for those omitted; lengths in millimeters) and return a complete, build-ready occb-model-request-v1. Out-of-range or unknown inputs are refused. Build the result with occt_build, then edit it like any model.',
@@ -307,7 +318,13 @@ class Server:
         request.update(schema='occb-model-edit-v1', model=decode(text), source=dict(build_id=arguments['build_id'], model_sha256=fingerprint))
         return await self.worker(request, editing=True, previewing=preview)
 
-    async def worker(self, request, inspection=False, editing=False, visualization=False, previewing=False):
+    async def import_dxf(self, arguments):
+        allowed = {'dxf', 'feature_id', 'options'}
+        if not isinstance(arguments, dict) or not set(arguments) <= allowed or not isinstance(arguments.get('dxf'), str):
+            raise RpcError(-32602, 'expected dxf text and optional feature_id and options')
+        return await self.worker(dict(arguments, schema='occb-dxf-import-v1'), importing=True)
+
+    async def worker(self, request, inspection=False, editing=False, visualization=False, previewing=False, importing=False):
         if not isinstance(request, dict):
             raise RpcError(-32602, 'build arguments must be a model request object')
         # Paths and executable are configured by the local operator; tool callers
@@ -319,17 +336,20 @@ class Server:
         accepted = False
         try:
             (work / 'request.json').write_text(encode(request))
-            report_path = work / 'inspection.json' if inspection else work / 'build/report.json'
+            single = inspection or importing
+            report_path = work / ('inspection.json' if inspection else 'import.json') if single else work / 'build/report.json'
             command = [str(self.binary)]
             if inspection:
                 command.append('--inspect')
+            elif importing:
+                command.append('--import-dxf')
             elif previewing:
                 command.append('--preview-edit')
             elif editing:
                 command.append('--edit')
             elif visualization:
                 command.append('--visualize')
-            command.extend([str(work / 'request.json'), str(report_path if inspection else work / 'build')])
+            command.extend([str(work / 'request.json'), str(report_path if single else work / 'build')])
             with (work / 'kernel.stderr').open('wb') as stderr:
                 process = await asyncio.create_subprocess_exec(*command,
                     stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL, stderr=stderr)
@@ -346,7 +366,7 @@ class Server:
                     error = dict(status='failed', stage='kernel', message='worker failed without a structured report', diagnostics=[])
                 return tool_result(error, True)
             report = decode(self.read_file(report_path))
-            if inspection:
+            if single:
                 return tool_result(report)
             filenames = {'report.json', *report['artifacts'].values(), *output_files(report)}
             with (work / 'build/model.json').open('rb') as file:
@@ -543,6 +563,8 @@ class Server:
                 return await self.edit_build(arguments)
             if name == 'occt_build':
                 return await self.build(arguments)
+            if name == 'occt_import_dxf':
+                return await self.import_dxf(arguments)
             if name == 'occt_list_templates':
                 if arguments not in ({}, None):
                     raise RpcError(-32602, 'occt_list_templates takes no arguments')

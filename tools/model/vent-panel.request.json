@@ -1,0 +1,878 @@
+{
+  "schema": "occb-model-request-v1",
+  "model": {
+    "schema_version": 185,
+    "family": {
+      "id": "vent-panel",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "pitch",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 8,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 6,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "features": [
+        {
+          "id": "panel",
+          "operation": {
+            "box": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "size": {
+                "literal": {
+                  "x": {
+                    "value": 160,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 100,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 3,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "vent-region",
+          "operation": {
+            "sketch_face": {
+              "sketch": {
+                "id": "s",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "a",
+                    "x": {
+                      "literal": {
+                        "value": 10,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 10,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "b",
+                    "x": {
+                      "literal": {
+                        "value": 90,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 10,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "c",
+                    "x": {
+                      "literal": {
+                        "value": 90,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 90,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "d",
+                    "x": {
+                      "literal": {
+                        "value": 10,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 90,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "o",
+                    "x": {
+                      "literal": {
+                        "value": 50,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 50,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "r",
+                    "x": {
+                      "literal": {
+                        "value": 62,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 50,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  }
+                ],
+                "lines": [
+                  {
+                    "id": "ab",
+                    "start": "a",
+                    "end": "b"
+                  },
+                  {
+                    "id": "bc",
+                    "start": "b",
+                    "end": "c"
+                  },
+                  {
+                    "id": "cd",
+                    "start": "c",
+                    "end": "d"
+                  },
+                  {
+                    "id": "da",
+                    "start": "d",
+                    "end": "a"
+                  }
+                ],
+                "constraints": [],
+                "circles": [
+                  {
+                    "id": "keep",
+                    "center": "o",
+                    "rim": "r"
+                  }
+                ],
+                "profile": [
+                  "ab",
+                  "bc",
+                  "cd",
+                  "da"
+                ],
+                "holes": [
+                  [
+                    "keep"
+                  ]
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "vent",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 14,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 14,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": -1,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "literal": {
+                  "value": 2,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "height": {
+                "literal": {
+                  "value": 5,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "vents",
+          "operation": {
+            "fill_pattern": {
+              "input": "vent",
+              "region": "vent-region",
+              "anchor": {
+                "literal": {
+                  "x": {
+                    "value": 14,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 14,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "direction": {
+                "literal": {
+                  "x": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "spacing": {
+                "parameter": "pitch"
+              },
+              "row_spacing": {
+                "parameter": "pitch"
+              },
+              "layout": "staggered",
+              "margin": {
+                "literal": {
+                  "value": 3,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "vented",
+          "operation": {
+            "cut": {
+              "object": "panel",
+              "tool": "vents"
+            }
+          }
+        },
+        {
+          "id": "cable",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 50,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 50,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": -1,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "literal": {
+                  "value": 8,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "height": {
+                "literal": {
+                  "value": 5,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "cabled",
+          "operation": {
+            "cut": {
+              "object": "vented",
+              "tool": "cable"
+            }
+          }
+        },
+        {
+          "id": "bolt-arc",
+          "operation": {
+            "sketch_open_wire": {
+              "sketch": {
+                "id": "s",
+                "origin": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                "x_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "y_axis": {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "y": {
+                      "value": 1,
+                      "dimension": "scalar",
+                      "unit": null
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "scalar",
+                      "unit": null
+                    }
+                  }
+                },
+                "points": [
+                  {
+                    "id": "c",
+                    "x": {
+                      "literal": {
+                        "value": 130,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 50,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "s",
+                    "x": {
+                      "literal": {
+                        "value": 130,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 25,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  },
+                  {
+                    "id": "e",
+                    "x": {
+                      "literal": {
+                        "value": 130,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 75,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "fixed": true
+                  }
+                ],
+                "lines": [],
+                "constraints": [],
+                "arcs": [
+                  {
+                    "id": "arc",
+                    "center": "c",
+                    "start": "s",
+                    "end": "e"
+                  }
+                ],
+                "profile": [
+                  "arc"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "bolt",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 130,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 25,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": -1,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "literal": {
+                  "value": 1.6,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "height": {
+                "literal": {
+                  "value": 5,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "bolts",
+          "operation": {
+            "curve_pattern": {
+              "input": "bolt",
+              "path": "bolt-arc",
+              "count": {
+                "literal": {
+                  "value": 7,
+                  "dimension": "scalar",
+                  "unit": null
+                }
+              },
+              "skip": [
+                3
+              ]
+            }
+          }
+        },
+        {
+          "id": "bolted",
+          "operation": {
+            "cut": {
+              "object": "cabled",
+              "tool": "bolts"
+            }
+          }
+        },
+        {
+          "id": "mount",
+          "operation": {
+            "cylinder": {
+              "origin": {
+                "literal": {
+                  "x": {
+                    "value": 6,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "y": {
+                    "value": 6,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  },
+                  "z": {
+                    "value": -1,
+                    "dimension": "length",
+                    "unit": "millimeter"
+                  }
+                }
+              },
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": 1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "radius": {
+                "literal": {
+                  "value": 2.5,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              },
+              "height": {
+                "literal": {
+                  "value": 5,
+                  "dimension": "length",
+                  "unit": "millimeter"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "mounts",
+          "operation": {
+            "table_pattern": {
+              "input": "mount",
+              "offsets": [
+                {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                {
+                  "literal": {
+                    "x": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 88,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                },
+                {
+                  "literal": {
+                    "x": {
+                      "value": 97,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "y": {
+                      "value": 88,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    },
+                    "z": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "vent-panel",
+          "operation": {
+            "cut": {
+              "object": "bolted",
+              "tool": "mounts"
+            }
+          }
+        }
+      ],
+      "requirements": [],
+      "datums": []
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "panel",
+          "overrides": {},
+          "provenance": "example; dimensions are demonstration assumptions"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "panel",
+      "output": "vent-panel"
+    }
+  ],
+  "step": true,
+  "stl": false,
+  "preview": true
+}

@@ -386,6 +386,16 @@ export function startStudio(document) {
         .map(([value, text]) => html('option', { value, selected: values.plane === value }, text)));
     const onDatum = values.plane.startsWith('datum:');
     const offset = html('input', { type: 'number', step: 'any', value: values.offset, 'aria-label': 'Offset along the normal (mm)', oninput: (e) => { values.offset = Number(e.target.value); } });
+    // A DXF file's outlines can seed the sketch: read here, previewed and
+    // applied like drawn geometry.
+    const dxfInput = html('input', { type: 'file', accept: '.dxf', 'aria-label': 'Import DXF file', onchange: (e) => importDxf(e.target.files?.[0]) });
+    const dxfLayers = html('input', { value: values.dxfLayers ?? '', placeholder: 'all layers', 'aria-label': 'DXF layers (comma separated)', oninput: (e) => { values.dxfLayers = e.target.value; } });
+    const dxfUnit = html('select', { 'aria-label': 'DXF unit', onchange: (e) => { values.dxfUnit = e.target.value; } },
+      ...[['', 'From the file'], ['millimeter', 'Millimeters'], ['centimeter', 'Centimeters'], ['meter', 'Meters'], ['inch', 'Inches'], ['foot', 'Feet']]
+        .map(([value, text]) => html('option', { value, selected: (values.dxfUnit ?? '') === value }, text)));
+    const dxfNote = values.dxf
+      ? html('p', { style: 'margin:0;color:var(--muted)', 'data-dxf-summary': true }, dxfSummary(values.dxf))
+      : null;
     const pickNote = values.plane !== 'face'
       ? null
       : values.picked
@@ -394,9 +404,39 @@ export function startStudio(document) {
     return html('div', { class: 'form' },
       html('h2', { style: 'margin:0' }, 'New sketch'),
       field('Name', name), field('Plane', plane), pickNote, onDatum ? null : field('Offset along the normal (mm)', offset),
+      field('DXF layers', dxfLayers), field('DXF unit', dxfUnit), field('Import DXF', dxfInput), dxfNote,
       html('div', { class: 'row' },
         html('button', { onclick: createLocalLayer }, 'Start sketch'),
         html('button', { onclick: () => { studio.newSketch = null; cancelFacePick(); renderLayers(); } }, 'Cancel')));
+  }
+
+  /** One line on what a DXF import brought in. */
+  function dxfSummary({ file, report }) {
+    const skipped = Object.values(report.skipped).reduce((a, b) => a + b, 0);
+    const parts = [`${file}: ${report.curves} curves`, `${report.loops} closed loops`];
+    if (report.holes) parts.push(`${report.holes} holes`);
+    if (report.regions) parts.push(`${report.regions} more regions`);
+    if (report.open_curves) parts.push(`${report.open_curves} open curves`);
+    if (skipped) parts.push(`${skipped} skipped`);
+    return `${parts.join(' · ')} (${report.unit}, ${report.unit_source}).`;
+  }
+
+  async function importDxf(file) {
+    const values = studio.newSketch;
+    if (!file || !values) return;
+    try {
+      if (file.size > 32 * 1024 * 1024) throw new Error('DXF files up to 32 MB can be imported here.');
+      const layers = (values.dxfLayers ?? '').split(',').map((l) => l.trim()).filter(Boolean);
+      const options = { id: values.name, layers };
+      if (values.dxfUnit) options.unit = values.dxfUnit;
+      const result = await studio.api('/api/dxf-import', { method: 'POST', body: JSON.stringify({ dxf: await file.text(), options }) });
+      if (studio.newSketch !== values) return;
+      values.dxf = { file: file.name, sketch: result.sketch, report: result.report };
+      renderLayers();
+      say(`${dxfSummary(values.dxf)} Start sketch places it on the chosen plane.`, !result.report.loops);
+    } catch (error) {
+      say(`DXF import failed: ${error.message}`, true);
+    }
   }
 
   function openNewSketch(plane = 'xy') {
@@ -445,11 +485,18 @@ export function startStudio(document) {
           ? { plane: 'datum', datum: datum.id, frame }
           : { plane: values.plane, offset: values.offset, picked: values.picked },
       };
+      if (values.dxf) layer.create.imported = values.dxf.sketch;
       studio.layers.push(layer);
       studio.newSketch = null;
       cancelFacePick();
       activate(name, true);
-      say(`New sketch ${name} on ${layer.plane}. Draw a closed shape on it; Apply adds it to the model.`);
+      if (values.dxf && studio.seedDraft?.()) {
+        const [min, max] = values.dxf.report.bounds_mm ?? [[0, 0], [0, 0]];
+        lookAtActive({ min, max });
+        say(`New sketch ${name} on ${layer.plane} with ${values.dxf.file}. Previewing; edit or constrain it, then Apply adds it to the model.`);
+      } else {
+        say(`New sketch ${name} on ${layer.plane}. Draw a closed shape on it; Apply adds it to the model.`);
+      }
     } catch (error) {
       say(error.message, true);
     }
@@ -523,10 +570,12 @@ export function startStudio(document) {
   }
   studio.activate = activate;
 
-  function lookAtActive() {
+  /** Looks at the active layer, framing `known` (local {min, max} in mm)
+   * or else its scene's bounds. */
+  function lookAtActive(known = null) {
     const layer = activeLayer();
     if (!layer?.frame) return;
-    const bounds = localBounds(sceneOf(layer.feature));
+    const bounds = known ?? localBounds(sceneOf(layer.feature));
     const center = bounds ? [(bounds.min[0] + bounds.max[0]) / 2, (bounds.min[1] + bounds.max[1]) / 2] : [0, 0];
     studio.camera = lookAt(studio.camera, layer.frame, center);
     if (bounds) {

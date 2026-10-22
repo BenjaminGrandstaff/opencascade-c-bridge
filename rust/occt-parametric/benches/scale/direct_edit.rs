@@ -21,6 +21,7 @@ fn plate(
     definition.requirements.clear();
     definition.parameters.clear();
     let pattern = |input: &str, step: VectorExpr| FeatureOperation::LinearPattern {
+        skip: Vec::new(),
         input: input.into(),
         step,
         count: ScalarExpr::Literal(Quantity::scalar(side as f64)),

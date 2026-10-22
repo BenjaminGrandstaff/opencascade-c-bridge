@@ -20,6 +20,7 @@ pub mod document;
 pub mod document_diff;
 #[doc(hidden)]
 pub mod drawing;
+pub mod dxf;
 #[doc(hidden)]
 pub mod error;
 #[doc(hidden)]

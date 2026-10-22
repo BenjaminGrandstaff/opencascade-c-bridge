@@ -12,21 +12,21 @@ tracks status and order.
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 183 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 183 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 185 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 185 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 8/8, bridge 191 + first-use integration 1 (+1 doc test), recipes 3, parametric core 66 + kernel 809 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 102 + viewer Node 476 + branch command 2 + model command 106, MCP Python 29, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 8/8, bridge 191 + first-use integration 1 (+1 doc test), recipes 3, parametric core 79 + kernel 818 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 104 + viewer Node 479 + branch command 2 + model command 114, MCP Python 30, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
-| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 29 clang-tidy warnings (28 complexity warnings and one public ABI padding warning) plus 82 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
+| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 27 clang-tidy warnings (26 complexity warnings and one public ABI padding warning) plus 82 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all five crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 2026-10-21: 92.81% lines overall; C++ 94.48% lines, 82.71% branches, 99.88% functions; Rust 92.39% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
-| Scale benchmarks | Current run: all 138 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
+| Coverage | 2026-10-22: 92.69% lines overall; C++ 94.49% lines, 82.60% branches, 99.88% functions; Rust 92.26% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
+| Scale benchmarks | Current run: all 139 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
 
 ## Done
 
-- Sketch corner refactor (schema 183 and ABI 86 unchanged): chamfer creation,
+- Sketch corner refactor (schema 185 and ABI 86 unchanged): chamfer creation,
   analytical fillets, iterative candidate acceptance, native solution search,
   wire rebuilding and adjacent-edge selection are separate stages. Rebuilt
   corner complexity falls from 81 to 8 and corner dispatch from 35 to 19;
@@ -37,10 +37,65 @@ tracks status and order.
   circular arcs, splines, elliptical arcs, two-edge loops, reversed traversal,
   small/large scales and distant rotated planes. Exact BREP geometry, edge
   order, statuses, diagnostics, source state and handle cleanup match the
-  previous implementation, including 42 cases with source BREP metadata changes
+  previous implementation, including 42 cases with source BREP serialization changes
   already present before the refactor. New Rust regressions cover selected-tip
   isolation across loop seams/reversal and asymmetric reversed chamfer distances.
-  All 142 public C exports remain unchanged.
+  All 14 sketch-editing tests also pass against the previous implementation.
+  All 142 public C exports remain unchanged. All eight native tests and the
+  full instrumented C++/Rust suite pass with unchanged timing limits. Formatting
+  and Clippy pass across all five Rust crates; all 479 viewer tests and 30 MCP
+  tests pass. Full analysis adds no findings and removes two complexity warnings;
+  remaining totals are 27 clang-tidy warnings and 82 cppcheck findings.
+
+- Timeline bookmarks and branches (schema 185, ABI 86 unchanged):
+  - **Bookmarks** name a checkout and its suppressions.
+  - **Branches** keep alternative continuations after a shared feature. The
+    active one is the family's feature list; stored ones keep only their tail
+    and timeline state. Switching swaps tails, so edits before the base reach
+    every branch.
+  - **Merging** appends the features the active branch lacks, and refuses
+    with the features named when both define one differently.
+  - **Where:** one guarded `timeline` edit change for the CLI and MCP, and
+    studio Feature history controls with Undo/Redo.
+  - **Reports** show the branch, stored branches and bookmarks.
+  - **Scale:** 100 switches of a 5,000-feature tail validate in 58 ms (5 s
+    budget).
+  - See
+    [feature history](docs/FEATURE_HISTORY.md#bookmarks-and-branches-schema-185).
+
+- Pattern types (schema 184, ABI 86 unchanged): `curve_pattern` spaces copies
+  by arc length along a sketch wire, either fixed or turning with the path
+  through a twist-free carried rotation. `fill_pattern` keeps grid or
+  staggered sites inside a planar face at least a margin from its edges and
+  holes; sampled tests are confirmed exactly near the boundary. `table_pattern`
+  copies by listed offsets, and `skip` leaves out copies of linear, circular
+  and curve patterns. The studio solid editor offers all three, with skip
+  lists, and the `vent-panel` example uses each. Fill sites match a
+  brute-force count at five margins. The scale gate places 9,668 fill copies,
+  1,000 tangent copies and 10,000 table copies in 11.7 s (60 s budget). See
+  [part patterns](docs/PART_PATTERNS.md#skipped-copies-curves-fills-and-tables-schema-184).
+
+- DXF import (schema 183 and ABI 86 unchanged): a kernel-free reader turns
+  ASCII DXF lines, arcs, circles, ellipses, bulged polylines, clamped and
+  fit-point splines and block inserts into an ordinary sketch in
+  millimeters. Shared endpoints are merged within a tolerance, and closed loops
+  are directed end to start and nested into the profile, holes and regions.
+  Annotation and unsupported entities are counted in a report. Available as
+  `occt-model --import-dxf` (with a face-build check), the MCP tool
+  `occt_import_dxf` and the studio's New sketch. Kernel tests match extruded
+  volumes to closed-form areas. 10,000 lines import in 0.16 s, or 1.8 s with
+  their faces built. Limits: 64 MiB, 10,000 curves, 1,000 holes per boundary
+  and 1,000 regions. See [DXF import](docs/DXF_IMPORT.md).
+
+- Dimensioned renders (schema 183 and ABI 86 unchanged): `"dimensions": true`
+  in `renders` draws the overall width and height on orthographic views,
+  grouped Ø labels on visible circles seen end-on, and the X × Y × Z size on
+  the iso view, with a built-in bitmap font. Values come from exact bounds and
+  analytic circle edges and are listed per image in the report. Labels avoid
+  each other, and hidden circles are skipped. Tests check the values, the
+  drawn ink, unchanged images without the option, and that a bolt's hidden
+  clearance hole is not labelled. There is no measurable cost on a 400-hole
+  plate. See [rendered views](tools/model/README.md#rendered-views-and-sections).
 
 - Advanced sweep refactor (schema 183 and ABI 86 unchanged): section-position
   validation, input lookup, section conversion, station calculation, folding
@@ -3776,8 +3831,8 @@ ordered by priority; the catalog/documentation foundation is complete.
    previews render shaded PNG views and hatched section planes on request,
    and MCP returns them as image content. Flat patterns render as ordinary
    outputs, with dashed bend lines, and scenes of several outputs with
-   their interference in red. Remaining refinement: dimension labels in the
-   images.
+   their interference in red. Optional dimension labels give overall
+   sizes and visible hole diameters from exact geometry.
 4. **Complete failure reports — complete.** Builds and edits rejected by
    required requirements return the whole verification table with measured
    values, evidence and witnesses, plus output measurements, bounded at 500

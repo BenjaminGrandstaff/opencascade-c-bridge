@@ -24,7 +24,7 @@ explicitly selected.
 ```json
 {
   "schema": "occb-model-request-v1",
-  "model": { "schema_version": 183, "...": "complete ModelDocument" },
+  "model": { "schema_version": 185, "...": "complete ModelDocument" },
   "outputs": [{ "instance": "bracket", "output": "body" }],
   "edits": [{
     "instance": "bracket",
@@ -61,7 +61,8 @@ views at 512 px. All fields are optional:
 "renders": {
   "views": ["iso", "front", "top", "right"],
   "sections": [{ "id": "mid", "origin_mm": [20, 15, 12], "normal": [1, 0, 0] }],
-  "size_px": 512
+  "size_px": 512,
+  "dimensions": true
 }
 ```
 
@@ -77,6 +78,22 @@ are ordinary outputs, so a `top` render of the flat output shows the blank,
 with its bend lines dashed in blue: each bend zone's center line, each edge
 tab's bend and hem folds, drawn where they lie on visible material. Their
 view entries give `bend_lines`, the number of line segments (both faces).
+
+Add `"dimensions": true` to draw dimensions on each output's standard views.
+The front, back, top, bottom, left and right views get the overall width
+(below the part) and height (to its right), with extension lines and arrows.
+Full circles seen end-on, such as holes, bosses and shafts, get a Ø label
+with a leader from their rim. Equal diameters are grouped with a count
+(`Ø2 x400`), and at most 8 diameters are labelled per view. Only circles whose
+rim is visible are labelled, so a hole under a washer is not. The iso view
+shows the overall size as `X x Y x Z mm`. Values come from the exact bounds
+and analytic circle edges, not the mesh, and are printed with at most two
+decimals. Each view entry lists what it labelled under `dimensions`, as
+`{kind: width|height|size|diameter, axis?, value_mm, count?}`; a diameter
+with no free spot for its label has `"drawn": false`. The part is drawn
+smaller to leave room. The option adds no measurable time: four 1,024 px
+views of a 400-hole plate took 8.0 s with it and 8.2 s without (release
+build). Scenes and sections are not dimensioned.
 
 Add `"scene": true` to also render every selected output together (at most
 64), from the same views and sections, into `scene-<view>.png` and
@@ -141,6 +158,17 @@ line; 600 failing instances produced a report under 700 KB. Only required
 failures reject a build; preferred and advisory failures stay in an accepted
 build's table. Failed geometry or failed requirement evaluation still fail
 with their own message and kernel diagnostics.
+
+## DXF import
+
+`occt-model --import-dxf REQUEST.json NEW_RESULT.json` turns a DXF file's 2D
+outlines into a `sketch_face` feature. The request is
+`{"schema": "occb-dxf-import-v1", "dxf": "<file text>", "feature_id": "outline", "options": {"layers": [...], "unit": "inch", "tolerance_mm": 0.001}}`.
+The result (`occb-dxf-import-report-v1`) holds the feature, the import report
+(units, imported and skipped entities, loops, holes, regions, open curves,
+bounds) and `face`: whether the face builds, with its area. Nothing else is
+built or published. The example drawing is
+[`dxf/bracket.dxf`](dxf/bracket.dxf); see [DXF import](../../docs/DXF_IMPORT.md).
 
 ## Edit and repair loop
 

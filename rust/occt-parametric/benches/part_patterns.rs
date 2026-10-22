@@ -71,6 +71,7 @@ fn main() {
     family.features.push(FeatureDefinition {
         id: "pattern".into(),
         operation: FeatureOperation::LinearPattern {
+            skip: Vec::new(),
             input: "source".into(),
             step: VectorExpr::Literal(VectorQuantity::lengths(
                 2.0,

@@ -313,3 +313,139 @@ fn feature_history_edits_report_states_guard_snapshots_and_record_reorders() {
     ]), json!([]), "invalid-move", "move-2").unwrap_err();
     assert_eq!(invalid.stage, "patch");
 }
+
+#[test]
+fn timeline_branches_switch_geometry_bookmark_and_refuse_conflicting_merges() {
+    let dir = Directory::new();
+    let saved = |name: &str| {
+        ModelDocument::from_json(&fs::read_to_string(dir.0.join(name).join("model.json")).unwrap())
+            .unwrap()
+    };
+    let timeline = |model: &ModelDocument, action: Value| {
+        let order: Vec<_> = model.family.features.iter().map(|f| f.id.clone()).collect();
+        json!([{"action":"timeline","family":"bracket","expected":model.family.history,
+                "expected_order":order,"timeline":action}])
+    };
+    let volume = |report: &Value| report["outputs"][0]["volume_mm3"].as_f64().unwrap();
+    let model = fixture();
+    let main_volume = volume(
+        &patch_request(
+            &dir,
+            &model,
+            json!([]),
+            edit("thickness", 6.0),
+            "start",
+            "t0",
+        )
+        .unwrap(),
+    );
+    let model = saved("start");
+    // A branch after the first hole, then make it: `body` keeps one hole.
+    patch_request(
+        &dir,
+        &model,
+        timeline(
+            &model,
+            json!({"kind":"create_branch","name":"one-hole","base":"first_hole"}),
+        ),
+        json!([]),
+        "branched",
+        "t1",
+    )
+    .unwrap();
+    let model = saved("branched");
+    patch_request(
+        &dir,
+        &model,
+        timeline(&model, json!({"kind":"switch_branch","name":"one-hole"})),
+        json!([]),
+        "switched",
+        "t2",
+    )
+    .unwrap();
+    let model = saved("switched");
+    assert_eq!(model.family.history.branch.as_deref(), Some("one-hole"));
+    let body = model
+        .family
+        .features
+        .iter()
+        .find(|f| f.id == "body")
+        .unwrap()
+        .clone();
+    let zero = json!({"literal":{"x":{"value":0.0,"dimension":"length","unit":"millimeter"},"y":{"value":0.0,"dimension":"length","unit":"millimeter"},"z":{"value":0.0,"dimension":"length","unit":"millimeter"}}});
+    let report = patch_request(
+        &dir,
+        &model,
+        json!([{"action":"replace_feature","family":"bracket","expected":body,
+        "feature":{"id":"body","operation":{"translate":{"input":"first_hole","offset":zero}}}}]),
+        json!([]),
+        "one-hole",
+        "t3",
+    )
+    .unwrap();
+    let branch_volume = volume(&report);
+    assert!(
+        branch_volume > main_volume + 1.0,
+        "{branch_volume} vs {main_volume}"
+    );
+    // Bookmark it, then back to main: the original part returns.
+    let model = saved("one-hole");
+    patch_request(
+        &dir,
+        &model,
+        timeline(&model, json!({"kind":"bookmark","name":"one hole v1"})),
+        json!([]),
+        "bookmarked",
+        "t4",
+    )
+    .unwrap();
+    let model = saved("bookmarked");
+    let report = patch_request(
+        &dir,
+        &model,
+        timeline(&model, json!({"kind":"switch_branch","name":"main"})),
+        json!([]),
+        "main",
+        "t5",
+    )
+    .unwrap();
+    assert!((volume(&report) - main_volume).abs() < 1e-6);
+    assert_eq!(report["feature_states"][0]["branch"], "main");
+    assert_eq!(report["feature_states"][0]["branches"], json!(["one-hole"]));
+    let model = saved("main");
+    assert_eq!(model.family.history.branch, None);
+    let stored = &model.family.history.branches[0];
+    assert_eq!(
+        (stored.name.as_str(), stored.bookmarks[0].name.as_str()),
+        ("one-hole", "one hole v1")
+    );
+    // Both define `body` differently: the merge is refused with the conflict.
+    let conflict = patch_request(
+        &dir,
+        &model,
+        timeline(&model, json!({"kind":"merge_branch","name":"one-hole"})),
+        json!([]),
+        "merge",
+        "t6",
+    )
+    .unwrap_err();
+    assert_eq!(conflict.stage, "conflict");
+    assert_eq!(conflict.details["branch_conflicts"][0]["feature"], "body");
+    assert!(!dir.0.join("merge").exists());
+    // Stale guards and mixed transactions are refused.
+    let stale = timeline(&saved("start"), json!({"kind":"bookmark","name":"late"}));
+    assert_eq!(
+        patch_request(&dir, &model, stale, json!([]), "stale", "t7")
+            .unwrap_err()
+            .stage,
+        "conflict"
+    );
+    let mut mixed = timeline(&model, json!({"kind":"bookmark","name":"x"}));
+    mixed.as_array_mut().unwrap().push(json!({"action":"checkout_feature","family":"bracket","expected":model.family.history,"head":null}));
+    assert_eq!(
+        patch_request(&dir, &model, mixed, json!([]), "mixed", "t8")
+            .unwrap_err()
+            .stage,
+        "request"
+    );
+}

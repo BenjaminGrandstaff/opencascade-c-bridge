@@ -118,7 +118,95 @@ previous selection.
 
 This feature timeline is separate from the append-only
 [document revision ledger](MODEL_HISTORY.md), studio undo snapshots, and native
-face/edge provenance. It does not add feature branches, named timeline bookmarks,
-or checkout before the first feature. State propagation uses a queue in
+face/edge provenance. It does not check out before the first feature. State propagation uses a queue in
 O(features + dependency edges); the scale gate exercises 100 state walks through
 10,000 reverse-ordered features.
+
+## Bookmarks and branches (schema 185)
+
+Bookmarks and branches work like git tags and branches over the timeline.
+
+```json
+"history": {
+  "head": "moved",
+  "suppressed": ["notched", "spare"],
+  "bookmarks": [{"name": "notch reverted", "head": "moved", "suppressed": ["notched", "spare"]}],
+  "branches": [{"name": "further", "base": "spare-moved", "features": ["..."], "head": "moved", "suppressed": ["notched", "spare"]}]
+}
+```
+
+**Bookmarks.** A bookmark names a timeline state: a checkout `head` and its
+suppressions. Checking out a bookmark restores both. Bookmarks belong to the
+branch they were made on and travel with it.
+
+**Branches.** A branch is an alternative continuation of the timeline: after
+feature `base` (or from the start, when there is no base), the features go on
+as the branch lists them instead.
+- **The active branch** is the family's own `features`. It is named by
+  `branch`; omitted means `main`.
+- **Stored branches** are in `branches`. Each keeps only its features after
+  its base, with its own head, suppressions and bookmarks. Features up to the
+  base are shared, so an edit there reaches every branch that continues
+  after it.
+- **Creating a branch** stores a copy of the active branch's continuation
+  after the chosen base, which you then change on its own.
+- **Switching** stores the active branch's continuation and timeline state
+  under its name, and makes the chosen branch active.
+- **Merging** appends the branch's features that the active branch lacks,
+  in the branch's order, after the active ones, so all their inputs come
+  first. A feature both define differently is a conflict. The merge is then
+  refused, names the features, and changes nothing. The merged branch stays
+  stored.
+
+Parameters, requirements, references and datums are shared by all branches.
+The document is refused when:
+- a stored branch redeclares a shared feature;
+- a bookmark or branch state names a missing feature;
+- the feature a branch continues after is gone. Deleting that feature
+  requires deleting or merging the branch first.
+
+Names are 1 to 64 letters, digits, spaces, `-`, `_` or `.`. A branch keeps at
+most 1,000 bookmarks, a family 100 stored branches, and a branch 10,000
+features. A switch is linear in features: 100 switches of a 5,000-feature tail
+of a 10,000-feature family take 58 ms with validation (5 s budget).
+
+### Editing
+
+One guarded `timeline` change does each action:
+
+```json
+{"action": "timeline", "family": "history-part",
+ "expected": {"head": "moved", "suppressed": ["notched", "spare"]},
+ "expected_order": ["base", "tool", "notched", "spare", "spare-moved", "moved", "later"],
+ "timeline": {"kind": "create_branch", "name": "further", "base": "spare-moved"}}
+```
+
+`kind` is `bookmark`, `delete_bookmark`, `checkout_bookmark`, `create_branch`
+(with an optional `base`), `switch_branch`, `delete_branch` or
+`merge_branch`. `expected` is the family's whole history object and
+`expected_order` its feature IDs, both as read. A timeline change must be the
+family's only change in its transaction. Merge conflicts fail with stage
+`conflict` and list the features in `branch_conflicts`. Build reports add
+`branch`, `branches` and `bookmarks` to `feature_states` when a family has
+any.
+
+### Studio
+
+**Feature history** shows the active branch and lists the other branches with
+**Switch**, **Merge** and **Delete**. **New branch** takes a name and the
+feature it continues after (the last one by default). **Bookmark this
+timeline** saves the current checkout and suppressions under a name, and each
+bookmark has **Checkout** and **Delete**. Every action joins Undo/Redo, and
+Save writes the branches into the model.
+
+### Tests
+
+- **Core:** bookmarks, branch switching, edits before the base reaching
+  other branches, merges and conflicts, validation, and a JSON round trip.
+- **Command line:** branch geometry differs and switches back exactly; a
+  bookmark travels with its branch; conflicting merges, stale guards and
+  mixed transactions are refused.
+- **Studio:** switch, Undo/Redo, bookmarks and save/reopen; the panel's
+  controls; and the
+  [feature-history example](../tools/model/feature-history.request.json),
+  which now carries a bookmark and a stored branch.

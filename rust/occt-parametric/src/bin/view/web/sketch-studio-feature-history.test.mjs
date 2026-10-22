@@ -28,3 +28,25 @@ test('drafts and picks block history; rejected edits retain the accepted view',a
   f.studio.hasDraftHistory=()=>false;f.studio.api=async()=>{throw Error('moving cut would put it before its input');};
   await f.controls.apply({action:'move',feature:'cut',after:null});assert.equal(f.calls.length,0);assert.match(f.studio.message.text,/before its input/);
 });
+test('branch and bookmark controls send guarded timeline actions with typed names',async()=>{
+  const f=setup();
+  f.studio.featureHistory={head:'cut',suppressed:['cut'],branch:'ribbed',
+    branches:[{name:'main',base:'base',features:[{id:'cut'},{id:'later'}]}],bookmarks:[{name:'v1',head:'cut'}]};
+  f.controls.render();
+  assert.match(JSON.stringify(f.host),/Branch ribbed/);assert.match(JSON.stringify(f.host),/after base · 2 own features/);
+  await f.button('Switch to branch main').attrs.onclick();
+  assert.deepEqual(f.calls.at(-2).body,{version:3,expected:f.studio.featureHistory,expected_order:['base','cut','later'],action:'switch_branch',name:'main'});
+  await f.button('Merge branch main into ribbed').attrs.onclick();assert.equal(f.calls.at(-2).body.action,'merge_branch');
+  await f.button('Checkout bookmark v1').attrs.onclick();assert.deepEqual([f.calls.at(-2).body.action,f.calls.at(-2).body.name],['checkout_bookmark','v1']);
+  // A new branch needs a name; it continues after the last feature by default.
+  const before=f.calls.length;
+  const all=node=>[node,...node.children.filter(c=>c&&typeof c==='object').flatMap(all)];
+  const find=text=>all(f.host).find(n=>n.tag==='button'&&n.children.includes(text));
+  await find('New branch').attrs.onclick();assert.equal(f.calls.length,before);assert.match(f.studio.message.text,/branch name/);
+  all(f.host).find(n=>n.attrs['aria-label']==='Branch name').attrs.oninput({target:{value:' thin '}});
+  await find('New branch').attrs.onclick();
+  assert.deepEqual([f.calls.at(-2).body.action,f.calls.at(-2).body.name,f.calls.at(-2).body.base],['create_branch','thin','later']);
+  all(f.host).find(n=>n.attrs['aria-label']==='Bookmark name').attrs.oninput({target:{value:'release'}});
+  await find('Bookmark this timeline').attrs.onclick();
+  assert.deepEqual([f.calls.at(-2).body.action,f.calls.at(-2).body.name],['bookmark','release']);
+});

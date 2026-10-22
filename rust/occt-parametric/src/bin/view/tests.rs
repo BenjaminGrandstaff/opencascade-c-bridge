@@ -7422,6 +7422,16 @@ fn studio_shells_drafts_mirrors_and_patterns_preview_exact_solids() {
         "pushed",
     );
     close(pushed, 30000.0);
+    // Copies at listed offsets, joined to the block: one shares it, one
+    // touches it and one stands apart.
+    let listed = preview(
+        &mut studio,
+        json!([
+        {"id": "spread-table-pattern", "operation": {"table_pattern": {"input": "block", "offsets": [lengths(0.0, 0.0, 0.0), lengths(40.0, 0.0, 0.0), lengths(100.0, 0.0, 0.0)]}}},
+        {"id": "spread", "operation": {"fuse": {"left": "block", "right": "spread-table-pattern"}}}]),
+        "spread",
+    );
+    close(listed, 72000.0);
     // Previews leave the accepted model alone.
     assert_eq!(get(&mut studio, "/api/state").1, state);
 }
@@ -7798,4 +7808,136 @@ fn curved_face_picks_drive_direct_face_edits() {
         ),
         24000.0 - hole,
     );
+}
+
+#[test]
+fn dxf_files_import_into_a_new_sketch_that_previews_and_applies() {
+    let directory = Directory::new();
+    let model = PathBuf::from(directory.model(&sketch_block_document()));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let state = get(&mut studio, "/api/state").1;
+    let dxf = include_str!("../../../../../tools/model/dxf/bracket.dxf");
+    let body = json!({"dxf": dxf, "options": {"id": "bracket", "layers": ["OUTLINE", "HOLES"]}});
+    let response = studio.handle("POST", "/api/dxf-import", body.to_string().as_bytes());
+    assert_eq!(response.status, 200);
+    let imported: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(imported["report"]["holes"], 3);
+    assert_eq!(imported["sketch"]["id"], "bracket");
+    // Importing changes nothing; the sketch then goes through New sketch.
+    assert_eq!(get(&mut studio, "/api/state").1, state);
+    let mut definition: SketchDefinition =
+        serde_json::from_value(imported["sketch"].clone()).unwrap();
+    definition.id = "new-profile".into();
+    let mut edit = new_sketch_request(&mut studio, &definition);
+    let (status, preview) = create_sketch(&mut studio, &edit);
+    assert_eq!(status, 200, "{preview}");
+    assert_eq!(preview["can_apply"], true, "{preview}");
+    edit["apply"] = json!(true);
+    let (status, applied) = create_sketch(&mut studio, &edit);
+    assert_eq!(status, 200, "{applied}");
+    let sketches = get(&mut studio, "/api/sketches").1;
+    assert!(
+        sketches["sketches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["feature"] == "new-profile")
+    );
+    // Bad files say why.
+    let response = studio.handle(
+        "POST",
+        "/api/dxf-import",
+        json!({"dxf": "AutoCAD Binary DXF"}).to_string().as_bytes(),
+    );
+    assert_eq!(response.status, 422);
+    assert!(String::from_utf8_lossy(&response.body).contains("binary DXF"));
+}
+
+#[test]
+fn studio_timeline_branches_and_bookmarks_switch_undo_and_refuse_conflicts() {
+    let dir = Directory::new();
+    let path = dir.0.join("branches.json");
+    fs::write(&path, document().to_json_pretty().unwrap()).unwrap();
+    let mut studio = serve::Studio::load(&path, None).unwrap();
+    let post = |studio: &mut serve::Studio, action: &str, fields: serde_json::Value| {
+        let data = get(studio, "/api/features").1;
+        let mut body = json!({"version":data["version"],"expected":data["history"],
+            "expected_order":data["features"].as_array().unwrap().iter().map(|f|f["id"].clone()).collect::<Vec<_>>(),"action":action});
+        body.as_object_mut()
+            .unwrap()
+            .extend(fields.as_object().unwrap().clone());
+        let response = studio.handle("POST", "/api/feature-history", body.to_string().as_bytes());
+        (
+            response.status,
+            String::from_utf8_lossy(&response.body).into_owned(),
+        )
+    };
+    let features: Vec<String> = get(&mut studio, "/api/features").1["features"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["id"].as_str().unwrap().to_owned())
+        .collect();
+    let first = features[0].clone();
+    let (status, body) = post(
+        &mut studio,
+        "create_branch",
+        json!({"name":"alt","base":first}),
+    );
+    assert_eq!(status, 200, "{body}");
+    let (status, body) = post(&mut studio, "switch_branch", json!({"name":"alt"}));
+    assert_eq!(status, 200, "{body}");
+    let data = get(&mut studio, "/api/features").1;
+    assert_eq!(data["history"]["branch"], "alt");
+    assert_eq!(data["history"]["branches"][0]["name"], "main");
+    // Undo returns to main; redo to alt.
+    history(&mut studio, "undo");
+    assert!(get(&mut studio, "/api/features").1["history"]["branch"].is_null());
+    history(&mut studio, "redo");
+    assert_eq!(
+        get(&mut studio, "/api/features").1["history"]["branch"],
+        "alt"
+    );
+    // Bookmarks save the checkout and restore it.
+    let (status, body) = post(&mut studio, "checkout", json!({"head": first}));
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        post(&mut studio, "bookmark", json!({"name":"start only"})).0,
+        200
+    );
+    assert_eq!(post(&mut studio, "checkout", json!({"head": null})).0, 200);
+    assert_eq!(
+        post(
+            &mut studio,
+            "checkout_bookmark",
+            json!({"name":"start only"})
+        )
+        .0,
+        200
+    );
+    assert_eq!(
+        get(&mut studio, "/api/features").1["history"]["head"],
+        json!(first)
+    );
+    // Merging main back adds nothing new, so it changes nothing.
+    let (status, body) = post(&mut studio, "merge_branch", json!({"name":"main"}));
+    assert_eq!(status, 400);
+    assert!(body.contains("no changes"), "{body}");
+    // Unknown names and missing names are refused.
+    assert!(
+        post(&mut studio, "switch_branch", json!({"name":"ghost"}))
+            .1
+            .contains("unknown branch")
+    );
+    assert!(
+        post(&mut studio, "bookmark", json!({}))
+            .1
+            .contains("Name is required")
+    );
+    // The branches survive saving and reopening.
+    assert_eq!(studio.handle("POST", "/api/save", b"{}").status, 200);
+    let mut reopened = serve::Studio::load(&path, None).unwrap();
+    let history = get(&mut reopened, "/api/features").1["history"].clone();
+    assert_eq!(history["branch"], "alt");
+    assert_eq!(history["bookmarks"][0]["name"], "start only");
 }

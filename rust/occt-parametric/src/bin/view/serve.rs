@@ -2,6 +2,8 @@
 //! family parameter defaults, saves them, and follows saves made elsewhere.
 #[path = "serve_datum.rs"]
 mod datum;
+#[path = "serve_dxf.rs"]
+mod dxf;
 #[path = "serve_face_pick.rs"]
 mod face_pick;
 #[path = "serve_feature_history.rs"]
@@ -857,6 +859,10 @@ impl Studio {
                 Ok(data) => Response::json(200, &data),
                 Err(error) => Response::error(422, &error),
             },
+            ("POST", "/api/dxf-import") => match self.dxf_import(body) {
+                Ok(data) => Response::json(200, &data),
+                Err(error) => Response::error(422, &error),
+            },
             ("POST", "/api/sketch-face-pick") => match self.pick_support_face(body) {
                 Ok(data) => Response::json(200, &data),
                 Err(error) => Response::error(422, &error),
@@ -1351,6 +1357,8 @@ fn read_request(stream: &mut TcpStream, port: u16) -> Result<(String, String, Ve
     }
     let limit = if path == "/api/session/apply" {
         MAX_SESSION_BODY_BYTES
+    } else if path == "/api/dxf-import" {
+        dxf::MAX_DXF_UPLOAD_BYTES
     } else {
         MAX_BODY_BYTES
     };

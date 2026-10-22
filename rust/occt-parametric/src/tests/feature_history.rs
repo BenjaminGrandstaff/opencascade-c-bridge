@@ -206,6 +206,7 @@ fn reordered_features_build_the_same_part_and_history_round_trips() {
     family.history = FeatureHistory {
         head: Some("drilled".into()),
         suppressed: vec!["notched".into()],
+        ..Default::default()
     };
     let mut graph = InstanceGraph::new(&family);
     graph.add_base("part", HashMap::new(), "test").unwrap();

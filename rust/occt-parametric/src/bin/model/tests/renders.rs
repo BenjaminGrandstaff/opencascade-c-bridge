@@ -279,3 +279,86 @@ fn scenes_render_outputs_together_and_show_interference() {
             .contains("at most 64")
     );
 }
+
+/// Pixels in the dimension ink color.
+fn ink(rgb: &[u8]) -> usize {
+    rgb.chunks(3).filter(|c| c == &[20, 60, 140]).count()
+}
+
+#[test]
+fn dimensioned_renders_label_exact_sizes_and_visible_diameters() {
+    let dir = Directory::new();
+    let mut value = view_example("direct-edit");
+    value["step"] = json!(false);
+    value["preview"] = json!(false);
+    value["renders"] = json!({"views": ["iso", "front", "top"]});
+    let plain = invoke(&dir, value.clone(), "plain").unwrap();
+    value["renders"]["dimensions"] = json!(true);
+    let built = invoke(&dir, value, "dimensioned").unwrap();
+    let renders = built["outputs"][0]["renders"].as_array().unwrap();
+    let values = |entry: &Value| -> Vec<(String, f64)> {
+        entry["dimensions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| {
+                let kind = d["kind"].as_str().unwrap();
+                let axis = d["axis"]
+                    .as_str()
+                    .map(|a| format!(" {a}"))
+                    .unwrap_or_default();
+                (format!("{kind}{axis}"), d["value_mm"].as_f64().unwrap())
+            })
+            .collect()
+    };
+    let named = |pairs: &[(&str, f64)]| -> Vec<(String, f64)> {
+        pairs.iter().map(|(k, v)| (k.to_string(), *v)).collect()
+    };
+    assert_eq!(
+        values(&renders[0]),
+        named(&[("size x", 60.0), ("size y", 40.0), ("size z", 24.0)])
+    );
+    assert_eq!(
+        values(&renders[1]),
+        named(&[("width x", 60.0), ("height z", 24.0)])
+    );
+    // The through hole's two rims count once.
+    assert_eq!(
+        values(&renders[2]),
+        named(&[("width x", 60.0), ("height y", 40.0), ("diameter", 8.0)])
+    );
+    assert_eq!(renders[2]["dimensions"][2]["count"], 1);
+    for (entry, plain) in renders
+        .iter()
+        .zip(plain["outputs"][0]["renders"].as_array().unwrap())
+    {
+        let file = entry["file"].as_str().unwrap();
+        let (_, _, rgb) = image(&dir, "dimensioned", file);
+        assert!(ink(&rgb) > 200, "{file}");
+        // Without the option nothing is drawn or reported.
+        assert!(plain.get("dimensions").is_none());
+        let (_, _, rgb) = image(&dir, "plain", file);
+        assert_eq!(ink(&rgb), 0, "{file}");
+    }
+}
+
+#[test]
+fn hidden_circles_are_not_labelled() {
+    let dir = Directory::new();
+    let mut value = view_example("bolted-joint");
+    value["step"] = json!(false);
+    value["preview"] = json!(false);
+    value["renders"] = json!({"views": ["top"], "dimensions": true});
+    let built = invoke(&dir, value, "joint").unwrap();
+    let dimensions = built["outputs"][0]["renders"][0]["dimensions"]
+        .as_array()
+        .unwrap();
+    // From above only the washer (Ø12) and the screw head (Ø10) show; the
+    // clearance hole, shank and lower washer and nut are hidden.
+    let diameters: Vec<f64> = dimensions
+        .iter()
+        .filter(|d| d["kind"] == "diameter")
+        .map(|d| d["value_mm"].as_f64().unwrap())
+        .collect();
+    assert_eq!(diameters, [12.0, 10.0]);
+}

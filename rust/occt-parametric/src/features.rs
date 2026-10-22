@@ -553,6 +553,7 @@ pub(crate) fn execute_feature<'session>(
             axis,
             count,
             angle_step_radians,
+            skip,
         } => {
             return patterns::circular(
                 session,
@@ -561,15 +562,107 @@ pub(crate) fn execute_feature<'session>(
                 vector(axis, parameters, Dimension::Scalar)?,
                 scalar(count, parameters, Dimension::Scalar)?,
                 scalar(angle_step_radians, parameters, Dimension::Scalar)?,
+                skip,
                 is_group(input, definitions),
             );
         }
-        FeatureOperation::LinearPattern { input, step, count } => {
+        FeatureOperation::LinearPattern {
+            input,
+            step,
+            count,
+            skip,
+        } => {
             return patterns::linear(
                 session,
                 shape(shapes, input)?,
                 vector(step, parameters, Dimension::Length)?,
                 scalar(count, parameters, Dimension::Scalar)?,
+                skip,
+                is_group(input, definitions),
+            );
+        }
+        FeatureOperation::CurvePattern {
+            input,
+            path,
+            count,
+            orientation,
+            skip,
+        } => {
+            return patterns::curve(
+                session,
+                shape(shapes, input)?,
+                shape(shapes, path)?,
+                scalar(count, parameters, Dimension::Scalar)?,
+                *orientation,
+                skip,
+                is_group(input, definitions),
+            );
+        }
+        FeatureOperation::FillPattern {
+            input,
+            region,
+            face,
+            anchor,
+            direction,
+            spacing,
+            row_spacing,
+            layout,
+            margin,
+        } => {
+            let region_shape = shape(shapes, region)?;
+            let selected = match face {
+                Some(selector) => {
+                    let mut faces = resolve_face_selector(
+                        session,
+                        region_shape,
+                        selector,
+                        parameters,
+                        shapes,
+                        definitions,
+                    )?;
+                    if faces.len() != 1 {
+                        return Err(ModelError::new(format!(
+                            "fill pattern face selector must pick one face; it picked {}",
+                            faces.len()
+                        )));
+                    }
+                    faces.remove(0)
+                }
+                None => {
+                    let mut faces = session.subshapes(region_shape, ShapeType::Face)?;
+                    if faces.len() != 1 {
+                        return Err(ModelError::new(format!(
+                            "fill pattern region has {} faces; select one with face",
+                            faces.len()
+                        )));
+                    }
+                    faces.remove(0)
+                }
+            };
+            return patterns::fill(
+                session,
+                shape(shapes, input)?,
+                &selected,
+                patterns::Fill {
+                    anchor: vector(anchor, parameters, Dimension::Length)?,
+                    direction: vector(direction, parameters, Dimension::Scalar)?,
+                    spacing: scalar(spacing, parameters, Dimension::Length)?,
+                    row_spacing: scalar(row_spacing, parameters, Dimension::Length)?,
+                    layout: *layout,
+                    margin: scalar(margin, parameters, Dimension::Length)?,
+                },
+                is_group(input, definitions),
+            );
+        }
+        FeatureOperation::TablePattern { input, offsets } => {
+            let offsets = offsets
+                .iter()
+                .map(|offset| vector(offset, parameters, Dimension::Length))
+                .collect::<Result<Vec<_>, _>>()?;
+            return patterns::table(
+                session,
+                shape(shapes, input)?,
+                &offsets,
                 is_group(input, definitions),
             );
         }
@@ -906,6 +999,9 @@ fn is_group(input: &str, definitions: &Features<'_>) -> bool {
             FeatureOperation::Compound { .. }
                 | FeatureOperation::LinearPattern { .. }
                 | FeatureOperation::CircularPattern { .. }
+                | FeatureOperation::CurvePattern { .. }
+                | FeatureOperation::FillPattern { .. }
+                | FeatureOperation::TablePattern { .. }
         )
     })
 }

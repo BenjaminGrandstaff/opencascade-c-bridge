@@ -10,6 +10,7 @@ examples. Project-wide status lives in [the roadmap](../ROADMAP.md) and
 - [Hollow sketch profiles](PLANAR_REGIONS.md)
 - [Sketches attached to planar faces](FACE_SKETCHES.md)
 - [Linked edge projections into sketches](SKETCH_PROJECTIONS.md)
+- [DXF import into sketches](DXF_IMPORT.md)
 
 ## Features
 
@@ -30,7 +31,7 @@ examples. Project-wide status lives in [the roadmap](../ROADMAP.md) and
 - [Split bodies](SPLIT_BODY.md)
 - [Thickened sheets](THICKEN.md)
 - [Compound tool groups](COMPOUNDS.md)
-- [Linear patterns inside a part](PART_PATTERNS.md)
+- [Patterns inside a part: linear, circular, along a curve, fill and table](PART_PATTERNS.md)
 - [Sheet metal](SHEET_METAL.md)
 
 ## Assemblies and verification
