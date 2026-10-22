@@ -17,14 +17,34 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 8/8, bridge 187 + first-use integration 1 (+1 doc test), recipes 3, parametric core 66 + kernel 809 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 102 + viewer Node 476 + branch command 2 + model command 106, MCP Python 29, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 8/8, bridge 189 + first-use integration 1 (+1 doc test), recipes 3, parametric core 66 + kernel 809 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 102 + viewer Node 476 + branch command 2 + model command 106, MCP Python 29, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
-| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 32 clang-tidy warnings (31 complexity warnings and one public ABI padding warning) plus 83 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
+| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 29 clang-tidy warnings (28 complexity warnings and one public ABI padding warning) plus 82 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all five crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 2026-10-21: 92.81% lines overall; C++ 94.46% lines, 82.72% branches, 99.88% functions; Rust 92.39% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
+| Coverage | 2026-10-21: 92.81% lines overall; C++ 94.48% lines, 82.71% branches, 99.88% functions; Rust 92.39% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
 | Scale benchmarks | Current run: all 138 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
 
 ## Done
+
+- Advanced sweep refactor (schema 183 and ABI 86 unchanged): section-position
+  validation, input lookup, section conversion, station calculation, folding
+  checks, orientation/guide setup and section insertion are separate stages.
+  Creation complexity falls from 85 to 14; option validation falls from 27 to
+  21; every new helper is at most 19 against the unchanged limit of 25. All
+  sweep functions now meet that limit. Station parameters have an explicit
+  default initializer, removing a cppcheck initialization finding. A differential
+  run covers 372 cases (154 successful sweeps) across faces, closed/open wires,
+  straight/curved/cornered paths, orientation rules, twist and scale laws,
+  guides and intermediate sections. Exact BREP geometry, ordered history,
+  statuses, diagnostics, source immutability and handle cleanup match the
+  previous implementation. New Rust regressions check combined twist/scale
+  volumes and end faces, and generated-face history from all section profiles.
+  All nine sweep-module tests also pass against the previous native library;
+  all 142 public C exports remain unchanged. All eight native tests and the
+  full instrumented C++/Rust suite pass with unchanged timing limits; Rust
+  formatting and bridge Clippy are clean. Full analysis adds no findings and
+  removes three complexity warnings plus one initialization finding; remaining
+  totals are 29 clang-tidy warnings and 82 cppcheck findings.
 
 - Planar-region discovery refactor (schema 183 and ABI 86 unchanged): plane
   validation, input collection, enclosing-frame splitting, bounded-cell

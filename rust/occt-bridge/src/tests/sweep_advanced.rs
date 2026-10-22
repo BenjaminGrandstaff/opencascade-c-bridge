@@ -352,3 +352,77 @@ fn glued_fuses_join_touching_solids_without_seams() {
     assert_eq!(session.subshape_count(&fused, ShapeType::Face).unwrap(), 10);
     assert!(session.fuse_glued(&[&boxes[0]]).is_err());
 }
+
+#[test]
+fn combined_twist_and_scale_keep_end_sections_volume_and_inputs() {
+    let s = Session::new().unwrap();
+    {
+        let path = straight(&s, 10.);
+        let profile = square(&s, 2., 0.);
+        let before = s.exact_bounds(&profile).unwrap();
+        for (law, expected) in [
+            (SweepLaw::Linear, 280. / 3.),
+            (SweepLaw::Smooth, 40. * 83. / 35.),
+        ] {
+            let result = s
+                .sweep_advanced(
+                    &profile,
+                    &path,
+                    &SweepOptions {
+                        twist_radians: PI / 4.,
+                        end_scale: 2.,
+                        scale_law: law,
+                        ..SweepOptions::default()
+                    },
+                )
+                .unwrap();
+            assert!(s.is_valid(&result).unwrap());
+            assert!(close(s.volume(&result).unwrap(), expected, 1e-5));
+            assert!((end_reach(&s, &result, 0.) - 1.).abs() < 1e-6);
+            assert!((end_reach(&s, &result, 10.) - 2. * 2f64.sqrt()).abs() < 1e-4);
+            assert_eq!(s.exact_bounds(&profile).unwrap(), before);
+            assert_eq!(s.subshape_count(&profile, ShapeType::Edge).unwrap(), 4);
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn advanced_section_history_tracks_profile_edges_without_changing_sources() {
+    let s = Session::new().unwrap();
+    {
+        let path = straight(&s, 10.);
+        let start = square(&s, 2., 0.);
+        let middle = square(&s, 4., 5.);
+        let end = square(&s, 2., 10.);
+        let before = [&start, &middle, &end].map(|profile| s.exact_bounds(profile).unwrap());
+        let result = s
+            .sweep_advanced(
+                &start,
+                &path,
+                &SweepOptions {
+                    sections: &[(&middle, 0.5), (&end, 1.)],
+                    ..SweepOptions::default()
+                },
+            )
+            .unwrap();
+        assert!(close(s.volume(&result).unwrap(), 344. / 3., 1e-9));
+        for (profile, bounds) in [&start, &middle, &end].into_iter().zip(before) {
+            assert_eq!(s.exact_bounds(profile).unwrap(), bounds);
+            for edge in s.subshapes(profile, ShapeType::Edge).unwrap() {
+                let count = s
+                    .history_count(&result, &edge, HistoryRelation::Generated)
+                    .unwrap();
+                assert!(count > 0);
+                for index in 0..count {
+                    let generated = s
+                        .history(&result, &edge, HistoryRelation::Generated, index)
+                        .unwrap();
+                    assert_eq!(s.shape_type(&generated).unwrap(), ShapeType::Face);
+                    assert!(s.surface_area(&generated).unwrap() > 0.);
+                }
+            }
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
