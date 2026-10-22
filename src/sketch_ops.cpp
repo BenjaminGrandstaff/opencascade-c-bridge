@@ -179,9 +179,115 @@ namespace {
         if(!maker.IsDone()) return TopoDS_Edge();
         auto result=maker.Edge();if(reversed)result.Reverse();return result;
     }
-    // Rebuild the wire around one edited corner. Line/arc open corners use the
-    // analytical constructor; any spline or ellipse neighbor uses the iterative
-    // planar solver, trying each native solution until one fits the bounded edges.
+    struct CornerEdit {
+        TopoDS_Edge before;
+        TopoDS_Edge after;
+        TopoDS_Edge join;
+    };
+
+    const char* chamfer_edges(const TopoDS_Edge& incoming, const TopoDS_Edge& outgoing,
+                              double first, double second, CornerEdit& edit) {
+        if(first>=edge_length(incoming)-Precision::Confusion() || second>=edge_length(outgoing)-Precision::Confusion())
+            return "chamfer distances consume an adjacent edge";
+        const auto u=end_tangent(incoming,true),v=end_tangent(outgoing,false);
+        if(u.Magnitude()==0. || v.Magnitude()==0. || u.Normalized().Crossed(v.Normalized()).Magnitude()<=1e-9)
+            return "chamfer requires a corner with distinct tangent directions";
+        edit.before=shorten_edge(incoming,first,true);
+        edit.after=shorten_edge(outgoing,second,false);
+        if(edit.before.IsNull() || edit.after.IsNull()) return "chamfer could not trim adjacent edges";
+        BRepBuilderAPI_MakeEdge bridge(edge_end(edit.before),edge_start(edit.after));
+        if(!bridge.IsDone()) return "chamfer could not make a joining edge";
+        edit.join=bridge.Edge();
+        return shrinks_within(incoming,outgoing,edit.before,edit.after)
+            ? nullptr : "corner edit exceeds bounded neighbors";
+    }
+
+    const char* analytical_fillet_edges(const TopoDS_Edge& incoming, const TopoDS_Edge& outgoing,
+                                        const gp_Pln& plane, double radius, CornerEdit& edit) {
+        ChFi2d_AnaFilletAlgo fillet(incoming,outgoing,plane);
+        if(!fillet.Perform(radius)) return "fillet radius does not fit the adjacent edges";
+        edit.join=fillet.Result(edit.before,edit.after);
+        if(!orient_fillet(incoming,outgoing,edit.before,edit.join,edit.after))
+            return "fillet did not preserve ordered endpoints";
+        return shrinks_within(incoming,outgoing,edit.before,edit.after)
+            ? nullptr : "corner edit exceeds bounded neighbors";
+    }
+
+    bool accept_corner_fillet(const TopoDS_Edge& incoming, const TopoDS_Edge& outgoing,
+                               const TopoDS_Edge& candidate, double radius, CornerEdit& edit) {
+        auto join=candidate;
+        if(join.IsNull()) return false;
+        if(!point_on_bounded_edge(incoming,edge_start(join))) join.Reverse();
+        auto before=trim_at(incoming,edge_start(join),true),after=trim_at(outgoing,edge_end(join),false);
+        if(!before.IsNull() && !after.IsNull() && shrinks_within(incoming,outgoing,before,after)
+            && edge_end(before).Distance(edge_start(join))<=Precision::Confusion()
+            && edge_end(join).Distance(edge_start(after))<=Precision::Confusion()
+            && fillet_arc_is(join,radius) && tangent_join(before,join) && tangent_join(join,after)) {
+            edit.before=before;edit.after=after;edit.join=join;
+            return true;
+        }
+        return false;
+    }
+
+    bool try_corner_fillets(const TopoDS_Edge& incoming, const TopoDS_Edge& outgoing,
+                             const TopoDS_Edge& e_in, const TopoDS_Edge& e_out,
+                             const gp_Pln& plane, double radius, CornerEdit& edit) {
+        const auto corner=edge_end(incoming);
+        bool found=false;
+        // The iterative solver walks its first edge and projects onto its
+        // second. Retain native solution order, trying both edge orders.
+        for(const bool swapped:{false,true}) {
+            ChFi2d_FilletAlgo fillet(swapped?e_out:e_in,swapped?e_in:e_out,plane);
+            if(!fillet.Perform(radius)) continue;
+            const int solutions=fillet.NbResults(corner);
+            for(int i=0;i<solutions && !found;++i) {
+                TopoDS_Edge c1,c2;
+                const auto join=fillet.Result(corner,c1,c2,i);
+                found=accept_corner_fillet(incoming,outgoing,join,radius,edit);
+            }
+            if(found) break;
+        }
+        return found;
+    }
+
+    const char* iterative_fillet_edges(const TopoDS_Edge& incoming, const TopoDS_Edge& outgoing,
+                                       const gp_Pln& plane, double radius, CornerEdit& edit) {
+        const auto u=end_tangent(incoming,true),v=end_tangent(outgoing,false);
+        if(u.Magnitude()==0. || v.Magnitude()==0. || u.Normalized().Crossed(v.Normalized()).Magnitude()<=1e-9)
+            return "fillet requires a corner with distinct tangent directions";
+        // When the far ends also meet, isolate the halves near the selected
+        // corner. Keep only the solver's arc and trim the original curves.
+        const bool loop=edge_start(incoming).Distance(edge_end(outgoing))<=Precision::Confusion();
+        const auto e_in=corner_part(incoming,true,loop),e_out=corner_part(outgoing,false,loop);
+        if(e_in.IsNull() || e_out.IsNull()) return "fillet could not isolate the corner";
+        return try_corner_fillets(incoming,outgoing,e_in,e_out,plane,radius,edit)
+            ? nullptr : "fillet radius does not fit the bounded adjacent curves";
+    }
+
+    const char* build_corner_wire(const TopoDS_Wire& wire, const TopoDS_Edge& incoming,
+                                  const TopoDS_Edge& outgoing, const CornerEdit& edit, bool closed, TopoDS_Wire& result) {
+        BRepBuilderAPI_MakeWire builder;size_t source_count=0,result_count=0;
+        for(BRepTools_WireExplorer it(wire);it.More();it.Next()) {
+            ++source_count;const auto& edge=it.Current();
+            if(edge.IsSame(incoming)) {builder.Add(edit.before);builder.Add(edit.join);}
+            else if(edge.IsSame(outgoing)) builder.Add(edit.after);
+            else builder.Add(edge);
+            if(!builder.IsDone()) return "corner edit left disconnected edges";
+        }
+        if(!builder.IsDone() || BRep_Tool::IsClosed(builder.Wire())!=closed || !BRepCheck_Analyzer(builder.Wire()).IsValid())
+            return closed?"corner edit produced an invalid closed wire":"corner edit produced an invalid open wire";
+        for(BRepTools_WireExplorer it(builder.Wire());it.More();it.Next()) ++result_count;
+        if(result_count!=source_count+1) return "corner edit lost profile edges";
+        if(closed) {
+            BRepBuilderAPI_MakeFace face(builder.Wire(),true);
+            if(!face.IsDone() || !BRepCheck_Analyzer(face.Face()).IsValid()) return "corner edit produced an invalid face";
+        }
+        result=builder.Wire();
+        return nullptr;
+    }
+
+    // Line/arc open corners use the analytical constructor. Spline/ellipse
+    // neighbors use bounded iterative solutions, then rebuild the same traversal.
     occt_bridge_status_t edit_rebuilt_corner(occt_bridge_session_t* s,const TopoDS_Wire& wire,
         const TopoDS_Edge& incoming,const TopoDS_Edge& outgoing,
         double first,double second,bool chamfer,occt_bridge_shape_id_t* out) {
@@ -189,81 +295,44 @@ namespace {
         BRepBuilderAPI_FindPlane plane(wire,Precision::Confusion());
         if(!plane.Found() || !BRepCheck_Analyzer(wire).IsValid())
             return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"corner profile must be a valid planar wire");
-        TopoDS_Edge a,b,join;
-        if(chamfer) {
-            if(first>=edge_length(incoming)-Precision::Confusion() || second>=edge_length(outgoing)-Precision::Confusion())
-                return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"chamfer distances consume an adjacent edge");
-            const auto u=end_tangent(incoming,true),v=end_tangent(outgoing,false);
-            if(u.Magnitude()==0. || v.Magnitude()==0. || u.Normalized().Crossed(v.Normalized()).Magnitude()<=1e-9)
-                return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"chamfer requires a corner with distinct tangent directions");
-            a=shorten_edge(incoming,first,true);b=shorten_edge(outgoing,second,false);
-            if(a.IsNull() || b.IsNull()) return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"chamfer could not trim adjacent edges");
-            BRepBuilderAPI_MakeEdge bridge(edge_end(a),edge_start(b));
-            if(!bridge.IsDone()) return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"chamfer could not make a joining edge");
-            join=bridge.Edge();
-            if(!shrinks_within(incoming,outgoing,a,b))
-                return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"corner edit exceeds bounded neighbors");
-        } else if(line_or_arc(incoming) && line_or_arc(outgoing)) {
-            ChFi2d_AnaFilletAlgo fillet(incoming,outgoing,plane.Plane()->Pln());
-            if(!fillet.Perform(first)) return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"fillet radius does not fit the adjacent edges");
-            join=fillet.Result(a,b);
-            if(!orient_fillet(incoming,outgoing,a,join,b))
-                return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"fillet did not preserve ordered endpoints");
-            if(!shrinks_within(incoming,outgoing,a,b))
-                return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"corner edit exceeds bounded neighbors");
-        } else {
-            const auto u=end_tangent(incoming,true),v=end_tangent(outgoing,false);
-            if(u.Magnitude()==0. || v.Magnitude()==0. || u.Normalized().Crossed(v.Normalized()).Magnitude()<=1e-9)
-                return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"fillet requires a corner with distinct tangent directions");
-            // The iterative solver picks its own shared vertex. When the far
-            // ends also meet (a two-edge loop), give it only the halves at the
-            // selected corner. It walks the first edge and projects onto the
-            // second, so both orders are tried. Only its arc is kept; the
-            // neighbors are trimmed from the source curves at the arc ends.
-            const auto corner=edge_end(incoming);
-            const bool loop=edge_start(incoming).Distance(edge_end(outgoing))<=Precision::Confusion();
-            const auto e_in=corner_part(incoming,true,loop),e_out=corner_part(outgoing,false,loop);
-            if(e_in.IsNull() || e_out.IsNull()) return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"fillet could not isolate the corner");
-            bool found=false;
-            for(const bool swapped:{false,true}) {
-                ChFi2d_FilletAlgo fillet(swapped?e_out:e_in,swapped?e_in:e_out,plane.Plane()->Pln());
-                if(!fillet.Perform(first)) continue;
-                const int solutions=fillet.NbResults(corner);
-                for(int i=0;i<solutions && !found;++i) {
-                    TopoDS_Edge c1,c2;auto cj=fillet.Result(corner,c1,c2,i);
-                    if(cj.IsNull()) continue;
-                    if(!point_on_bounded_edge(incoming,edge_start(cj))) cj.Reverse();
-                    auto ca=trim_at(incoming,edge_start(cj),true),cb=trim_at(outgoing,edge_end(cj),false);
-                    if(!ca.IsNull() && !cb.IsNull() && shrinks_within(incoming,outgoing,ca,cb)
-                        && edge_end(ca).Distance(edge_start(cj))<=Precision::Confusion()
-                        && edge_end(cj).Distance(edge_start(cb))<=Precision::Confusion()
-                        && fillet_arc_is(cj,first) && tangent_join(ca,cj) && tangent_join(cj,cb)) {
-                        a=ca;b=cb;join=cj;found=true;
-                    }
-                }
-                if(found) break;
-            }
-            if(!found) return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"fillet radius does not fit the bounded adjacent curves");
-        }
-        BRepBuilderAPI_MakeWire builder;size_t source_count=0,result_count=0;
-        for(BRepTools_WireExplorer it(wire);it.More();it.Next()) {
-            ++source_count;const auto& edge=it.Current();
-            if(edge.IsSame(incoming)) {builder.Add(a);builder.Add(join);}
-            else if(edge.IsSame(outgoing)) builder.Add(b);
-            else builder.Add(edge);
-            if(!builder.IsDone()) return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"corner edit left disconnected edges");
-        }
-        if(!builder.IsDone() || BRep_Tool::IsClosed(builder.Wire())!=closed || !BRepCheck_Analyzer(builder.Wire()).IsValid())
-            return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,closed?"corner edit produced an invalid closed wire":"corner edit produced an invalid open wire");
-        for(BRepTools_WireExplorer it(builder.Wire());it.More();it.Next()) ++result_count;
-        if(result_count!=source_count+1) return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"corner edit lost profile edges");
-        if(closed) {
-            BRepBuilderAPI_MakeFace face(builder.Wire(),true);
-            if(!face.IsDone() || !BRepCheck_Analyzer(face.Face()).IsValid())
-                return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"corner edit produced an invalid face");
-        }
-        return store_shape(s,builder.Wire(),out);
+        CornerEdit edit;
+        const char* error=nullptr;
+        if(chamfer) error=chamfer_edges(incoming,outgoing,first,second,edit);
+        else if(line_or_arc(incoming) && line_or_arc(outgoing))
+            error=analytical_fillet_edges(incoming,outgoing,plane.Plane()->Pln(),first,edit);
+        else error=iterative_fillet_edges(incoming,outgoing,plane.Plane()->Pln(),first,edit);
+        if(error) return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,error);
+        TopoDS_Wire result;
+        if(const char* build_error=build_corner_wire(wire,incoming,outgoing,edit,closed,result))
+            return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,build_error);
+        return store_shape(s,result,out);
     }
+    const char* corner_neighbors(const TopoDS_Wire& wire, const gp_Pnt& corner,
+                                  TopoDS_Vertex& vertex, TopoDS_Edge& incoming, TopoDS_Edge& outgoing) {
+        TopTools_IndexedMapOfShape vertices;
+        TopExp::MapShapes(wire,TopAbs_VERTEX,vertices);
+        for(int i=1;i<=vertices.Extent();++i) {
+            const auto v=TopoDS::Vertex(vertices(i));
+            if(BRep_Tool::Pnt(v).Distance(corner)<=std::max(Precision::Confusion(),BRep_Tool::Tolerance(v))) {
+                if(!vertex.IsNull()) return "corner point matches more than one vertex";
+                vertex=v;
+            }
+        }
+        if(vertex.IsNull()) return "corner point is not a remaining profile vertex";
+        int incoming_count=0,outgoing_count=0;
+        for(BRepTools_WireExplorer it(wire);it.More();it.Next()) {
+            const auto& edge=it.Current();
+            if(TopExp::LastVertex(edge,true).IsSame(vertex)) {incoming=edge;++incoming_count;}
+            if(TopExp::FirstVertex(edge,true).IsSame(vertex)) {outgoing=edge;++outgoing_count;}
+        }
+        if(incoming_count!=1 || outgoing_count!=1 || incoming.IsNull() || outgoing.IsNull() || incoming.IsSame(outgoing))
+            return "corner needs two distinct adjacent edges";
+        for(const auto& edge:{incoming,outgoing})
+            if(!general_planar_curve(edge))
+                return "corner neighbors must be lines, circular arcs, ellipses or splines";
+        return nullptr;
+    }
+
     occt_bridge_status_t edit_corner(occt_bridge_session_t* s, occt_bridge_shape_id_t id,
                                      occt_bridge_vec3_t corner, double first, double second,
                                      bool chamfer, occt_bridge_shape_id_t* out) {
@@ -277,28 +346,10 @@ namespace {
         if (shape->ShapeType()!=TopAbs_WIRE)
             return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "corner edit requires a planar wire");
         const auto wire=TopoDS::Wire(*shape);
-        TopTools_IndexedMapOfShape vertices;
-        TopExp::MapShapes(wire,TopAbs_VERTEX,vertices);
         TopoDS_Vertex vertex;
-        for(int i=1;i<=vertices.Extent();++i) {
-            const auto v=TopoDS::Vertex(vertices(i));
-            if(BRep_Tool::Pnt(v).Distance(to_point(corner))<=std::max(Precision::Confusion(),BRep_Tool::Tolerance(v))) {
-                if(!vertex.IsNull()) return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"corner point matches more than one vertex");
-                vertex=v;
-            }
-        }
-        if(vertex.IsNull()) return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"corner point is not a remaining profile vertex");
-        TopoDS_Edge incoming,outgoing;int incoming_count=0,outgoing_count=0;
-        for(BRepTools_WireExplorer it(wire);it.More();it.Next()) {
-            const auto& edge=it.Current();
-            if(TopExp::LastVertex(edge,true).IsSame(vertex)) {incoming=edge;++incoming_count;}
-            if(TopExp::FirstVertex(edge,true).IsSame(vertex)) {outgoing=edge;++outgoing_count;}
-        }
-        if(incoming_count!=1 || outgoing_count!=1 || incoming.IsNull() || outgoing.IsNull() || incoming.IsSame(outgoing))
-            return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"corner needs two distinct adjacent edges");
-        for(const auto& edge:{incoming,outgoing})
-            if(!general_planar_curve(edge))
-                return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"corner neighbors must be lines, circular arcs, ellipses or splines");
+        TopoDS_Edge incoming,outgoing;
+        if(const char* error=corner_neighbors(wire,to_point(corner),vertex,incoming,outgoing))
+            return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,error);
         if(!BRep_Tool::IsClosed(wire) || !line_or_arc(incoming) || !line_or_arc(outgoing))
             return edit_rebuilt_corner(s,wire,incoming,outgoing,first,second,chamfer,out);
         BRepBuilderAPI_MakeFace face(wire,true);

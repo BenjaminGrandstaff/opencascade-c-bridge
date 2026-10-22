@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 8/8, bridge 189 + first-use integration 1 (+1 doc test), recipes 3, parametric core 66 + kernel 809 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 102 + viewer Node 476 + branch command 2 + model command 106, MCP Python 29, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 8/8, bridge 191 + first-use integration 1 (+1 doc test), recipes 3, parametric core 66 + kernel 809 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 102 + viewer Node 476 + branch command 2 + model command 106, MCP Python 29, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 29 clang-tidy warnings (28 complexity warnings and one public ABI padding warning) plus 82 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all five crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,22 @@ tracks status and order.
 | Scale benchmarks | Current run: all 138 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
 
 ## Done
+
+- Sketch corner refactor (schema 183 and ABI 86 unchanged): chamfer creation,
+  analytical fillets, iterative candidate acceptance, native solution search,
+  wire rebuilding and adjacent-edge selection are separate stages. Rebuilt
+  corner complexity falls from 81 to 8 and corner dispatch from 35 to 19;
+  every new helper is at most 17 against the unchanged limit of 25. Native
+  solution order, both neighbor orders, bounded trimming, tangent checks,
+  minor-arc filtering and wire/face validity rules retain their behavior.
+  A differential run covers 486 cases (270 successful edits) across lines,
+  circular arcs, splines, elliptical arcs, two-edge loops, reversed traversal,
+  small/large scales and distant rotated planes. Exact BREP geometry, edge
+  order, statuses, diagnostics, source state and handle cleanup match the
+  previous implementation, including 42 cases with source BREP metadata changes
+  already present before the refactor. New Rust regressions cover selected-tip
+  isolation across loop seams/reversal and asymmetric reversed chamfer distances.
+  All 142 public C exports remain unchanged.
 
 - Advanced sweep refactor (schema 183 and ABI 86 unchanged): section-position
   validation, input lookup, section conversion, station calculation, folding

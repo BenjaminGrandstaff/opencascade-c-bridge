@@ -730,3 +730,100 @@ fn curvature_vectors_match_circles_lines_ellipses_and_bezier_ends() {
     assert!(s.curve_curvature_at(&line, v(f64::NAN, 0.)).is_err());
     assert_eq!(s.shape_count().unwrap(), count);
 }
+
+#[test]
+fn spline_loop_corner_fillets_keep_the_selected_tip_across_seams_and_reversal() {
+    let s = Session::new().unwrap();
+    {
+        let p = |x, y| Vec3::new(x, y, 0.);
+        let lens = s
+            .create_curve_wire(
+                &[
+                    CurveSegment::Spline {
+                        points: vec![p(0., 0.), p(10., 5.), p(20., 0.)],
+                        start_tangent: None,
+                        end_tangent: None,
+                        periodic: false,
+                    },
+                    CurveSegment::Spline {
+                        points: vec![p(20., 0.), p(10., -5.), p(0., 0.)],
+                        start_tangent: None,
+                        end_tangent: None,
+                        periodic: false,
+                    },
+                ],
+                true,
+            )
+            .unwrap();
+        let source_bounds = s.exact_bounds(&lens).unwrap();
+        let area = |wire: &Shape<'_>| {
+            s.surface_area(&s.create_face_from_wire(wire).unwrap())
+                .unwrap()
+        };
+        for (tip, remote) in [(p(0., 0.), p(20., 0.)), (p(20., 0.), p(0., 0.))] {
+            let mut areas = Vec::new();
+            for reverse in [false, true] {
+                let input = s.align_profile_wire(&lens, Some(tip), reverse).unwrap();
+                let rounded = s.fillet_wire_corner(&input, tip, 1.).unwrap();
+                assert!(s.is_valid(&rounded).unwrap() && s.wire_is_closed(&rounded).unwrap());
+                assert_eq!(s.subshape_count(&rounded, ShapeType::Edge).unwrap(), 3);
+                assert!(has_vertex(&s, &rounded, remote, 1e-8));
+                assert!(!has_vertex(&s, &rounded, tip, 1e-8));
+                assert_tangent_fillet(&s, &rounded, 1.);
+                areas.push(area(&rounded));
+                let count = s.shape_count().unwrap();
+                assert!(s.fillet_wire_corner(&input, tip, 50.).is_err());
+                assert_eq!(s.shape_count().unwrap(), count);
+                assert_eq!(s.subshape_count(&input, ShapeType::Edge).unwrap(), 2);
+            }
+            assert!((areas[0] - areas[1]).abs() < 1e-6);
+            assert!(areas[0] < area(&lens));
+        }
+        assert_eq!(s.exact_bounds(&lens).unwrap(), source_bounds);
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn spline_loop_chamfers_preserve_asymmetric_distances_when_reversed() {
+    let s = Session::new().unwrap();
+    {
+        let p = |x, y| Vec3::new(x, y, 0.);
+        let lens = s
+            .create_curve_wire(
+                &[
+                    CurveSegment::Spline {
+                        points: vec![p(0., 0.), p(10., 5.), p(20., 0.)],
+                        start_tangent: None,
+                        end_tangent: None,
+                        periodic: false,
+                    },
+                    CurveSegment::Spline {
+                        points: vec![p(20., 0.), p(10., -5.), p(0., 0.)],
+                        start_tangent: None,
+                        end_tangent: None,
+                        periodic: false,
+                    },
+                ],
+                true,
+            )
+            .unwrap();
+        let tip = p(20., 0.);
+        let forward = s.align_profile_wire(&lens, Some(tip), false).unwrap();
+        let reverse = s.align_profile_wire(&lens, Some(tip), true).unwrap();
+        let a = s.chamfer_wire_corner(&forward, tip, 1., 2.).unwrap();
+        let b = s.chamfer_wire_corner(&reverse, tip, 2., 1.).unwrap();
+        let area = |wire: &Shape<'_>| {
+            s.surface_area(&s.create_face_from_wire(wire).unwrap())
+                .unwrap()
+        };
+        assert!((area(&a) - area(&b)).abs() < 1e-5);
+        for wire in [&a, &b] {
+            assert!(s.is_valid(wire).unwrap() && s.wire_is_closed(wire).unwrap());
+            assert_eq!(s.subshape_count(wire, ShapeType::Edge).unwrap(), 3);
+            assert!(has_vertex(&s, wire, p(0., 0.), 1e-8));
+        }
+        assert_eq!(s.subshape_count(&lens, ShapeType::Edge).unwrap(), 2);
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
