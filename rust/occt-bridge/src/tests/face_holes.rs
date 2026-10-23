@@ -67,3 +67,82 @@ fn faces_with_holes_flip_inner_orientation_and_reject_bad_layouts() {
     }
     assert_eq!(s.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn holed_faces_keep_area_and_volume_across_boundary_reversal_and_rotated_planes() {
+    let s = Session::new().unwrap();
+    {
+        let p = |x, y| Vec3::new(500. + x, -200., 70. + y);
+        let normal = Vec3::new(0., -1., 0.);
+        let outer = s
+            .create_polyline_wire(&[p(0., 0.), p(20., 0.), p(20., 12.), p(0., 12.)], true)
+            .unwrap();
+        let circle = s.create_circle_wire(p(5., 5.), normal, 2.).unwrap();
+        let ellipse = s
+            .create_ellipse_wire_axes(p(14., 6.), normal, Vec3::new(1., 0., 0.), 3., 1.)
+            .unwrap();
+        let expected = 240. - 7. * PI;
+        for reverse_outer in [false, true] {
+            for reverse_holes in [false, true] {
+                let outer = s.align_profile_wire(&outer, None, reverse_outer).unwrap();
+                let circle = s.align_profile_wire(&circle, None, reverse_holes).unwrap();
+                let ellipse = s
+                    .align_profile_wire(&ellipse, None, !reverse_holes)
+                    .unwrap();
+                let bounds = [&outer, &circle, &ellipse].map(|w| s.exact_bounds(w).unwrap());
+                for holes in [[&circle, &ellipse], [&ellipse, &circle]] {
+                    let face = s.create_face_with_holes(&outer, &holes).unwrap();
+                    assert!(s.is_valid(&face).unwrap());
+                    assert_eq!(s.subshape_count(&face, ShapeType::Wire).unwrap(), 3);
+                    assert!((s.surface_area(&face).unwrap() - expected).abs() < 1e-7);
+                    let prism = s
+                        .create_prism_from_face(&face, Vec3::new(0., -4., 0.))
+                        .unwrap();
+                    assert!((s.volume(&prism).unwrap() - 4. * expected).abs() < 1e-6);
+                }
+                assert_eq!(
+                    [&outer, &circle, &ellipse].map(|w| s.exact_bounds(w).unwrap()),
+                    bounds
+                );
+            }
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn close_hole_pairs_and_nested_orders_fail_without_partial_results() {
+    let s = Session::new().unwrap();
+    {
+        let normal = Vec3::new(0., 0., 1.);
+        let outer = s
+            .create_circle_wire(Vec3::new(0., 0., 0.), normal, 10.)
+            .unwrap();
+        for (radius, x) in [(1., 2. + 5e-8), (0.5, 0.)] {
+            let a = s
+                .create_circle_wire(Vec3::new(0., 0., 0.), normal, 1.)
+                .unwrap();
+            let b = s
+                .create_circle_wire(Vec3::new(x, 0., 0.), normal, radius)
+                .unwrap();
+            for holes in [[&a, &b], [&b, &a]] {
+                let before = s.shape_count().unwrap();
+                let error = s.create_face_with_holes(&outer, &holes).unwrap_err();
+                assert_eq!(error.status, 4);
+                assert_eq!(error.message, "inner wires overlap, nest or touch");
+                assert_eq!(s.shape_count().unwrap(), before);
+            }
+        }
+        let inside = s
+            .create_circle_wire(Vec3::new(2. + 1e-4, 0., 0.), normal, 1.)
+            .unwrap();
+        let center = s
+            .create_circle_wire(Vec3::new(0., 0., 0.), normal, 1.)
+            .unwrap();
+        let face = s
+            .create_face_with_holes(&outer, &[&center, &inside])
+            .unwrap();
+        assert!((s.surface_area(&face).unwrap() - 98. * PI).abs() < 1e-7);
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}

@@ -215,6 +215,135 @@ bool inside(const TopoDS_Face& face, const gp_Pnt& point) {
     BRepClass_FaceClassifier classifier(face, point, Precision::Confusion());
     return classifier.State() == TopAbs_IN;
 }
+
+struct Hole {
+    TopoDS_Wire wire;
+    TopoDS_Face face;
+    Bnd_Box box;
+};
+
+occt_bridge_status_t make_face_hole(occt_bridge_session_t* session, occt_bridge_shape_id_t id,
+    const gp_Pln& plane, const gp_Dir& normal, Hole& hole) {
+    const TopoDS_Shape* value = find_shape(session, id);
+    if (value == nullptr) {
+        return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "inner wire was not found");
+    }
+    if (value->ShapeType() != TopAbs_WIRE || !BRep_Tool::IsClosed(*value)) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "inner shape is not a closed wire");
+    }
+    auto wire = TopoDS::Wire(*value);
+    BRepBuilderAPI_MakeFace alone(wire, true);
+    if (!alone.IsDone() || !BRepCheck_Analyzer(alone.Face()).IsValid()) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "inner wire does not define a valid planar face");
+    }
+    const auto hole_plane = Handle(Geom_Plane)::DownCast(BRep_Tool::Surface(alone.Face()));
+    if (hole_plane.IsNull()
+        || !hole_plane->Axis().Direction().IsParallel(plane.Axis().Direction(), 1e-9)
+        || plane.Distance(hole_plane->Location()) > Precision::Confusion()) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "inner wire is not coplanar with the outer wire");
+    }
+    // Holes run opposite to the outer boundary.
+    if (face_normal(alone.Face()).Dot(normal) > 0.0) {
+        wire.Reverse();
+    }
+    hole = {wire, alone.Face(), {}};
+    BRepBndLib::Add(wire, hole.box);
+    hole.box.Enlarge(kHoleClearance);
+    return OCCT_BRIDGE_OK;
+}
+
+occt_bridge_status_t validate_hole_layout(occt_bridge_session_t* session, const Hole& hole,
+    const TopoDS_Wire& outer_wire, const TopoDS_Face& outer_face, const std::vector<Hole>& holes) {
+    BRepExtrema_DistShapeShape to_outer(outer_wire, hole.wire, Extrema_ExtFlag_MIN);
+    if (!to_outer.IsDone() || to_outer.Value() <= kHoleClearance
+        || !inside(outer_face, wire_point(hole.wire))) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "inner wire must lie strictly inside the outer wire");
+    }
+    // Box-filtered pairwise checks: only nearby holes pay for a
+    // distance query and containment classification.
+    for (const auto& other : holes) {
+        if (hole.box.IsOut(other.box)) {
+            continue;
+        }
+        BRepExtrema_DistShapeShape apart(other.wire, hole.wire, Extrema_ExtFlag_MIN);
+        if (!apart.IsDone() || apart.Value() <= kHoleClearance
+            || inside(other.face, wire_point(hole.wire)) || inside(hole.face, wire_point(other.wire))) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "inner wires overlap, nest or touch");
+        }
+    }
+    return OCCT_BRIDGE_OK;
+}
+
+occt_bridge_status_t validate_holed_face(occt_bridge_session_t* session,
+    const TopoDS_Face& result, size_t hole_count, double outer_area, double removed) {
+    const double area = face_area(result);
+    // The face is valid by construction: the outer face and each hole on
+    // its own passed BRepCheck, every hole lies strictly inside the outer
+    // wire, and holes are pairwise apart and unnested. A full BRepCheck
+    // of the result would re-test every pair of wires (two seconds at
+    // 1,000 holes), so only its wires and area are checked here.
+    size_t wires = 0;
+    for (TopExp_Explorer explorer(result, TopAbs_WIRE); explorer.More(); explorer.Next()) {
+        ++wires;
+    }
+    if (wires != hole_count + 1 || !(area > 0.0)
+        || std::abs(area - (outer_area - removed)) > std::max(1e-12, outer_area * 1e-7)) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "face with holes is invalid or has unexpected area");
+    }
+    return OCCT_BRIDGE_OK;
+}
+
+occt_bridge_status_t create_face_with_holes(occt_bridge_session_t* session, occt_bridge_shape_id_t outer,
+    const occt_bridge_shape_id_t* inner, size_t inner_count, occt_bridge_shape_id_t* out_shape) {
+    if (out_shape == nullptr) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+    }
+    *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    if (inner_count > 0 && inner == nullptr) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "inner wire array is null");
+    }
+    if (inner_count > 10000) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "more than 10000 inner wires");
+    }
+    const TopoDS_Shape* boundary = find_shape(session, outer);
+    if (boundary == nullptr) {
+        return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "outer wire was not found");
+    }
+    if (boundary->ShapeType() != TopAbs_WIRE || !BRep_Tool::IsClosed(*boundary)) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "outer shape is not a closed wire");
+    }
+    const auto outer_wire = TopoDS::Wire(*boundary);
+    BRepBuilderAPI_MakeFace base(outer_wire, true);
+    if (!base.IsDone() || !BRepCheck_Analyzer(base.Face()).IsValid()) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "outer wire does not define a valid planar face");
+    }
+    const TopoDS_Face& outer_face = base.Face();
+    const gp_Pln plane = Handle(Geom_Plane)::DownCast(BRep_Tool::Surface(outer_face))->Pln();
+    const gp_Dir normal = face_normal(outer_face);
+    const double outer_area = face_area(outer_face);
+    std::vector<Hole> holes;
+    holes.reserve(inner_count);
+    double removed = 0.0;
+    BRepBuilderAPI_MakeFace builder(outer_face);
+    for (size_t i = 0; i < inner_count; ++i) {
+        Hole hole;
+        const auto status = make_face_hole(session, inner[i], plane, normal, hole);
+        if (status != OCCT_BRIDGE_OK) return status;
+        const auto layout_status = validate_hole_layout(session, hole, outer_wire, outer_face, holes);
+        if (layout_status != OCCT_BRIDGE_OK) return layout_status;
+        removed += face_area(hole.face);
+        builder.Add(hole.wire);
+        holes.push_back(hole);
+    }
+    // The loaded-face builder reports done only once a wire is added.
+    if (!holes.empty() && !builder.IsDone()) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "face with holes could not be built");
+    }
+    const TopoDS_Face result = holes.empty() ? outer_face : builder.Face();
+    const auto status = validate_holed_face(session, result, holes.size(), outer_area, removed);
+    if (status != OCCT_BRIDGE_OK) return status;
+    return store_shape(session, result, out_shape);
+}
 }  // namespace
 
 extern "C" {
@@ -249,115 +378,10 @@ occt_bridge_status_t occt_bridge_create_face_from_wire(
 }
 
 occt_bridge_status_t occt_bridge_create_face_with_holes(
-    occt_bridge_session_t* session,
-    occt_bridge_shape_id_t outer,
-    const occt_bridge_shape_id_t* inner,
-    size_t inner_count,
+    occt_bridge_session_t* session, occt_bridge_shape_id_t outer,
+    const occt_bridge_shape_id_t* inner, size_t inner_count,
     occt_bridge_shape_id_t* out_shape) {
-    return guarded(session, [&] {
-        if (out_shape == nullptr) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
-        }
-        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
-        if (inner_count > 0 && inner == nullptr) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "inner wire array is null");
-        }
-        if (inner_count > 10000) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "more than 10000 inner wires");
-        }
-        const TopoDS_Shape* boundary = find_shape(session, outer);
-        if (boundary == nullptr) {
-            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "outer wire was not found");
-        }
-        if (boundary->ShapeType() != TopAbs_WIRE || !BRep_Tool::IsClosed(*boundary)) {
-            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "outer shape is not a closed wire");
-        }
-        const auto outer_wire = TopoDS::Wire(*boundary);
-        BRepBuilderAPI_MakeFace base(outer_wire, true);
-        if (!base.IsDone() || !BRepCheck_Analyzer(base.Face()).IsValid()) {
-            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "outer wire does not define a valid planar face");
-        }
-        const TopoDS_Face& outer_face = base.Face();
-        const gp_Pln plane = Handle(Geom_Plane)::DownCast(BRep_Tool::Surface(outer_face))->Pln();
-        const gp_Dir normal = face_normal(outer_face);
-        const double outer_area = face_area(outer_face);
-        struct Hole {
-            TopoDS_Wire wire;
-            TopoDS_Face face;
-            Bnd_Box box;
-        };
-        std::vector<Hole> holes;
-        holes.reserve(inner_count);
-        double removed = 0.0;
-        BRepBuilderAPI_MakeFace builder(outer_face);
-        for (size_t i = 0; i < inner_count; ++i) {
-            const TopoDS_Shape* value = find_shape(session, inner[i]);
-            if (value == nullptr) {
-                return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "inner wire was not found");
-            }
-            if (value->ShapeType() != TopAbs_WIRE || !BRep_Tool::IsClosed(*value)) {
-                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "inner shape is not a closed wire");
-            }
-            auto wire = TopoDS::Wire(*value);
-            BRepBuilderAPI_MakeFace alone(wire, true);
-            if (!alone.IsDone() || !BRepCheck_Analyzer(alone.Face()).IsValid()) {
-                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "inner wire does not define a valid planar face");
-            }
-            const auto hole_plane = Handle(Geom_Plane)::DownCast(BRep_Tool::Surface(alone.Face()));
-            if (hole_plane.IsNull()
-                || !hole_plane->Axis().Direction().IsParallel(plane.Axis().Direction(), 1e-9)
-                || plane.Distance(hole_plane->Location()) > Precision::Confusion()) {
-                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "inner wire is not coplanar with the outer wire");
-            }
-            // Holes run opposite to the outer boundary.
-            if (face_normal(alone.Face()).Dot(normal) > 0.0) {
-                wire.Reverse();
-            }
-            Hole hole{wire, alone.Face(), {}};
-            BRepBndLib::Add(wire, hole.box);
-            hole.box.Enlarge(kHoleClearance);
-            BRepExtrema_DistShapeShape to_outer(outer_wire, wire, Extrema_ExtFlag_MIN);
-            if (!to_outer.IsDone() || to_outer.Value() <= kHoleClearance
-                || !inside(outer_face, wire_point(wire))) {
-                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "inner wire must lie strictly inside the outer wire");
-            }
-            // Box-filtered pairwise checks: only nearby holes pay for a
-            // distance query and containment classification.
-            for (const auto& other : holes) {
-                if (hole.box.IsOut(other.box)) {
-                    continue;
-                }
-                BRepExtrema_DistShapeShape apart(other.wire, wire, Extrema_ExtFlag_MIN);
-                if (!apart.IsDone() || apart.Value() <= kHoleClearance
-                    || inside(other.face, wire_point(wire)) || inside(hole.face, wire_point(other.wire))) {
-                    return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "inner wires overlap, nest or touch");
-                }
-            }
-            removed += face_area(alone.Face());
-            builder.Add(wire);
-            holes.push_back(hole);
-        }
-        // The loaded-face builder reports done only once a wire is added.
-        if (!holes.empty() && !builder.IsDone()) {
-            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "face with holes could not be built");
-        }
-        const TopoDS_Face result = holes.empty() ? outer_face : builder.Face();
-        const double area = face_area(result);
-        // The face is valid by construction: the outer face and each hole on
-        // its own passed BRepCheck, every hole lies strictly inside the outer
-        // wire, and holes are pairwise apart and unnested. A full BRepCheck
-        // of the result would re-test every pair of wires (two seconds at
-        // 1,000 holes), so only its wires and area are checked here.
-        size_t wires = 0;
-        for (TopExp_Explorer explorer(result, TopAbs_WIRE); explorer.More(); explorer.Next()) {
-            ++wires;
-        }
-        if (wires != holes.size() + 1 || !(area > 0.0)
-            || std::abs(area - (outer_area - removed)) > std::max(1e-12, outer_area * 1e-7)) {
-            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "face with holes is invalid or has unexpected area");
-        }
-        return store_shape(session, result, out_shape);
-    });
+    return guarded(session, [&] { return create_face_with_holes(session, outer, inner, inner_count, out_shape); });
 }
 
 occt_bridge_status_t occt_bridge_create_prism_from_face(

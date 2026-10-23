@@ -17,14 +17,39 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 8/8, bridge 197 + first-use integration 1 (+1 doc test), recipes 3, parametric core 79 + kernel 818 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 104 + viewer Node 479 + branch command 2 + model command 114, MCP Python 30, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 8/8, bridge 199 + first-use integration 1 (+1 doc test), recipes 3, parametric core 79 + kernel 818 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 104 + viewer Node 479 + branch command 2 + model command 114, MCP Python 30, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
-| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 20 clang-tidy warnings (19 complexity warnings and one public ABI padding warning) plus 82 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
+| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 18 clang-tidy warnings (17 complexity warnings and one public ABI padding warning) plus 82 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all five crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 2026-10-22: 92.67% lines overall; C++ 94.41% lines, 82.71% branches, 99.89% functions; Rust 92.26% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
+| Coverage | 2026-10-22: 92.67% lines overall; C++ 94.38% lines, 82.71% branches, 99.89% functions; Rust 92.26% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
 | Scale benchmarks | Current run: all 139 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
 
 ## Done
+
+- Face-with-holes refactor (schema 185 and ABI 86 unchanged): hole preparation,
+  coplanarity/orientation, clearance/containment checks and final wire-count/area
+  validation are separate stages. Construction complexity falls from 61 to 18;
+  every extracted helper is at most 8 against the unchanged limit of 25.
+  Validation order, hole traversal, bounding-box filtering, native distance
+  queries, clearance/area tolerances and builder ordering retain their behavior.
+  A differential run covers 408 cases (96 successful faces) across circular and
+  elliptical holes, empty/reordered hole lists, reversed boundaries, rotated/
+  scaled planes, outside/crossing/touching/nested holes, close pairs, noncoplanar
+  holes and open/non-wire inputs. Exact BREP geometry, wire order, statuses,
+  diagnostics, source state and handle cleanup match the previous implementation,
+  including 252 source BREP serialization changes already present before the
+  refactor. Two Rust regressions check area, prism volume and source bounds under
+  reversal/rotation, plus both orders of near-touching/nested holes and failure
+  cleanup. All three face-hole tests also pass against the previous library.
+  A native harness reproducing the existing 10,000 two-arc-hole benchmark and
+  area check completes in 2.723 s (previous library 2.763 s), within its unchanged
+  five-second budget; the 1,000-hole case takes 0.255 s (previous 0.258 s).
+  These single runs show no observed performance regression.
+  All 142 public C exports remain unchanged. All eight native tests and the
+  full instrumented C++/Rust suite pass with unchanged timing limits; Rust
+  formatting, bridge Clippy and the Clang `-Werror` build pass. Full analysis
+  adds no findings and removes two complexity warnings; remaining totals are
+  18 clang-tidy warnings and 82 cppcheck findings.
 
 - Curve-segment validation refactor (schema 185 and ABI 86 unchanged):
   descriptor bounds, explicit B-spline rules, knot/multiplicity checks and
