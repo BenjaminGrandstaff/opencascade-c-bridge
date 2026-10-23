@@ -213,3 +213,86 @@ fn bad_selections_and_unhealable_removals_are_refused() {
     );
     assert_eq!(session.shape_count().unwrap(), count + 1);
 }
+
+#[test]
+fn face_offset_selection_order_keeps_volume_and_same_type_history() {
+    let s = Session::new().unwrap();
+    {
+        let body = s
+            .create_box(Vec3::new(100., -20., 30.), Vec3::new(8., 6., 4.))
+            .unwrap();
+        let top = face_where(&s, &body, |s, f| s.exact_bounds(f).unwrap().min.z > 33.99);
+        let end = face_where(&s, &body, |s, f| s.exact_bounds(f).unwrap().min.x > 107.99);
+        let before = s.exact_bounds(&body).unwrap();
+        for selection in [
+            [(&top[0], 2.), (&end[0], -1.)],
+            [(&end[0], -1.), (&top[0], 2.)],
+        ] {
+            let edited = s.offset_faces(&body, &selection, 1e-6).unwrap();
+            close(s.volume(&edited).unwrap(), 7. * 6. * 6.);
+            assert!(s.is_valid(&edited).unwrap());
+            for kind in [ShapeType::Face, ShapeType::Edge, ShapeType::Vertex] {
+                for source in s.subshapes(&body, kind).unwrap() {
+                    for relation in [HistoryRelation::Modified, HistoryRelation::Generated] {
+                        let count = s.history_count(&edited, &source, relation).unwrap();
+                        if kind == ShapeType::Face {
+                            assert_eq!(
+                                count,
+                                if relation == HistoryRelation::Modified {
+                                    1
+                                } else {
+                                    0
+                                }
+                            );
+                        }
+                        for i in 0..count {
+                            let image = s.history(&edited, &source, relation, i).unwrap();
+                            assert_eq!(
+                                s.shape_type(&image).unwrap() == kind,
+                                relation == HistoryRelation::Modified
+                            );
+                        }
+                    }
+                }
+            }
+            assert_eq!(s.exact_bounds(&body).unwrap(), before);
+            close(s.volume(&body).unwrap(), 8. * 6. * 4.);
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn face_offset_validation_precedence_does_not_store_partial_results() {
+    let s = Session::new().unwrap();
+    {
+        let body = s
+            .create_box(Vec3::new(0., 0., 0.), Vec3::new(8., 6., 4.))
+            .unwrap();
+        let other = s
+            .create_box(Vec3::new(20., 0., 0.), Vec3::new(8., 6., 4.))
+            .unwrap();
+        let face = s.subshape(&body, ShapeType::Face, 0).unwrap();
+        let foreign = s.subshape(&other, ShapeType::Face, 0).unwrap();
+        for (selection, message) in [
+            (
+                vec![(&foreign, f64::NAN)],
+                "offset faces selection is not a face of the input shape",
+            ),
+            (
+                vec![(&face, 1.), (&face, 0.)],
+                "offset faces distances must be finite and nonzero",
+            ),
+            (
+                vec![(&face, 1.), (&face, 2.)],
+                "offset faces selects a face twice",
+            ),
+        ] {
+            let before = s.shape_count().unwrap();
+            let error = s.offset_faces(&body, &selection, 1e-6).unwrap_err();
+            assert_eq!(error.message, message);
+            assert_eq!(s.shape_count().unwrap(), before);
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}

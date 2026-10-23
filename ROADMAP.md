@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 8/8, bridge 201 + first-use integration 1 (+1 doc test), recipes 3, parametric core 79 + kernel 818 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 104 + viewer Node 479 + branch command 2 + model command 114, MCP Python 30, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 8/8, bridge 203 + first-use integration 1 (+1 doc test), recipes 3, parametric core 79 + kernel 818 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 104 + viewer Node 479 + branch command 2 + model command 114, MCP Python 30, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 16 clang-tidy warnings (15 complexity warnings and one public ABI padding warning) plus 82 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all five crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,24 @@ tracks status and order.
 | Scale benchmarks | Current run: all 139 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
 
 ## Done
+
+- Selected-face offset refactor (schema 185 and ABI 86 unchanged): ownership/
+  duplicate selection checks, native offset execution, shell-to-solid closure
+  and same-type history classification are separate stages. Offset orchestration
+  complexity falls from 50 to 9; every extracted helper is at most 11 against
+  the unchanged limit of 25. Selection order, exception reporting, zero-skin
+  initialization, intersection joins, closed-solid orientation and result checks
+  retain their behavior. A differential run covers 704 cases (58 successful
+  offsets) across boxes, cylinders, spheres and drilled solids, translated/
+  rotated inputs, single/reordered/multiple selections, duplicate/foreign/
+  missing/non-face selections, invalid distances and tolerances. Exact BREP
+  geometry, ordered history, deletion flags, structured diagnostics, statuses,
+  messages and handle cleanup match the previous library; source BREP data and
+  input buffers remain unchanged. Two new Rust regressions check volume and
+  face/edge/vertex history classifications under reordered selections, plus
+  validation precedence and failure cleanup for conflicting invalid selections.
+  All six direct-edit tests also pass against the previous library. All 142
+  public C exports remain unchanged.
 
 - Radial-cutter refactor (schema 185 and ABI 86 unchanged): mapped segment
   construction and outline sewing/solid orientation are separate stages.
