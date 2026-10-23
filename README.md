@@ -26,6 +26,10 @@ gate results and history live in [the roadmap](ROADMAP.md#current-status).
 
 Recently landed:
 
+- **Native curve validation refactor:** separate descriptor, B-spline knot and
+  tangent checks preserve diagnostic precedence and accepted geometry; native
+  regressions cover malformed C descriptors and failure cleanup.
+
 - **Timeline bookmarks and branches (schema 185):** name timeline states
   and check them out; keep alternative feature continuations as branches,
   switch between them, and merge one back, with conflicts reported. Edits to

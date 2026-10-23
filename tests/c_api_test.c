@@ -1075,6 +1075,93 @@ static void test_face_projection(occt_bridge_session_t* session) {
     for (size_t i = 0; i < count; ++i) require_ok(session, occt_bridge_shape_remove(session, faces[i]));
 }
 
+static void expect_curve_rejection(occt_bridge_session_t* session,
+    const occt_bridge_vec3_t* points, size_t point_count,
+    const occt_bridge_curve_segment_t* segment, const char* expected) {
+    size_t before = 0, after = 0;
+    require_ok(session, occt_bridge_session_shape_count(session, &before));
+    occt_bridge_shape_id_t shape = 123;
+    const occt_bridge_status_t status = occt_bridge_create_curve_wire(
+        session, points, point_count, segment, 1, 0, &shape);
+    char error[256] = {0};
+    (void)occt_bridge_session_last_error(session, error, sizeof(error));
+    require_true(status == OCCT_BRIDGE_INVALID_ARGUMENT, "malformed curve argument status");
+    require_true(strcmp(error, expected) == 0, "curve validation diagnostic order");
+    require_true(shape == OCCT_BRIDGE_INVALID_SHAPE_ID, "curve failure resets output");
+    require_ok(session, occt_bridge_session_shape_count(session, &after));
+    require_true(before == after, "curve failure does not store a handle");
+}
+
+static void test_curve_validation(occt_bridge_session_t* session) {
+    const occt_bridge_vec3_t points[] = {{0., 0., 0.}, {1., 1., 0.}, {2., 0., 0.}};
+    const double knots[] = {0., 1.}, descending[] = {1., 0.};
+    const double periodic_knots[] = {0., 1., 2.}, bad_weights[] = {1., -1., 1.};
+    const int32_t mults[] = {3, 3}, unclamped_mults[] = {2, 2};
+    const int32_t bad_mults[] = {2, 3}, periodic_mults[] = {1, 1, 2};
+    const occt_bridge_curve_segment_t valid = {
+        .kind = 3, .point_count = 3, .degree = 2,
+        .knot_count = 2, .knots = knots, .multiplicities = mults
+    };
+    occt_bridge_curve_segment_t cases[20];
+    const char* expected[20];
+    for (size_t i = 0; i < 20; ++i) {
+        cases[i] = valid;
+        expected[i] = "invalid explicit B-spline sizes or degree";
+    }
+    cases[0].first_point = SIZE_MAX;
+    cases[1].point_count = SIZE_MAX;
+    cases[2].kind = 5;
+    for (size_t i = 0; i < 3; ++i) expected[i] = "invalid curve segment";
+    cases[3].flags = 12;
+    cases[4].degree = 0;
+    cases[5].degree = INT32_MAX;
+    cases[6].knots = NULL;
+    cases[7].multiplicities = NULL;
+    cases[8].weight_count = 3;
+    cases[9].weight_count = 2;
+    cases[10].knots = descending;
+    cases[11].multiplicities = bad_mults;
+    expected[10] = expected[11] = "invalid clamped B-spline knots or multiplicities";
+    cases[12].weight_count = 3;
+    cases[12].weights = bad_weights;
+    expected[12] = "B-spline weights must be positive and finite";
+    cases[13].flags = 8;
+    cases[13].multiplicities = unclamped_mults;
+    expected[13] = "B-spline multiplicity sum does not match poles and degree";
+    cases[14].flags = 4;
+    cases[14].knot_count = 3;
+    cases[14].knots = periodic_knots;
+    cases[14].multiplicities = periodic_mults;
+    expected[14] = "periodic B-spline endpoint multiplicities must match";
+    cases[15].kind = 2;
+    cases[15].flags = 1;
+    expected[15] = "spline end tangent must be finite and nonzero";
+    cases[16].kind = 2;
+    cases[16].flags = 4;
+    cases[16].point_count = 2;
+    expected[16] = "a periodic spline needs at least three points";
+    cases[17].kind = 4;
+    cases[18].kind = 2;
+    cases[18].flags = 8;
+    expected[17] = expected[18] = "invalid curve segment";
+    cases[19] = cases[16];
+    cases[19].flags = 5;
+    expected[19] = expected[15];
+    for (size_t i = 0; i < 20; ++i) {
+        expect_curve_rejection(session, points, 3, &cases[i], expected[i]);
+    }
+    const occt_bridge_vec3_t nonfinite[] = {{NAN, 0., 0.}, {1., 1., 0.}, {2., 0., 0.}};
+    expect_curve_rejection(session, nonfinite, 3, &cases[4], "curve segment point is not finite");
+    const occt_bridge_vec3_t repeated[] = {{0., 0., 0.}, {0., 0., 0.}};
+    const occt_bridge_curve_segment_t line = {.kind = 0, .flags = INT32_MAX, .point_count = 2};
+    expect_curve_rejection(session, repeated, 2, &line, "consecutive curve segment points coincide");
+    occt_bridge_shape_id_t shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    require_ok(session, occt_bridge_create_curve_wire(session, points, 3, &line, 1, 0, &shape));
+    occt_bridge_shape_release(session, shape);
+    require_ok(session, occt_bridge_create_curve_wire(session, points, 3, &valid, 1, 0, &shape));
+    occt_bridge_shape_release(session, shape);
+}
+
 int main(void) {
     require_true(occt_bridge_abi_version() == OCCT_BRIDGE_ABI_VERSION, "ABI version");
 
@@ -1117,6 +1204,7 @@ int main(void) {
     test_session_options(session);
     test_failure_diagnostics(session);
     test_face_projection(session);
+    test_curve_validation(session);
     occt_bridge_session_destroy(session);
     puts("C ABI smoke test passed");
     return 0;

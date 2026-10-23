@@ -156,11 +156,8 @@ const char* add_elliptical_arc(
     return wire.IsDone() ? nullptr : "elliptical arc does not connect";
 }
 
-// Validates one curve segment against the point buffer; null when valid.
-const char* curve_segment_error(
-    const occt_bridge_curve_segment_t& segment,
-    const occt_bridge_vec3_t* points,
-    size_t point_count) {
+// Validate descriptor bounds before reading any point, knot or weight buffer.
+const char* curve_descriptor_error(const occt_bridge_curve_segment_t& segment, size_t point_count) {
     const size_t expected = segment.kind == 0 ? 2 : segment.kind == 1 ? 3 : segment.kind == 4 ? 5 : 0;
     if (segment.kind < 0 || segment.kind > 4
         || (expected != 0 && segment.point_count != expected)
@@ -170,6 +167,69 @@ const char* curve_segment_error(
         || segment.point_count > point_count - segment.first_point) {
         return "invalid curve segment";
     }
+    return nullptr;
+}
+
+const char* bspline_knot_error(const occt_bridge_curve_segment_t& segment,
+    bool periodic, bool non_clamped, size_t& sum) {
+    for (size_t i = 0; i < segment.knot_count; ++i) {
+        const bool boundary = (i == 0 || i + 1 == segment.knot_count);
+        const bool clamped_end = !periodic && !non_clamped && (i == 0 || i + 1 == segment.knot_count);
+        const int maximum = !periodic && boundary ? segment.degree + 1 : segment.degree;
+        if (!std::isfinite(segment.knots[i]) || (i != 0 && segment.knots[i] <= segment.knots[i-1])
+            || segment.multiplicities[i] < 1 || segment.multiplicities[i] > maximum
+            || (clamped_end && segment.multiplicities[i] != maximum)) {
+            return "invalid clamped B-spline knots or multiplicities";
+        }
+        sum += static_cast<size_t>(segment.multiplicities[i]);
+    }
+    return nullptr;
+}
+
+const char* explicit_bspline_error(const occt_bridge_curve_segment_t& segment) {
+    const bool periodic = (segment.flags & kPeriodic) != 0;
+    const bool non_clamped = (segment.flags & kNonClamped) != 0;
+    if ((periodic && non_clamped) || (segment.flags & ~(kPeriodic | kNonClamped)) != 0 || segment.degree < 1 || segment.degree > Geom_BSplineCurve::MaxDegree()
+        || segment.point_count < (static_cast<size_t>(segment.degree) + 1) || segment.point_count > 10000
+        || segment.knot_count < 2 || segment.knot_count > 10002 || segment.knots == nullptr || segment.multiplicities == nullptr
+        || (segment.weight_count != 0 && (segment.weight_count != segment.point_count || segment.weights == nullptr))) {
+        return "invalid explicit B-spline sizes or degree";
+    }
+    size_t sum = 0;
+    if (const char* error = bspline_knot_error(segment, periodic, non_clamped, sum)) return error;
+    if (periodic && segment.multiplicities[0] != segment.multiplicities[segment.knot_count-1]) {
+        return "periodic B-spline endpoint multiplicities must match";
+    }
+    const size_t expected_sum = segment.point_count + (periodic ? static_cast<size_t>(segment.multiplicities[segment.knot_count-1]) : static_cast<size_t>(segment.degree) + 1);
+    if (sum != expected_sum) {
+        return "B-spline multiplicity sum does not match poles and degree";
+    }
+    for (size_t i = 0; i < segment.weight_count; ++i) {
+        if (!std::isfinite(segment.weights[i]) || segment.weights[i] <= 0.) return "B-spline weights must be positive and finite";
+    }
+    return nullptr;
+}
+
+const char* interpolated_spline_error(const occt_bridge_curve_segment_t& segment) {
+    for (const auto& [flag, tangent] : {std::pair{kStartTangent, segment.start_tangent},
+                                        std::pair{kEndTangent, segment.end_tangent}}) {
+        if ((segment.flags & flag) != 0
+            && (!finite(tangent) || gp_Vec(tangent.x, tangent.y, tangent.z).Magnitude() <= Precision::Confusion())) {
+            return "spline end tangent must be finite and nonzero";
+        }
+    }
+    if ((segment.flags & kPeriodic) != 0 && segment.point_count < 3) {
+        return "a periodic spline needs at least three points";
+    }
+    return nullptr;
+}
+
+// Validates one curve segment against the point buffer; null when valid.
+const char* curve_segment_error(
+    const occt_bridge_curve_segment_t& segment,
+    const occt_bridge_vec3_t* points,
+    size_t point_count) {
+    if (const char* error = curve_descriptor_error(segment, point_count)) return error;
     const auto* first = points + segment.first_point;
     if (!std::all_of(first, first + segment.point_count, [](const auto& p) { return finite(p); })) {
         return "curve segment point is not finite";
@@ -179,50 +239,8 @@ const char* curve_segment_error(
             return "consecutive curve segment points coincide";
         }
     }
-    if (segment.kind == 3) {
-        const bool periodic = (segment.flags & kPeriodic) != 0;
-        const bool non_clamped = (segment.flags & kNonClamped) != 0;
-        if ((periodic && non_clamped) || (segment.flags & ~(kPeriodic | kNonClamped)) != 0 || segment.degree < 1 || segment.degree > Geom_BSplineCurve::MaxDegree()
-            || segment.point_count < (static_cast<size_t>(segment.degree) + 1) || segment.point_count > 10000
-            || segment.knot_count < 2 || segment.knot_count > 10002 || segment.knots == nullptr || segment.multiplicities == nullptr
-            || (segment.weight_count != 0 && (segment.weight_count != segment.point_count || segment.weights == nullptr))) {
-            return "invalid explicit B-spline sizes or degree";
-        }
-        size_t sum = 0;
-        for (size_t i = 0; i < segment.knot_count; ++i) {
-            const bool boundary = (i == 0 || i + 1 == segment.knot_count);
-            const bool clamped_end = !periodic && !non_clamped && (i == 0 || i + 1 == segment.knot_count);
-            const int maximum = !periodic && boundary ? segment.degree + 1 : segment.degree;
-            if (!std::isfinite(segment.knots[i]) || (i != 0 && segment.knots[i] <= segment.knots[i-1])
-                || segment.multiplicities[i] < 1 || segment.multiplicities[i] > maximum
-                || (clamped_end && segment.multiplicities[i] != maximum)) {
-                return "invalid clamped B-spline knots or multiplicities";
-            }
-            sum += static_cast<size_t>(segment.multiplicities[i]);
-        }
-        if (periodic && segment.multiplicities[0] != segment.multiplicities[segment.knot_count-1]) {
-            return "periodic B-spline endpoint multiplicities must match";
-        }
-        const size_t expected_sum = segment.point_count + (periodic ? static_cast<size_t>(segment.multiplicities[segment.knot_count-1]) : static_cast<size_t>(segment.degree) + 1);
-        if (sum != expected_sum) {
-            return "B-spline multiplicity sum does not match poles and degree";
-        }
-        for (size_t i = 0; i < segment.weight_count; ++i) {
-            if (!std::isfinite(segment.weights[i]) || segment.weights[i] <= 0.) return "B-spline weights must be positive and finite";
-        }
-    }
-    if (segment.kind == 2) {
-        for (const auto& [flag, tangent] : {std::pair{kStartTangent, segment.start_tangent},
-                                            std::pair{kEndTangent, segment.end_tangent}}) {
-            if ((segment.flags & flag) != 0
-                && (!finite(tangent) || gp_Vec(tangent.x, tangent.y, tangent.z).Magnitude() <= Precision::Confusion())) {
-                return "spline end tangent must be finite and nonzero";
-            }
-        }
-        if ((segment.flags & kPeriodic) != 0 && segment.point_count < 3) {
-            return "a periodic spline needs at least three points";
-        }
-    }
+    if (segment.kind == 3) return explicit_bspline_error(segment);
+    if (segment.kind == 2) return interpolated_spline_error(segment);
     return nullptr;
 }
 
