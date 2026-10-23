@@ -138,3 +138,100 @@ fn radial_cutters_remove_their_developed_area_times_the_thickness() {
         );
     }
 }
+
+#[test]
+fn radial_cutter_volume_is_invariant_under_outline_reversal_and_frame_placement() {
+    let s = Session::new().unwrap();
+    {
+        for (origin, axis, start) in [
+            (
+                Vec3::new(0., 0., 0.),
+                Vec3::new(0., 0., 1.),
+                Vec3::new(1., 0., 0.),
+            ),
+            (
+                Vec3::new(500., -200., 70.),
+                Vec3::new(0., 3., 0.),
+                Vec3::new(2., 0., 0.),
+            ),
+            (
+                Vec3::new(-20., 50., -30.),
+                Vec3::new(1., 0., 0.),
+                Vec3::new(0., 1., 0.),
+            ),
+        ] {
+            for reverse in [false, true] {
+                let mut outline = circle((PI, 5.), 1.);
+                if reverse {
+                    outline = outline
+                        .into_iter()
+                        .rev()
+                        .map(|segment| match segment {
+                            WireSegment::Arc { start, middle, end } => WireSegment::Arc {
+                                start: end,
+                                middle,
+                                end: start,
+                            },
+                            WireSegment::Line { start, end } => WireSegment::Line {
+                                start: end,
+                                end: start,
+                            },
+                        })
+                        .collect();
+                }
+                let cutter = s
+                    .create_radial_cutter(origin, axis, start, 4., 2.5, 5.5, &outline)
+                    .unwrap();
+                assert!(s.is_valid(&cutter).unwrap());
+                assert_eq!(s.shape_type(&cutter).unwrap(), ShapeType::Solid);
+                // Integral of r/R through the radial interval, times developed area.
+                let expected = PI * (5.5_f64.powi(2) - 2.5_f64.powi(2)) / 8.;
+                assert!((s.volume(&cutter).unwrap() - expected).abs() < 1e-6 * expected);
+            }
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn malformed_radial_outlines_preserve_diagnostics_and_do_not_store_results() {
+    let s = Session::new().unwrap();
+    let p = |x, y| Vec3::new(x, y, 0.);
+    let line = |a, b| WireSegment::Line { start: a, end: b };
+    for (outline, message) in [
+        (
+            vec![line(p(1., 1.), p(1., 1.)), line(p(1., 1.), p(2., 1.))],
+            "radial cutter segment is degenerate",
+        ),
+        (
+            vec![line(p(1., 1.), p(2., 1.)), line(p(3., 1.), p(3., 2.))],
+            "radial cutter outline is not connected",
+        ),
+        (
+            vec![
+                line(p(0., 1.), p(30., 1.)),
+                line(p(30., 1.), p(30., 2.)),
+                line(p(30., 2.), p(0., 2.)),
+                line(p(0., 2.), p(0., 1.)),
+            ],
+            "radial cutter outline must span less than a turn",
+        ),
+    ] {
+        let before = s.shape_count().unwrap();
+        let error = s
+            .create_radial_cutter(
+                p(0., 0.),
+                Vec3::new(0., 0., 1.),
+                p(1., 0.),
+                4.,
+                2.5,
+                5.5,
+                &outline,
+            )
+            .unwrap_err();
+        assert_eq!(error.status, 4);
+        assert_eq!(error.message, message);
+        assert_eq!(s.shape_count().unwrap(), before);
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
