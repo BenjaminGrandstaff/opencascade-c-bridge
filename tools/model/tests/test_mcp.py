@@ -1278,6 +1278,21 @@ class McpTests(unittest.TestCase):
         response = self.client.call('tools/call', dict(name='occt_import_dxf', arguments=dict(path='/etc/passwd')))
         self.assertEqual(response['error']['code'], -32602)
 
+    def test_builds_export_dxf_cutting_profiles_as_resources(self):
+        request = self.client.tool('occt_get_example', dict(name='hemmed-tray'))['structuredContent']
+        request.update(outputs=[dict(instance='flat', output='flat')], step=False, preview=False, dxf={})
+        built = self.client.tool('occt_build', request)
+        self.assertFalse(built['isError'], built)
+        output = built['structuredContent']['report']['outputs'][0]
+        self.assertEqual(output['dxf']['layers']['BEND'], 5)
+        uri = built['structuredContent']['resources'][output['dxf']['file']]
+        content = self.client.call('resources/read', dict(uri=uri))['result']['contents'][0]
+        self.assertEqual(content['mimeType'], 'image/vnd.dxf')
+        self.assertIn('$INSUNITS', content['text'])
+        # The profile reads back as a sketch whose face has the same area.
+        imported = self.client.tool('occt_import_dxf', dict(dxf=content['text'], options=dict(layers=['OUTLINE', 'HOLES'])))['structuredContent']
+        self.assertAlmostEqual(imported['face']['area_mm2'], output['dxf']['area_mm2'], places=6)
+
     def command_example(self, name):
         return self.client.tool('occt_get_example', dict(name=name))['structuredContent']
 

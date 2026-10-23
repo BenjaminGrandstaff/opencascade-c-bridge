@@ -7941,3 +7941,42 @@ fn studio_timeline_branches_and_bookmarks_switch_undo_and_refuse_conflicts() {
     assert_eq!(history["branch"], "alt");
     assert_eq!(history["bookmarks"][0]["name"], "start only");
 }
+
+#[test]
+fn studio_exports_the_shown_part_as_dxf() {
+    let directory = Directory::new();
+    let model = PathBuf::from(directory.model(&sketch_block_document()));
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let version = get(&mut studio, "/api/state").1["version"].clone();
+    let instance = get(&mut studio, "/api/instances").1["instances"][0]["id"].clone();
+    let response = studio.handle(
+        "POST",
+        "/api/output-dxf",
+        json!({"version": version, "instance": instance})
+            .to_string()
+            .as_bytes(),
+    );
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    assert_eq!(response.content_type, "image/vnd.dxf");
+    let text = String::from_utf8(response.body).unwrap();
+    let imported = occt_parametric::dxf::import_dxf(&text, &Default::default()).unwrap();
+    assert!(imported.report.loops >= 1);
+    assert_eq!(imported.report.unit_source, "$INSUNITS");
+    // Stale versions and unknown instances are refused.
+    for body in [
+        json!({"version": 0, "instance": instance}),
+        json!({"version": version, "instance": "ghost"}),
+    ] {
+        assert_eq!(
+            studio
+                .handle("POST", "/api/output-dxf", body.to_string().as_bytes())
+                .status,
+            422
+        );
+    }
+}

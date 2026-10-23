@@ -18,14 +18,18 @@ The current C ABI version is **86** and the document schema is **185**.
 | `occt-parametric` (kernel regeneration) | Schema 185 | Active development |
 | Sketch studio and viewer (`occt-view --serve`) | — | Edits the same documents; adds no capability of its own |
 
-Tests: C 8/8, bridge 201, parametric core 79, kernel 818, view command 104,
-model command 114, viewer Node 479 and MCP Python 30, all passing. The scale
+Tests: C 8/8, bridge 201, parametric core 79, kernel 821, view command 105,
+model command 116, viewer Node 479 and MCP Python 31, all passing. The scale
 benchmark suite covers geometry, document operations, sketch authoring, MCP
 and model-command publication, with enforced time budgets. Formatting and Clippy are clean across all crates. Full
 gate results and history live in [the roadmap](ROADMAP.md#current-status).
 
 Recently landed:
 
+- **DXF export:** cutting profiles of a part's flat face, with exact lines,
+  arcs, circles, ellipses and splines on OUTLINE, HOLES and BEND layers, from
+  builds (`"dxf": {}`), MCP and a studio DXF button. Flat sheet-metal patterns
+  include their bend lines. See [DXF export](docs/DXF_EXPORT.md).
 - **Native curve validation refactor:** separate descriptor, B-spline knot and
   tangent checks preserve diagnostic precedence and accepted geometry; native
   regressions cover malformed C descriptors and failure cleanup.

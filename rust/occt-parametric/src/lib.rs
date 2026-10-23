@@ -11,6 +11,7 @@
 
 mod assembly;
 mod drawing;
+pub mod dxf_export;
 mod face_colors;
 mod features;
 mod graph;

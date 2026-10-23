@@ -88,6 +88,8 @@ def output_files(report):
     for output in report['outputs']:
         files.update(output[key] for key in ('preview', 'stl') if key in output)
         files.update(image['file'] for image in output.get('renders', ()) if 'file' in image)
+        if 'file' in output.get('dxf', {}):
+            files.add(output['dxf']['file'])
     files.update(image['file'] for image in report.get('scene', {}).get('renders', ()) if 'file' in image)
     return files
 

@@ -948,6 +948,10 @@ draft and previews it at once. It is then an ordinary draft: edit, constrain
 or delete curves, then Apply. Files up to 32 MB are read here. See
 [DXF import](DXF_IMPORT.md).
 
+The **DXF** button in the top bar downloads the shown part's largest flat
+face as a cutting profile: outline, holes and any flat-pattern bend lines on
+their own layers, in millimeters. See [DXF export](DXF_EXPORT.md).
+
 ## Deleting
 
 With Select, Delete or Backspace removes the selection, and the inspector

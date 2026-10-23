@@ -858,3 +858,12 @@ optionally `feature_id` and `options` (`layers`, `unit`, `tolerance_mm`). The
 result reports what was imported and skipped, and whether the face builds,
 with its area. Add the feature to a model or with an `add_feature` edit, then
 extrude or cut it. See [DXF import](../../docs/DXF_IMPORT.md).
+
+## DXF export
+
+`occt_build` takes `"dxf": {}` (optionally `face`, `bend_lines`) and writes a
+cutting profile of each selected output's largest planar face, or of the
+selected face. The file has OUTLINE, HOLES and BEND layers, with exact curves,
+in millimeters. It is readable as an `image/vnd.dxf` resource listed under
+the output's `dxf.file`, and `occt_import_dxf` reads it back. See
+[DXF export](../../docs/DXF_EXPORT.md).

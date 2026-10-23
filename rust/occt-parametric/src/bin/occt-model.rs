@@ -50,6 +50,23 @@ struct Request {
     /// the iso, front, top and right views at 512 px.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     renders: Option<render::RenderOptions>,
+    /// A DXF cutting profile of each selected output, `NNNN.dxf`: a planar
+    /// face with its outer boundary on layer OUTLINE, holes on HOLES and a
+    /// flat pattern's bend lines on BEND, in millimeters, with exact lines,
+    /// arcs, circles, ellipses and splines. `{}` exports the output's largest
+    /// planar face; `face` selects one. Each output's `dxf` reports the file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    dxf: Option<DxfOptions>,
+}
+#[derive(Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct DxfOptions {
+    /// The face to export; default the largest planar face.
+    #[serde(default)]
+    face: Option<FaceSelector>,
+    /// Add a sheet-metal flat pattern's bend lines on layer BEND; default true.
+    #[serde(default = "yes")]
+    bend_lines: bool,
 }
 fn yes() -> bool {
     true
@@ -299,6 +316,7 @@ fn build_internal(
         request.stl,
         request.preview,
         request.renders.as_ref(),
+        request.dxf.as_ref(),
         destination,
         &session,
         &graph,
@@ -353,6 +371,7 @@ fn publish(
     stl: bool,
     previews: bool,
     renders: Option<&render::RenderOptions>,
+    dxf: Option<&DxfOptions>,
     destination: &Path,
     session: &Session,
     graph: &InstanceGraph<'_>,
@@ -411,6 +430,22 @@ fn publish(
                 .save_stl(shape, destination.join(&filename), StlOptions::default())
                 .map_err(|e| failure("export", e))?;
             value["outputs"][index]["stl"] = json!(filename);
+        }
+        if let Some(options) = dxf {
+            let filename = format!("{:04}.dxf", index + 1);
+            let (text, report) = occt_parametric::dxf_export::output_to_dxf(
+                session,
+                graph,
+                generation,
+                output,
+                options.face.as_ref(),
+                options.bend_lines,
+            )
+            .map_err(|e| model_failure("export", e))?;
+            fs::write(destination.join(&filename), text).map_err(|e| failure("publication", e))?;
+            let mut entry = serde_json::to_value(report).map_err(|e| failure("publication", e))?;
+            entry["file"] = json!(filename);
+            value["outputs"][index]["dxf"] = entry;
         }
         if previews {
             let filename = format!("{:04}.svg", index + 1);
@@ -477,47 +512,7 @@ fn render_outputs(
     value["render_quality"] = json!("tessellated; visual review only");
     Ok(())
 }
-/// The bend lines of a sheet-metal flat-pattern output, placed like its
-/// instance; empty for any other output.
-fn flat_bend_lines(
-    graph: &InstanceGraph<'_>,
-    output: &InstanceOutputRef,
-) -> Result<Vec<[occt_bridge::Vec3; 2]>, ModelError> {
-    let instance = graph.resolve(&output.instance)?;
-    let features = &instance.definition.features;
-    let find = |id: &str| features.iter().find(|f| f.id == id);
-    let Some(FeatureDefinition {
-        operation:
-            FeatureOperation::SheetMetalFlat {
-                input,
-                neutral_factor,
-                bend_table,
-            },
-        ..
-    }) = find(&output.output)
-    else {
-        return Ok(Vec::new());
-    };
-    let Some(FeatureDefinition {
-        operation: FeatureOperation::SheetMetal { definition },
-        ..
-    }) = find(input)
-    else {
-        return Ok(Vec::new());
-    };
-    let parameters = instance.resolved_parameters()?;
-    let factor = evaluate_resolved_expression(neutral_factor, &parameters)?.value;
-    definition
-        .flat_bend_lines(&parameters, factor, bend_table.as_deref())?
-        .into_iter()
-        .map(|[a, b]| {
-            Ok([
-                graph.instance_point(&output.instance, a)?,
-                graph.instance_point(&output.instance, b)?,
-            ])
-        })
-        .collect()
-}
+use occt_parametric::dxf_export::flat_bend_lines;
 #[cfg(test)]
 #[path = "model/tests/mod.rs"]
 mod tests;

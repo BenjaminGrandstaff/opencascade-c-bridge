@@ -714,6 +714,27 @@ export function startStudio(document) {
   new ResizeObserver(redraw).observe(canvas);
 
   $('look-at').addEventListener('click', lookAtActive);
+  // A DXF cutting profile of the shown part: its largest flat face, with a
+  // flat pattern's bend lines, saved as a file.
+  $('export-dxf').addEventListener('click', async () => {
+    try {
+      const response = await fetch('/api/output-dxf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-OCCT-View': '1' },
+        body: JSON.stringify({ version: studio.version, instance: studio.instance }),
+      });
+      if (!response.ok) throw new Error((await response.json()).error ?? response.statusText);
+      const url = URL.createObjectURL(new Blob([await response.text()], { type: 'image/vnd.dxf' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${studio.instance || 'part'}.dxf`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      say('DXF saved: the largest flat face, outline and holes in millimeters, with any bend lines.');
+    } catch (error) {
+      say(`DXF export failed: ${error.message}`, true);
+    }
+  });
   $('fit').addEventListener('click', () => {
     studio.camera = fitCamera(studio.limitFaceBounds?.() ?? studio.solidPreview?.bounds ?? studio.parsed?.bounds ?? null, aspect());
     redraw();

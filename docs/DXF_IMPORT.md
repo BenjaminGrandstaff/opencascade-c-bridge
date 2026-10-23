@@ -1,5 +1,8 @@
 # DXF import
 
+For the reverse, writing a part's face as a cutting profile, see
+[DXF export](DXF_EXPORT.md).
+
 A DXF file's 2D outlines become an ordinary sketch: points, lines, arcs,
 circles, ellipses and splines, with the closed loops sorted into the outer
 boundary, its holes and further regions. You can then extrude, revolve or
