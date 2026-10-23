@@ -69,131 +69,175 @@ std::vector<TopoDS_Shape> descendants(
     }
     return result;
 }
+occt_bridge_status_t split_search_prism(occt_bridge_session_t* session,
+    const TopoDS_Shape& prism, const TopoDS_Shape& limit, BRepAlgoAPI_Splitter& splitter) {
+    TopTools_ListOfShape args, tools;
+    args.Append(prism);
+    tools.Append(limit);
+    splitter.SetArguments(args);
+    splitter.SetTools(tools);
+    splitter.SetNonDestructive(Standard_True);
+    splitter.Build();
+    if (!splitter.IsDone() || splitter.HasErrors()) {
+        return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "limiting face split failed");
+    }
+    return OCCT_BRIDGE_OK;
+}
+
+occt_bridge_status_t select_base_region(occt_bridge_session_t* session,
+    BRepAlgoAPI_Splitter& splitter, const TopoDS_Shape& base,
+    double base_area, double area_margin, TopoDS_Shape& result) {
+    const auto solids = ordered(splitter.Shape(), TopAbs_SOLID);
+    for (int i = 1; i <= solids.Extent(); ++i) {
+        const auto& solid = solids(i);
+        const auto faces = ordered(solid, TopAbs_FACE);
+        // Unchanged complete base identity is an exact coverage witness.
+        // Only a modified base requires a Boolean area comparison.
+        if (faces.Contains(base)
+            || std::abs(shared_area(solid, base) - base_area) <= area_margin) {
+            if (!result.IsNull()) {
+                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "limiting face has ambiguous base-connected regions");
+            }
+            result = solid;
+        }
+    }
+    if (result.IsNull() || !ShapeValidator(result).IsValid()) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "limiting face must retain one complete base region");
+    }
+    return OCCT_BRIDGE_OK;
+}
+
+occt_bridge_status_t validate_search_end(occt_bridge_session_t* session,
+    BRepAlgoAPI_Splitter& splitter, const TopoDS_Shape& far_cap,
+    const TopTools_IndexedMapOfShape& output, double area_margin) {
+    if (output.Contains(far_cap)) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "limiting face does not terminate the complete profile");
+    }
+    const auto& far_modified = splitter.Modified(far_cap);
+    for (TopTools_ListIteratorOfListOfShape it(far_modified); it.More(); it.Next()) {
+        if (output.Contains(it.Value()) && area(it.Value()) > area_margin) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "limiting face leaves part of the search end");
+        }
+    }
+    return OCCT_BRIDGE_OK;
+}
+
+occt_bridge_status_t validate_cutoff_cap(occt_bridge_session_t* session,
+    BRepAlgoAPI_Splitter& splitter, const TopoDS_Shape& limit, const TopoDS_Shape& base,
+    const TopTools_IndexedMapOfShape& output, double area_margin) {
+    // Splitter history identifies exactly the bounded cap fragments in the
+    // chosen solid; avoid repeating its face intersection as a Boolean.
+    TopoDS_Compound cap;
+    BRep_Builder cap_builder;
+    cap_builder.MakeCompound(cap);
+    if (output.Contains(limit)) {
+        cap_builder.Add(cap, limit);
+    }
+    const auto& cap_modified = splitter.Modified(limit);
+    for (TopTools_ListIteratorOfListOfShape it(cap_modified); it.More(); it.Next()) {
+        if (it.Value().ShapeType() == TopAbs_FACE && output.Contains(it.Value())) {
+            cap_builder.Add(cap, it.Value());
+        }
+    }
+    if (area(cap) <= area_margin) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "limiting face has no complete cutoff cap");
+    }
+    // The cap must be strictly separated from the base, including rims;
+    // a tangential zero-depth contact is not a positive extrusion extent.
+    BRepExtrema_DistShapeShape separation(base, cap);
+    if (!separation.IsDone() || separation.Value() <= Precision::Confusion()) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "limiting cap touches the extrusion base");
+    }
+    return OCCT_BRIDGE_OK;
+}
+
+std::vector<occt_bridge_history_entry> limited_extrusion_history(
+    BRepAlgoAPI_Splitter& splitter, BRepPrimAPI_MakePrism& prism,
+    const TopoDS_Shape& base, const TopoDS_Shape& limit,
+    const TopTools_IndexedMapOfShape& output) {
+    auto history = collect_history(splitter, {&prism.Shape(), &limit});
+    for (auto& entry : history) {
+        retained(entry.generated, output);
+        retained(entry.modified, output);
+        entry.deleted = !output.Contains(entry.source) && entry.modified.empty();
+    }
+    // Preserve generated source-edge ancestry through native splitting.
+    for (auto entry : collect_history(prism, {&base})) {
+        // Copy=true replaces the base just as in distance extrusions.
+        const TopoDS_Shape copied_base = prism.FirstShape(entry.source);
+        if (!copied_base.IsNull() && !copied_base.IsSame(entry.source)) {
+            append_unique_shape(entry.modified, copied_base);
+        }
+        entry.generated = descendants(entry.generated, splitter, output);
+        entry.modified = descendants(entry.modified, splitter, output);
+        entry.deleted = !output.Contains(entry.source) && entry.modified.empty();
+        history.push_back(std::move(entry));
+    }
+    return history;
+}
+
+occt_bridge_status_t create_prism_until_face(
+    occt_bridge_session_t* session, occt_bridge_shape_id_t profile,
+    occt_bridge_vec3_t direction, occt_bridge_shape_id_t limiting_face,
+    occt_bridge_shape_id_t* out_shape) {
+    if (out_shape == nullptr) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+    }
+    *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    const gp_Vec travel(direction.x, direction.y, direction.z);
+    if (!finite(direction) || travel.Magnitude() <= Precision::Confusion()) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "prism search travel must be finite and nonzero");
+    }
+    const auto* base = find_shape(session, profile);
+    const auto* limit = find_shape(session, limiting_face);
+    if (base == nullptr || limit == nullptr) {
+        return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "profile or limiting face was not found");
+    }
+    if (base->ShapeType() != TopAbs_FACE || limit->ShapeType() != TopAbs_FACE
+        || !ShapeValidator(*base).IsValid() || !ShapeValidator(*limit).IsValid()) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "prism limits require valid faces");
+    }
+    if (BRepAdaptor_Surface(TopoDS::Face(*base)).GetType() != GeomAbs_Plane) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "extrusion profile must be planar");
+    }
+    BRepPrimAPI_MakePrism prism(TopoDS::Face(*base), travel, Standard_True);
+    prism.Build();
+    if (!prism.IsDone() || prism.Shape().ShapeType() != TopAbs_SOLID
+        || !ShapeValidator(prism.Shape()).IsValid()) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "profile did not produce a valid search prism");
+    }
+    BRepAlgoAPI_Splitter splitter;
+    const auto split_status = split_search_prism(session, prism.Shape(), *limit, splitter);
+    if (split_status != OCCT_BRIDGE_OK) return split_status;
+    const double base_area = area(*base);
+    const double area_margin = base_area * 1e-9;
+    if (!(base_area > 0.0)) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "profile area must be positive");
+    }
+    TopoDS_Shape result;
+    const auto region_status = select_base_region(session, splitter, prism.FirstShape(), base_area, area_margin, result);
+    if (region_status != OCCT_BRIDGE_OK) return region_status;
+    TopTools_IndexedMapOfShape output;
+    TopExp::MapShapes(result, output);
+    const auto end_status = validate_search_end(session, splitter, prism.LastShape(), output, area_margin);
+    if (end_status != OCCT_BRIDGE_OK) return end_status;
+    const auto cap_status = validate_cutoff_cap(session, splitter, *limit, prism.FirstShape(), output, area_margin);
+    if (cap_status != OCCT_BRIDGE_OK) return cap_status;
+    auto history = limited_extrusion_history(splitter, prism, *base, *limit, output);
+    const auto status = check_result(session, "limited extrusion", result, &history);
+    if (status != OCCT_BRIDGE_OK) {
+        return status;
+    }
+    return store_shape_with_entries(session, result, out_shape, std::move(history));
+}
+
 }
 
 occt_bridge_status_t occt_bridge_create_prism_until_face(
     occt_bridge_session_t* session, occt_bridge_shape_id_t profile,
     occt_bridge_vec3_t direction, occt_bridge_shape_id_t limiting_face,
     occt_bridge_shape_id_t* out_shape) {
-    return guarded(session, [&] {
-        if (out_shape == nullptr) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
-        }
-        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
-        const gp_Vec travel(direction.x, direction.y, direction.z);
-        if (!finite(direction) || travel.Magnitude() <= Precision::Confusion()) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "prism search travel must be finite and nonzero");
-        }
-        const auto* base = find_shape(session, profile);
-        const auto* limit = find_shape(session, limiting_face);
-        if (base == nullptr || limit == nullptr) {
-            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "profile or limiting face was not found");
-        }
-        if (base->ShapeType() != TopAbs_FACE || limit->ShapeType() != TopAbs_FACE
-            || !ShapeValidator(*base).IsValid() || !ShapeValidator(*limit).IsValid()) {
-            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "prism limits require valid faces");
-        }
-        if (BRepAdaptor_Surface(TopoDS::Face(*base)).GetType() != GeomAbs_Plane) {
-            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "extrusion profile must be planar");
-        }
-        BRepPrimAPI_MakePrism prism(TopoDS::Face(*base), travel, Standard_True);
-        prism.Build();
-        if (!prism.IsDone() || prism.Shape().ShapeType() != TopAbs_SOLID
-            || !ShapeValidator(prism.Shape()).IsValid()) {
-            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "profile did not produce a valid search prism");
-        }
-        TopTools_ListOfShape args, tools;
-        args.Append(prism.Shape());
-        tools.Append(*limit);
-        BRepAlgoAPI_Splitter splitter;
-        splitter.SetArguments(args);
-        splitter.SetTools(tools);
-        splitter.SetNonDestructive(Standard_True);
-        splitter.Build();
-        if (!splitter.IsDone() || splitter.HasErrors()) {
-            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "limiting face split failed");
-        }
-        const double base_area = area(*base);
-        const double area_margin = base_area * 1e-9;
-        if (!(base_area > 0.0)) {
-            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "profile area must be positive");
-        }
-        TopoDS_Shape result;
-        const auto solids = ordered(splitter.Shape(), TopAbs_SOLID);
-        for (int i = 1; i <= solids.Extent(); ++i) {
-            const auto& solid = solids(i);
-            const auto faces = ordered(solid, TopAbs_FACE);
-            // Unchanged complete base identity is an exact coverage witness.
-            // Only a modified base requires a Boolean area comparison.
-            if (faces.Contains(prism.FirstShape())
-                || std::abs(shared_area(solid, prism.FirstShape()) - base_area) <= area_margin) {
-                if (!result.IsNull()) {
-                    return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "limiting face has ambiguous base-connected regions");
-                }
-                result = solid;
-            }
-        }
-        if (result.IsNull() || !ShapeValidator(result).IsValid()) {
-            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "limiting face must retain one complete base region");
-        }
-        TopTools_IndexedMapOfShape output;
-        TopExp::MapShapes(result, output);
-        if (output.Contains(prism.LastShape())) {
-            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "limiting face does not terminate the complete profile");
-        }
-        const auto& far_modified = splitter.Modified(prism.LastShape());
-        for (TopTools_ListIteratorOfListOfShape it(far_modified); it.More(); it.Next()) {
-            if (output.Contains(it.Value()) && area(it.Value()) > area_margin) {
-                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "limiting face leaves part of the search end");
-            }
-        }
-        // Splitter history identifies exactly the bounded cap fragments in the
-        // chosen solid; avoid repeating its face intersection as a Boolean.
-        TopoDS_Compound cap;
-        BRep_Builder cap_builder;
-        cap_builder.MakeCompound(cap);
-        if (output.Contains(*limit)) {
-            cap_builder.Add(cap, *limit);
-        }
-        const auto& cap_modified = splitter.Modified(*limit);
-        for (TopTools_ListIteratorOfListOfShape it(cap_modified); it.More(); it.Next()) {
-            if (it.Value().ShapeType() == TopAbs_FACE && output.Contains(it.Value())) {
-                cap_builder.Add(cap, it.Value());
-            }
-        }
-        if (area(cap) <= area_margin) {
-            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "limiting face has no complete cutoff cap");
-        }
-        // The cap must be strictly separated from the base, including rims;
-        // a tangential zero-depth contact is not a positive extrusion extent.
-        BRepExtrema_DistShapeShape separation(prism.FirstShape(), cap);
-        if (!separation.IsDone() || separation.Value() <= Precision::Confusion()) {
-            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "limiting cap touches the extrusion base");
-        }
-        auto history = collect_history(splitter, {&prism.Shape(), limit});
-        for (auto& entry : history) {
-            retained(entry.generated, output);
-            retained(entry.modified, output);
-            entry.deleted = !output.Contains(entry.source) && entry.modified.empty();
-        }
-        // Preserve generated source-edge ancestry through native splitting.
-        for (auto entry : collect_history(prism, {base})) {
-            // Copy=true replaces the base just as in distance extrusions.
-            const TopoDS_Shape copied_base = prism.FirstShape(entry.source);
-            if (!copied_base.IsNull() && !copied_base.IsSame(entry.source)) {
-                append_unique_shape(entry.modified, copied_base);
-            }
-            entry.generated = descendants(entry.generated, splitter, output);
-            entry.modified = descendants(entry.modified, splitter, output);
-            entry.deleted = !output.Contains(entry.source) && entry.modified.empty();
-            history.push_back(std::move(entry));
-        }
-        const auto status = check_result(session, "limited extrusion", result, &history);
-        if (status != OCCT_BRIDGE_OK) {
-            return status;
-        }
-        return store_shape_with_entries(session, result, out_shape, std::move(history));
-    });
+    return guarded(session, [&] { return create_prism_until_face(session, profile, direction, limiting_face, out_shape); });
 }
 
 occt_bridge_status_t occt_bridge_shape_ray_first_hit(

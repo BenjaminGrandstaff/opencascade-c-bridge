@@ -149,3 +149,97 @@ fn native_ray_measures_curved_caps_without_centroid_estimates() {
     }
     assert_eq!(session.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn limited_oblique_prisms_preserve_holes_and_ancestry_in_both_directions() {
+    let s = Session::new().unwrap();
+    {
+        let outer = s
+            .create_polyline_wire(
+                &[
+                    Vec3::new(-2., -2., 0.),
+                    Vec3::new(2., -2., 0.),
+                    Vec3::new(2., 2., 0.),
+                    Vec3::new(-2., 2., 0.),
+                ],
+                true,
+            )
+            .unwrap();
+        let hole = s
+            .create_circle_wire(Vec3::new(0., 0., 0.), Vec3::new(0., 0., 1.), 0.5)
+            .unwrap();
+        let base = s.create_face_with_holes(&outer, &[&hole]).unwrap();
+        let before = s.exact_bounds(&base).unwrap();
+        for sign in [-1., 1.] {
+            for angle in [0., 0.2_f64] {
+                let center = Vec3::new(0., 0., sign * 10.);
+                let wire = s
+                    .create_circle_wire(center, Vec3::new(0., 0., 1.), 10.)
+                    .unwrap();
+                let cap = s.create_face_from_wire(&wire).unwrap();
+                let cap = s
+                    .rotate(&cap, center, Vec3::new(0., 1., 0.), angle)
+                    .unwrap();
+                let cap_before = s.exact_bounds(&cap).unwrap();
+                let solid = s
+                    .create_prism_until_face(&base, Vec3::new(3., 0., sign * 30.), &cap)
+                    .unwrap();
+                let expected =
+                    (16. - std::f64::consts::PI * 0.25) * 10. / (1. + sign * 0.1 * angle.tan());
+                assert!((s.volume(&solid).unwrap() - expected).abs() < 1e-6);
+                assert!(s.is_valid(&solid).unwrap());
+                assert_eq!(
+                    s.history_count(&solid, &base, HistoryRelation::Modified)
+                        .unwrap(),
+                    1
+                );
+                assert!(
+                    s.history_count(&solid, &cap, HistoryRelation::Modified)
+                        .unwrap()
+                        > 0
+                );
+                for edge in s.subshapes(&base, ShapeType::Edge).unwrap() {
+                    let count = s
+                        .history_count(&solid, &edge, HistoryRelation::Generated)
+                        .unwrap();
+                    assert!(count > 0);
+                    for i in 0..count {
+                        let lateral = s
+                            .history(&solid, &edge, HistoryRelation::Generated, i)
+                            .unwrap();
+                        assert_eq!(s.shape_type(&lateral).unwrap(), ShapeType::Face);
+                        assert!(s.surface_area(&lateral).unwrap() > 0.);
+                    }
+                }
+                assert_eq!(s.exact_bounds(&base).unwrap(), before);
+                assert_eq!(s.exact_bounds(&cap).unwrap(), cap_before);
+            }
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn inclined_caps_touching_only_the_base_rim_fail_without_storing_results() {
+    let s = Session::new().unwrap();
+    {
+        let base = profile(&s);
+        let angle = 0.3_f64;
+        // The lowest cap point is exactly at the base circle's x=2 rim.
+        let center = Vec3::new(0., 0., 2. * angle.tan());
+        let wire = s
+            .create_circle_wire(center, Vec3::new(0., 0., 1.), 10.)
+            .unwrap();
+        let cap = s.create_face_from_wire(&wire).unwrap();
+        let cap = s
+            .rotate(&cap, center, Vec3::new(0., 1., 0.), angle)
+            .unwrap();
+        let count = s.shape_count().unwrap();
+        let error = s
+            .create_prism_until_face(&base, Vec3::new(0., 0., 30.), &cap)
+            .unwrap_err();
+        assert_eq!(error.status, 4);
+        assert_eq!(s.shape_count().unwrap(), count);
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}

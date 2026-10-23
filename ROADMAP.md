@@ -17,14 +17,36 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 8/8, bridge 195 + first-use integration 1 (+1 doc test), recipes 3, parametric core 79 + kernel 818 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 104 + viewer Node 479 + branch command 2 + model command 114, MCP Python 30, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 8/8, bridge 197 + first-use integration 1 (+1 doc test), recipes 3, parametric core 79 + kernel 818 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 104 + viewer Node 479 + branch command 2 + model command 114, MCP Python 30, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
-| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 23 clang-tidy warnings (22 complexity warnings and one public ABI padding warning) plus 82 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
+| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 21 clang-tidy warnings (20 complexity warnings and one public ABI padding warning) plus 82 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all five crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 2026-10-22: 92.68% lines overall; C++ 94.41% lines, 82.69% branches, 99.88% functions; Rust 92.26% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
+| Coverage | 2026-10-22: 92.68% lines overall; C++ 94.43% lines, 82.71% branches, 99.89% functions; Rust 92.26% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
 | Scale benchmarks | Current run: all 139 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
 
 ## Done
+
+- Finite-face extrusion refactor (schema 185 and ABI 86 unchanged): native
+  splitting, complete-base region selection, search-end rejection, bounded
+  cutoff-cap validation and retained ancestry construction are separate stages.
+  Extrusion complexity falls from 67 to 16; every extracted helper is at most
+  9 against the unchanged limit of 25. Native ordering, Boolean coverage checks,
+  area margins, cap/base separation and source-edge ancestry retain their
+  behavior. A differential run covers 360 cases (30 successful extrusions)
+  across circular/rectangular profiles and profiles with holes, planar/inclined/
+  spherical caps, partial/backward/touching limits, short/oblique/backward travel,
+  invalid directions, scales and distant rotated planes. Exact BREP geometry,
+  ordered history, deletion flags, statuses, diagnostics, source state and handle
+  cleanup match the previous implementation, including four source BREP
+  serialization changes already present before the refactor. New Rust regressions
+  check holed profiles with oblique travel in both directions, analytic volume,
+  retained lateral-face ancestry and rejection of cap/base rim contact without
+  storing a result. All five extrusion-limit tests also pass against the
+  previous library. All 142 public C exports remain unchanged. All eight native
+  tests and the full instrumented C++/Rust suite pass with unchanged timing
+  limits; Rust formatting and bridge Clippy pass, as does the Clang `-Werror`
+  build. Full analysis adds no findings and removes two complexity warnings;
+  remaining totals are 21 clang-tidy warnings and 82 cppcheck findings.
 
 - Profile-wire alignment refactor (schema 185 and ABI 86 unchanged): copied
   boundary collection/reversal, periodic seam movement, vertex-anchor selection,
