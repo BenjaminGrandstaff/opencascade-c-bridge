@@ -17,11 +17,11 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 8/8, bridge 203 + first-use integration 1 (+1 doc test), recipes 3, parametric core 79 + kernel 818 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 104 + viewer Node 479 + branch command 2 + model command 114, MCP Python 30, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 8/8, bridge 203 + first-use integration 1 (+1 doc test), recipes 3, parametric core 79 + kernel 821 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 105 + viewer Node 479 + branch command 2 + model command 116, MCP Python 31, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
-| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 16 clang-tidy warnings (15 complexity warnings and one public ABI padding warning) plus 82 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
+| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 14 clang-tidy warnings (13 complexity warnings and one public ABI padding warning) plus 82 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all five crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 2026-10-22: 92.67% lines overall; C++ 94.44% lines, 82.83% branches, 99.89% functions; Rust 92.26% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
+| Coverage | 2026-10-23: 92.66% lines overall; C++ 94.41% lines, 82.80% branches, 99.89% functions; Rust 92.25% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
 | Scale benchmarks | Current run: all 139 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
 
 ## Done
@@ -42,7 +42,22 @@ tracks status and order.
   face/edge/vertex history classifications under reordered selections, plus
   validation precedence and failure cleanup for conflicting invalid selections.
   All six direct-edit tests also pass against the previous library. All 142
-  public C exports remain unchanged.
+  public C exports remain unchanged. All eight native tests and the full
+  instrumented C++/Rust suite pass with unchanged timing limits, including the
+  merged DXF export tests; all 479 viewer Node tests and 31 MCP tests pass.
+  Formatting and Clippy pass across all five Rust crates, as does the Clang
+  `-Werror` build. Full analysis adds no findings and removes two complexity
+  warnings; remaining totals are 14 clang-tidy warnings and 82 cppcheck findings.
+
+- DXF export (schema 185 and ABI 86 unchanged): a planar face is written as a
+  DXF cutting profile. The outer boundary goes on OUTLINE, holes on HOLES and
+  a flat pattern's bend lines (de-duplicated) on BEND. Lines, circles, arcs,
+  ellipses and exact rational Bézier splines are written in millimeters, with
+  arc angles taken from each arc's own points. Available from builds
+  (`"dxf"`, with an optional face selector), MCP resources and a studio
+  download button. Every test reads the file back with the DXF importer and
+  matches the rebuilt face's area, including the hemmed-tray flat pattern.
+  See [DXF export](docs/DXF_EXPORT.md).
 
 - Radial-cutter refactor (schema 185 and ABI 86 unchanged): mapped segment
   construction and outline sewing/solid orientation are separate stages.
@@ -120,7 +135,7 @@ tracks status and order.
   Extrusion complexity falls from 67 to 16; every extracted helper is at most
   9 against the unchanged limit of 25. Native ordering, Boolean coverage checks,
   area margins, cap/base separation and source-edge ancestry retain their
-  behavior. A differential run covers 360 cases (30 successful extrusions)
+  behavior. A differential run covers 360 cases (56 successful extrusions)
   across circular/rectangular profiles and profiles with holes, planar/inclined/
   spherical caps, partial/backward/touching limits, short/oblique/backward travel,
   invalid directions, scales and distant rotated planes. Exact BREP geometry,

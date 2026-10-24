@@ -359,6 +359,7 @@ fn edit(request: PatchRequest, destination: &Path, preview: bool) -> Result<Valu
             stl: request.stl,
             preview: request.preview,
             renders: request.renders,
+            dxf: None,
         },
         destination,
         false,

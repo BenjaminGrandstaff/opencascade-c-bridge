@@ -13,6 +13,7 @@ mod documents;
 mod draft;
 mod draw_view;
 mod drawing;
+mod dxf_export;
 mod dxf_import;
 mod exact_walls;
 mod expressions;

@@ -159,6 +159,16 @@ failures reject a build; preferred and advisory failures stay in an accepted
 build's table. Failed geometry or failed requirement evaluation still fail
 with their own message and kernel diagnostics.
 
+## DXF export
+
+Add `"dxf": {}` to a build request to write `NNNN.dxf` for each selected
+output. It is a cutting profile of the output's largest planar face, or of the
+face `"face"` selects. It has an `OUTLINE` layer, a `HOLES` layer and, for a
+sheet-metal flat pattern, a `BEND` layer, with exact lines, arcs, circles,
+ellipses and splines in millimeters. `"bend_lines": false` omits the bends.
+Each output reports `dxf`: the file, entity and layer counts, the face area,
+the bounds and the plane frame. See [DXF export](../../docs/DXF_EXPORT.md).
+
 ## DXF import
 
 `occt-model --import-dxf REQUEST.json NEW_RESULT.json` turns a DXF file's 2D

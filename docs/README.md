@@ -11,6 +11,7 @@ examples. Project-wide status lives in [the roadmap](../ROADMAP.md) and
 - [Sketches attached to planar faces](FACE_SKETCHES.md)
 - [Linked edge projections into sketches](SKETCH_PROJECTIONS.md)
 - [DXF import into sketches](DXF_IMPORT.md)
+- [DXF export of cutting profiles](DXF_EXPORT.md)
 
 ## Features
 

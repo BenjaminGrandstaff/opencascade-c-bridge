@@ -859,6 +859,14 @@ impl Studio {
                 Ok(data) => Response::json(200, &data),
                 Err(error) => Response::error(422, &error),
             },
+            ("POST", "/api/output-dxf") => match self.output_dxf(body) {
+                Ok(text) => Response {
+                    status: 200,
+                    content_type: "image/vnd.dxf",
+                    body: text,
+                },
+                Err(error) => Response::error(422, &error),
+            },
             ("POST", "/api/dxf-import") => match self.dxf_import(body) {
                 Ok(data) => Response::json(200, &data),
                 Err(error) => Response::error(422, &error),
