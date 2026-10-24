@@ -4,6 +4,8 @@ use super::*;
 
 mod direct_edit;
 mod extrusions;
+mod fasteners;
+pub use fasteners::{PartInstanceFasteners, PlacedJoint};
 mod holes;
 pub use holes::PartInstanceHoles;
 mod hollow;
@@ -303,6 +305,13 @@ pub(crate) fn execute_feature<'session>(
                 vector(origin, parameters, Dimension::Length)?,
                 vector(axis, parameters, Dimension::Scalar)?,
             );
+        }
+        FeatureOperation::FastenedJoint { .. } => {
+            return fasteners::hardware(session, &feature.operation, parameters, shapes);
+        }
+        FeatureOperation::JointHoles { joint, input } => {
+            return fasteners::holes(session, joint, input, parameters, shapes, definitions)
+                .map_err(|error| error.context(&format!("joint holes input '{input}'")));
         }
         FeatureOperation::Cone {
             origin,

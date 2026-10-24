@@ -22,6 +22,7 @@ examples. Project-wide status lives in [the roadmap](../ROADMAP.md) and
 - [Advanced sweeps: twist, scale, guides, sections](ADVANCED_SWEEPS.md)
 - [Hole bottoms and drill points](HOLES.md)
 - [Hole-size catalog](HOLE_SIZE_CATALOG.md)
+- [Fastened joints: screws, nuts and matching holes](FASTENED_JOINTS.md)
 - [Modeled threads](THREADS.md)
 - [Helices, springs and coils](HELIX.md)
 - [Fillets and chamfers](EDGE_TREATMENTS.md)

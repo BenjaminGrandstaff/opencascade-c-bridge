@@ -10,6 +10,7 @@ mod dxf_export;
 mod dxf_import;
 mod edge_treatment_views;
 mod failure_reports;
+mod fastened_joints;
 mod helix_views;
 mod inspection;
 mod patching;

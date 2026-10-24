@@ -1,7 +1,7 @@
 {
   "schema": "occb-model-view-v1",
   "model": {
-    "schema_version": 185,
+    "schema_version": 186,
     "family": {
       "id": "spline-tangent-cap",
       "version": 1,

@@ -19,6 +19,10 @@ pub enum HoleExtent {
     UpToNext,
 }
 
+fn joint_washers() -> bool {
+    true
+}
+
 /// Shape below a blind hole's full-diameter bore depth.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -361,6 +365,45 @@ pub enum FeatureOperation {
         length: Option<ScalarExpr>,
         origin: VectorExpr,
         axis: VectorExpr,
+    },
+    /// Socket head cap screws (ISO 4762) through a stack of parts (schema
+    /// 186), held by nuts or a tapped last part: the hardware at every
+    /// position, as one compound. `stack` lists the parts' feature ids from
+    /// the head side; they must touch along each screw's axis line, which
+    /// passes through a `positions` entry along `axis` (toward the nut). The
+    /// screw length is the shortest standard length that fits unless
+    /// `length` is given. Drill the parts with `joint_holes`.
+    FastenedJoint {
+        #[schemars(length(min = 1, max = 8))]
+        stack: Vec<String>,
+        #[schemars(length(min = 1, max = 1000))]
+        positions: Vec<VectorExpr>,
+        axis: VectorExpr,
+        nominal_diameter: ScalarExpr,
+        #[serde(default)]
+        fastening: crate::fasteners::JointFastening,
+        #[serde(default)]
+        head: crate::fasteners::JointHead,
+        /// Plain washers (ISO 7089) under the head and the nut.
+        #[serde(default = "joint_washers")]
+        washers: bool,
+        /// Clearance-hole series (ISO 273), medium when omitted.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        clearance: Option<crate::hole_sizes::ClearanceSeries>,
+        /// Screw length under the head.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        length: Option<ScalarExpr>,
+        /// Least thread engagement in a tapped part; 1.5 diameters when
+        /// omitted.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        engagement: Option<ScalarExpr>,
+    },
+    /// The holes a `fastened_joint` needs in one of its stack parts (schema
+    /// 186): clearance holes (with the head's counterbore in the first part)
+    /// or, in a tapped joint's last part, blind tap-drill holes.
+    JointHoles {
+        joint: String,
+        input: String,
     },
     /// Full cone/frustum. Radii are nonnegative (not both zero), height positive.
     /// Equal radii produce a cylinder; origin is the base center.
@@ -783,7 +826,10 @@ impl FeatureOperation {
             | Self::OffsetFaces { input, .. }
             | Self::MoveFaces { input, .. }
             | Self::CurvePattern { input, .. }
-            | Self::FillPattern { input, .. } => vec![input],
+            | Self::FillPattern { input, .. }
+            | Self::JointHoles { input, .. } => vec![input],
+            // New hardware: the stack only places it.
+            Self::FastenedJoint { .. } => Vec::new(),
             _ => self.dependencies(),
         }
     }
@@ -886,6 +932,8 @@ impl FeatureOperation {
                 inputs.iter().map(String::as_str).collect()
             }
             Self::MakeSolid { shells } => shells.iter().map(String::as_str).collect(),
+            Self::FastenedJoint { stack, .. } => stack.iter().map(String::as_str).collect(),
+            Self::JointHoles { joint, input } => vec![joint, input],
             Self::SketchFace { sketch }
             | Self::SketchWire { sketch }
             | Self::SketchOpenWire { sketch } => {

@@ -143,3 +143,81 @@ pub fn failure_message(failed: &[String]) -> String {
         n => format!("required verification failed: {named} and {} more", n - 10),
     }
 }
+
+/// The fastened joints an output is built from (schema 186): each joint's
+/// screw, how it fits, and its parts list. Empty when it uses none.
+/// O(features + joints · positions · stack ray casts).
+pub fn fastened_joints(
+    session: &occt_bridge::Session,
+    graph: &InstanceGraph<'_>,
+    generation: &GraphRegeneration<'_>,
+    output: &InstanceOutputRef,
+) -> Result<Vec<Value>, ModelError> {
+    let resolved = graph.resolve_with_placement(&output.instance)?;
+    let features = &resolved.instance.definition.features;
+    // Joints upstream of the output feature, or the output itself.
+    let by_id: std::collections::HashMap<&str, &FeatureDefinition> =
+        features.iter().map(|f| (f.id.as_str(), f)).collect();
+    let mut seen = std::collections::HashSet::new();
+    let mut pending = vec![output.output.as_str()];
+    let mut used = std::collections::HashSet::new();
+    while let Some(id) = pending.pop() {
+        let Some(feature) = by_id.get(id) else {
+            continue;
+        };
+        if !seen.insert(id) {
+            continue;
+        }
+        if matches!(feature.operation, FeatureOperation::FastenedJoint { .. }) {
+            used.insert(id);
+        }
+        pending.extend(feature.operation.dependencies());
+    }
+    if used.is_empty() {
+        return Ok(Vec::new());
+    }
+    let result = generation
+        .result(&output.instance)
+        .ok_or_else(|| ModelError::new(format!("unknown instance '{}'", output.instance)))?;
+    let placements: Vec<Placement> = std::iter::once(resolved.placement)
+        .chain(resolved.frames.iter().copied())
+        .collect();
+    let joints = resolved
+        .instance
+        .fastened_joints(session, result, &placements)?;
+    Ok(joints
+        .into_iter()
+        .filter(|(id, _)| used.contains(id.as_str()))
+        .map(|(id, placed)| {
+            let plan = &placed.plan;
+            let fold = |pick: fn(&fasteners::JointScrew) -> f64, min: bool| {
+                plan.screws.iter().map(pick).fold(
+                    if min {
+                        f64::INFINITY
+                    } else {
+                        f64::NEG_INFINITY
+                    },
+                    |a, b| if min { a.min(b) } else { a.max(b) },
+                )
+            };
+            json!({
+                "feature": id,
+                "stack": placed.stack,
+                "positions": plan.screws.len(),
+                "screw": {
+                    "nominal_diameter_mm": plan.nominal_diameter,
+                    "pitch_mm": plan.pitch,
+                    "length_mm": plan.length,
+                    "chosen": plan.chosen,
+                    "minimum_length_mm": plan.minimum_length,
+                },
+                "grip_mm": {"min": fold(|s| s.grip, true), "max": fold(|s| s.grip, false)},
+                "thread_engagement_mm": {
+                    "min": fold(|s| s.thread_engagement, true),
+                    "max": fold(|s| s.thread_engagement, false),
+                },
+                "hardware": plan.hardware(),
+            })
+        })
+        .collect())
+}

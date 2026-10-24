@@ -6,7 +6,7 @@ On top of it sits a parametric CAD engine: versioned JSON documents for
 sketches, solids, sheet metal, assemblies and drawings, a local studio for
 editing them, and an AI authoring loop (`occt-model` and its MCP server).
 
-The current C ABI version is **86** and the document schema is **185**.
+The current C ABI version is **86** and the document schema is **186**.
 
 ## Status
 
@@ -14,18 +14,23 @@ The current C ABI version is **86** and the document schema is **185**.
 |---|---|---|
 | C ABI (`src/`, `include/`) | ABI 86 | Stable; exact version match required |
 | `occt-bridge` (safe Rust wrapper) | ABI 86 | Covers the full ABI |
-| `occt-parametric-core` (kernel-free) | Schema 185 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 185 | Active development |
+| `occt-parametric-core` (kernel-free) | Schema 186 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 186 | Active development |
 | Sketch studio and viewer (`occt-view --serve`) | — | Edits the same documents; adds no capability of its own |
 
-Tests: C 8/8, bridge 209, parametric core 79, kernel 821, view command 105,
-model command 116, viewer Node 479 and MCP Python 31, all passing. The scale
+Tests: C 8/8, bridge 209, parametric core 85, kernel 825, view command 105,
+model command 118, viewer Node 479 and MCP Python 32, all passing. The scale
 benchmark suite covers geometry, document operations, sketch authoring, MCP
 and model-command publication, with enforced time budgets. Formatting and Clippy are clean across all crates. Full
 gate results and history live in [the roadmap](ROADMAP.md#current-status).
 
 Recently landed:
 
+- **Fastened joints (schema 186):** socket head cap screws through a stack
+  of parts, held by nuts or tapped holes, with the screw length chosen from
+  the measured stack and checked. Washers, nuts, counterbores and matching
+  clearance or tap-drill holes are placed and cut, and each build lists the
+  hardware. See [fastened joints](docs/FASTENED_JOINTS.md).
 - **DXF export:** cutting profiles of a part's flat face, with exact lines,
   arcs, circles, ellipses and splines on OUTLINE, HOLES and BEND layers, from
   builds (`"dxf": {}`), MCP and a studio DXF button. Flat sheet-metal patterns

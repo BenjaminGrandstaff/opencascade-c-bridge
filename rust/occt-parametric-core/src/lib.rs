@@ -26,6 +26,8 @@ pub mod error;
 #[doc(hidden)]
 pub mod expressions;
 #[doc(hidden)]
+pub mod fasteners;
+#[doc(hidden)]
 pub mod graph;
 #[doc(hidden)]
 pub mod hole_sizes;

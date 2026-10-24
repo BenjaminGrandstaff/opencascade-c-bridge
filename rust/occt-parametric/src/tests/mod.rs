@@ -18,6 +18,7 @@ mod dxf_import;
 mod exact_walls;
 mod expressions;
 mod face_colors;
+mod fasteners;
 mod feature_history;
 mod graph;
 mod helix;

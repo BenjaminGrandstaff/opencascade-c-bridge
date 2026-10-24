@@ -271,6 +271,11 @@ fn build_internal(
             "valid":session.is_valid(shape).map_err(|e| failure("inspection", e))?,
             "volume_mm3":session.volume(shape).map_err(|e| failure("inspection", e))?,
             "bounds_mm":{"min":[bounds.min.x,bounds.min.y,bounds.min.z],"max":[bounds.max.x,bounds.max.y,bounds.max.z]}}));
+        let joints = report::fastened_joints(&session, &graph, &generation, output)
+            .map_err(|e| model_failure("inspection", e))?;
+        if !joints.is_empty() {
+            outputs.last_mut().expect("just pushed")["fastened_joints"] = json!(joints);
+        }
     }
     let verification = report::verification(&generation);
     let failed = report::required_failures(&document, &verification);

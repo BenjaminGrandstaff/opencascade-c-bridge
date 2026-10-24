@@ -1,0 +1,379 @@
+{
+  "schema": "occb-model-request-v1",
+  "model": {
+    "schema_version": 186,
+    "family": {
+      "id": "fastened-lid",
+      "version": 1,
+      "parameters": [
+        {
+          "id": "bolt",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 5,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 3,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 12,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        },
+        {
+          "id": "lid",
+          "parameter_type": {
+            "scalar": "length"
+          },
+          "default": {
+            "scalar": {
+              "value": 8,
+              "dimension": "length",
+              "unit": "millimeter"
+            }
+          },
+          "minimum": {
+            "value": 4,
+            "dimension": "length",
+            "unit": "millimeter"
+          },
+          "maximum": {
+            "value": 20,
+            "dimension": "length",
+            "unit": "millimeter"
+          }
+        }
+      ],
+      "derived_parameters": [],
+      "derived_vector_parameters": [],
+      "constraints": [],
+      "requirements": [
+        {
+          "id": "valid",
+          "version": 1,
+          "kind": "validation",
+          "priority": "required",
+          "statement": "every part is a valid solid",
+          "rule": {
+            "shape_valid": {
+              "output": "assembly"
+            }
+          },
+          "provenance": "example; demonstration assumptions",
+          "traces": [
+            {
+              "feature": "assembly"
+            }
+          ]
+        }
+      ],
+      "datums": [],
+      "features": [
+        {
+          "id": "base",
+          "operation": {
+            "box": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "size": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 80,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 60,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 20,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "lid",
+          "operation": {
+            "box": {
+              "origin": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 0,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "literal": {
+                      "value": 20,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  }
+                }
+              },
+              "size": {
+                "components": {
+                  "x": {
+                    "literal": {
+                      "value": 80,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "y": {
+                    "literal": {
+                      "value": 60,
+                      "dimension": "length",
+                      "unit": "millimeter"
+                    }
+                  },
+                  "z": {
+                    "parameter": "lid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "joint",
+          "operation": {
+            "fastened_joint": {
+              "stack": [
+                "lid",
+                "base"
+              ],
+              "positions": [
+                {
+                  "components": {
+                    "x": {
+                      "literal": {
+                        "value": 10,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 10,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "z": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                },
+                {
+                  "components": {
+                    "x": {
+                      "literal": {
+                        "value": 70,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 10,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "z": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                },
+                {
+                  "components": {
+                    "x": {
+                      "literal": {
+                        "value": 10,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 50,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "z": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                },
+                {
+                  "components": {
+                    "x": {
+                      "literal": {
+                        "value": 70,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "y": {
+                      "literal": {
+                        "value": 50,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    },
+                    "z": {
+                      "literal": {
+                        "value": 0,
+                        "dimension": "length",
+                        "unit": "millimeter"
+                      }
+                    }
+                  }
+                }
+              ],
+              "axis": {
+                "literal": {
+                  "x": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "y": {
+                    "value": 0,
+                    "dimension": "scalar",
+                    "unit": null
+                  },
+                  "z": {
+                    "value": -1,
+                    "dimension": "scalar",
+                    "unit": null
+                  }
+                }
+              },
+              "nominal_diameter": {
+                "parameter": "bolt"
+              },
+              "fastening": "tapped",
+              "head": "counterbored"
+            }
+          }
+        },
+        {
+          "id": "lid_drilled",
+          "operation": {
+            "joint_holes": {
+              "joint": "joint",
+              "input": "lid"
+            }
+          }
+        },
+        {
+          "id": "base_drilled",
+          "operation": {
+            "joint_holes": {
+              "joint": "joint",
+              "input": "base"
+            }
+          }
+        },
+        {
+          "id": "assembly",
+          "operation": {
+            "compound": {
+              "inputs": [
+                "lid_drilled",
+                "base_drilled",
+                "joint"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "instances": [
+      {
+        "base": {
+          "id": "lid",
+          "overrides": {},
+          "provenance": "example; dimensions are demonstration assumptions"
+        }
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "instance": "lid",
+      "output": "assembly"
+    }
+  ],
+  "step": true,
+  "stl": false,
+  "preview": true
+}
