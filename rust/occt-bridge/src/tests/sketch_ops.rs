@@ -1094,3 +1094,86 @@ fn closest_fraction_accepts_a_c0_knot_while_contact_requires_a_smooth_tangent() 
     }
     assert_eq!(s.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn point_trimming_respects_reversed_periodic_seams_on_rotated_ellipses() {
+    let s = Session::new().unwrap();
+    {
+        for minor in [3., 5.] {
+            let point =
+                |angle: f64| Vec3::new(500. + 5. * angle.cos(), -200., 70. + minor * angle.sin());
+            let source = s
+                .create_ellipse_wire_axes(
+                    Vec3::new(500., -200., 70.),
+                    Vec3::new(0., -1., 0.),
+                    Vec3::new(1., 0., 0.),
+                    5.,
+                    minor,
+                )
+                .unwrap();
+            let edge = s.subshape(&source, ShapeType::Edge, 0).unwrap();
+            let perimeter = s.edge_length(&edge).unwrap();
+            let from = point(7. * std::f64::consts::PI / 4.);
+            let to = point(std::f64::consts::PI / 4.);
+            let mut lengths = Vec::new();
+            for reverse in [false, true] {
+                let wire = s.align_profile_wire(&source, None, reverse).unwrap();
+                let before = s.curve_end_data(&wire).unwrap();
+                let trimmed = s.trim_curve_between(&wire, from, to).unwrap();
+                let (a, b, _, _) = s.curve_end_data(&trimmed).unwrap();
+                for (actual, expected) in [(a, from), (b, to)] {
+                    assert!((actual.x - expected.x).abs() < 1e-8);
+                    assert!((actual.y - expected.y).abs() < 1e-8);
+                    assert!((actual.z - expected.z).abs() < 1e-8);
+                }
+                let edge = s.subshape(&trimmed, ShapeType::Edge, 0).unwrap();
+                let length = s.edge_length(&edge).unwrap();
+                if minor == 5. {
+                    assert!((length - perimeter * if reverse { 0.75 } else { 0.25 }).abs() < 1e-8);
+                }
+                lengths.push(length);
+                assert!(s.is_valid(&trimmed).unwrap());
+                assert_eq!(s.curve_end_data(&wire).unwrap(), before);
+            }
+            assert!((lengths.iter().sum::<f64>() - perimeter).abs() < 1e-7);
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn point_trim_projection_tolerance_and_error_order_preserve_inputs_and_handles() {
+    let s = Session::new().unwrap();
+    let p = |x, y| Vec3::new(x, y, 0.);
+    {
+        let source = s
+            .create_polyline_wire(&[p(0., 0.), p(10., 0.)], false)
+            .unwrap();
+        let before = s.curve_end_data(&source).unwrap();
+        let trimmed = s
+            .trim_curve_between(&source, p(2., 5e-7), p(7., -5e-7))
+            .unwrap();
+        let (a, b, _, _) = s.curve_end_data(&trimmed).unwrap();
+        assert_eq!((a, b), (p(2., 0.), p(7., 0.)));
+        for (from, to, expected) in [
+            (p(2., 2.), p(2. + 5e-8, 2.), "trim points coincide"),
+            (p(7., 2e-6), p(2., 0.), "trim point is not on the curve"),
+            (p(7., 0.), p(2., 2e-6), "trim point is not on the curve"),
+            (
+                p(7., 0.),
+                p(2., 0.),
+                "trim points are out of order along the curve",
+            ),
+            (p(f64::NAN, 0.), p(2., 0.), "trim points must be finite"),
+        ] {
+            let count = s.shape_count().unwrap();
+            assert_eq!(
+                s.trim_curve_between(&source, from, to).unwrap_err().message,
+                expected
+            );
+            assert_eq!(s.shape_count().unwrap(), count);
+        }
+        assert_eq!(s.curve_end_data(&source).unwrap(), before);
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}

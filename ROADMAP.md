@@ -17,14 +17,36 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 8/8, bridge 209 + first-use integration 1 (+1 doc test), recipes 3, parametric core 85 + kernel 825 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 105 + viewer Node 479 + branch command 2 + model command 118, MCP Python 32, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 8/8, bridge 211 + first-use integration 1 (+1 doc test), recipes 3, parametric core 85 + kernel 825 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 105 + viewer Node 479 + branch command 2 + model command 118, MCP Python 32, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
-| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 7 clang-tidy warnings (6 complexity warnings and one public ABI padding warning) plus 82 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
+| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 6 clang-tidy warnings (5 complexity warnings and one public ABI padding warning) plus 82 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all five crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 2026-10-23: 92.65% lines overall; C++ 94.35% lines, 82.95% branches, 99.89% functions; Rust 92.26% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
+| Coverage | 2026-10-23: 92.65% lines overall; C++ 94.34% lines, 82.98% branches, 99.89% functions; Rust 92.26% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
 | Scale benchmarks | Current run: all 140 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
 
 ## Done
+
+- Point-to-point trimming refactor (schema 186 and ABI 86 unchanged): bounded
+  point projection and periodic interval wrapping are separate stages.
+  Trimming complexity falls from 34 to 13; extracted helpers are 4 and 2
+  against the unchanged limit of 25. Point finiteness/coincidence checks,
+  projection order, the 1e-6 projection tolerance, traversal-based parameter
+  ordering, periodic/PConfusion wrapping and output reset retain their behavior.
+  A differential run covers 7,290 cases (1,546 successful trims) across analytic,
+  interpolated/rational/non-clamped/periodic curves, reversed/located geometry,
+  rotated/scaled frames, open/closed intervals, seam crossings, coincident points,
+  projection-threshold perturbations, invalid points/shapes and null outputs.
+  Exact BREP geometry, orientation, statuses, diagnostic precedence, output
+  reset and handle cleanup match the previous library; every source BREP remains
+  unchanged. Two Rust regressions check complementary forward/reversed ellipse
+  seam intervals, endpoint positions, circular arc lengths, projection tolerances
+  and conflicting-error precedence without modifying inputs or leaking handles.
+  All 22 sketch-editing tests also pass against the previous library. All 142
+  public C exports remain unchanged. All eight native tests and the full
+  instrumented C++/Rust suite pass with unchanged timing limits; Rust formatting,
+  bridge Clippy and the Clang `-Werror` build pass. Full analysis adds no findings
+  and removes one complexity warning; remaining totals are 6 clang-tidy warnings
+  and 82 cppcheck findings.
 
 - Curve-wire construction refactor (schema 186 and ABI 86 unchanged):
   per-segment validation and native endpoint/connection assembly are separate
