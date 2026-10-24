@@ -67,6 +67,9 @@ washer under its head, and a washer and nut below, all driven by `bolt`,
 frustums), check seats and bounds for any axis, and check errors and the
 catalog expression.
 
+In the studio, the solid editor's **Insert a catalog part** seats one on a
+clicked face.
+
 To place screws, washers and nuts through a stack of parts with the screw
 length chosen and matching holes cut, use a
 [fastened joint](FASTENED_JOINTS.md).

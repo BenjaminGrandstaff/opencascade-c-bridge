@@ -401,11 +401,17 @@ pub fn plan_joint(
         let thread_start = end - thread_length;
         if thread_start > layout.clamp_end + JOINT_CONTACT_TOLERANCE {
             return Err(ModelError::new(format!(
-                "the {name} screw's thread ({} mm) starts {} mm short of the {} {}; use a shorter screw",
+                "the {name} screw's thread ({} mm) starts {} mm short of the {} {}; {}",
                 number(thread_length),
                 number(thread_start - layout.clamp_end),
                 if tapped { "tapped part" } else { "nut" },
-                at()
+                at(),
+                // A chosen length is already the shortest the joint allows.
+                match (chosen, tapped) {
+                    (false, _) => "use a shorter screw",
+                    (true, true) => "ask for less thread engagement",
+                    (true, false) => "no standard screw is threaded far enough for this stack",
+                }
             )));
         }
         let mut holes = Vec::with_capacity(stack.len());
@@ -507,6 +513,32 @@ pub fn check_spacing(offsets: &[[f64; 2]], footprint: f64) -> Result<(), ModelEr
 }
 
 impl JointPlan {
+    /// The joint as build reports and the studio show it: the screw, its
+    /// fit and the parts list.
+    pub fn report(&self, feature: &str, stack: &[String]) -> serde_json::Value {
+        let range = |pick: fn(&JointScrew) -> f64| {
+            let values = self.screws.iter().map(pick);
+            let min = values.clone().fold(f64::INFINITY, f64::min);
+            let max = values.fold(f64::NEG_INFINITY, f64::max);
+            serde_json::json!({"min": min, "max": max})
+        };
+        serde_json::json!({
+            "feature": feature,
+            "stack": stack,
+            "positions": self.screws.len(),
+            "screw": {
+                "nominal_diameter_mm": self.nominal_diameter,
+                "pitch_mm": self.pitch,
+                "length_mm": self.length,
+                "chosen": self.chosen,
+                "minimum_length_mm": self.minimum_length,
+            },
+            "grip_mm": range(|s| s.grip),
+            "thread_engagement_mm": range(|s| s.thread_engagement),
+            "hardware": self.hardware(),
+        })
+    }
+
     /// The joint's parts list, screws first.
     pub fn hardware(&self) -> Vec<HardwareItem> {
         let d = number(self.nominal_diameter);

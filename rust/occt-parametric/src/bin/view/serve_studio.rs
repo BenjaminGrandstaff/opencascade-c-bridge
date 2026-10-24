@@ -24,6 +24,7 @@ const STUDIO_ASSETS: &[(&str, &str)] = studio_assets!(
     "sketch-studio-constrain.mjs",
     "sketch-studio-labels.mjs",
     "sketch-studio-extras.mjs",
+    "sketch-studio-templates.mjs",
     "sketch-studio-planes.mjs",
     "sketch-studio-plane-panel.mjs",
     "sketch-studio-delete.mjs",

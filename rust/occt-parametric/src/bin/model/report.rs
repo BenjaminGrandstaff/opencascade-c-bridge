@@ -188,36 +188,6 @@ pub fn fastened_joints(
     Ok(joints
         .into_iter()
         .filter(|(id, _)| used.contains(id.as_str()))
-        .map(|(id, placed)| {
-            let plan = &placed.plan;
-            let fold = |pick: fn(&fasteners::JointScrew) -> f64, min: bool| {
-                plan.screws.iter().map(pick).fold(
-                    if min {
-                        f64::INFINITY
-                    } else {
-                        f64::NEG_INFINITY
-                    },
-                    |a, b| if min { a.min(b) } else { a.max(b) },
-                )
-            };
-            json!({
-                "feature": id,
-                "stack": placed.stack,
-                "positions": plan.screws.len(),
-                "screw": {
-                    "nominal_diameter_mm": plan.nominal_diameter,
-                    "pitch_mm": plan.pitch,
-                    "length_mm": plan.length,
-                    "chosen": plan.chosen,
-                    "minimum_length_mm": plan.minimum_length,
-                },
-                "grip_mm": {"min": fold(|s| s.grip, true), "max": fold(|s| s.grip, false)},
-                "thread_engagement_mm": {
-                    "min": fold(|s| s.thread_engagement, true),
-                    "max": fold(|s| s.thread_engagement, false),
-                },
-                "hardware": plan.hardware(),
-            })
-        })
+        .map(|(id, placed)| placed.plan.report(&id, &placed.stack))
         .collect())
 }

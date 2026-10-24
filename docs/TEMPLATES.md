@@ -45,6 +45,10 @@ python3 tools/model/templates.py list
 python3 tools/model/templates.py instantiate shaft inputs.json > shaft.request.json
 ```
 
+In the studio, **Templates** in the top bar previews a template with your
+inputs and can start the studio's model from it; see
+[sketch studio](SKETCH_STUDIO.md#starting-from-a-template).
+
 ## Format
 
 A template file holds `id`, `version`, `title`, `summary`, `use_when`,

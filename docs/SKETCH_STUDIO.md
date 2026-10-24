@@ -553,6 +553,46 @@ Apply or discard sketch draft history before opening this panel, including a
 held Redo stack at the accepted baseline. Solid form changes and previews do not
 create sketch Undo entries; their commit belongs to model history.
 
+### Fastened joints and catalog parts
+
+**Fasten solids with screws** adds a [fastened joint](FASTENED_JOINTS.md):
+- **Stack:** the head-side solid first, then each solid the screws pass
+  through, up to 8.
+- **Fastening:** **Held by** a nut or a tapped hole in the last solid.
+- **Head:** **Screw head** on the surface or counterbored flush.
+- **Washers:** plain washers or none.
+- **Screw size:** an M size from the catalog, or a length parameter.
+- **Screw length:** the shortest standard length that fits, a listed
+  standard length, or an entered one.
+- **Clearance series:** ISO 273 fine, medium or coarse.
+- **Thread engagement:** for a tapped joint, the least engagement.
+
+**Add screw position on face in canvas** places a screw where you click the
+head-side solid. The axis points into the face. Every screw in a joint
+shares that axis, so a click on a face facing another way is refused.
+Positions can also be typed.
+
+Apply adds four kinds of feature:
+- the hardware, `<name>-hardware`;
+- one `joint_holes` feature per stacked solid, `<name>-<solid>`;
+- the result `<name>`, which groups the drilled solids and the hardware.
+
+**Preview solid** lists the screw the engine chose, how much it needed,
+its thread engagement, and the parts. For example: "4 × M5 × 12, shortest
+standard length (needs 10.5 mm); thread engaged 9 mm. Parts: 4 × ISO 4762
+M5 × 12". A joint that cannot be assembled is refused with the reason.
+Editing a joint changes the joint only, and its holes and group follow; its
+stack stays fixed.
+
+**Insert a catalog part** places one ISO 4762 screw, ISO 4032 nut, ISO 7089
+washer or ISO 8734 dowel pin from the
+[standard-part catalog](STANDARD_PARTS.md):
+- **Placement:** **Seat part on face in canvas** seats it where you click.
+  Screws and pins point into the face; nuts and washers sit on it and
+  extend away. The seat and axis can also be typed.
+- **Result:** a new solid, or grouped with the target solid as an assembly
+  (**Group with target**). It can also join the target or be cut from it.
+
 ## Choosing material boundaries
 
 Choose **Choose profiles and holes** in the left panel. **Material selection**
@@ -951,6 +991,21 @@ or delete curves, then Apply. Files up to 32 MB are read here. See
 The **DXF** button in the top bar downloads the shown part's largest flat
 face as a cutting profile: outline, holes and any flat-pattern bend lines on
 their own layers, in millimeters. See [DXF export](DXF_EXPORT.md).
+
+## Starting from a template
+
+**Templates** in the top bar lists the [design templates](TEMPLATES.md),
+each with what it is for, what it is not for, and the checks it carries.
+**Use** opens its inputs as a form; blanks take their defaults.
+- **Preview design** builds the design and runs its checks without changing
+  the model. A design that fails a check, such as a shaft over its mass
+  limit, says which.
+- **Start from template** replaces the studio's model with the design as
+  one model-history step. Undo returns to the previous model. Save writes
+  the design to the model file, replacing what was there.
+
+The studio instantiates templates exactly as `tools/model/templates.py`
+does; a test checks the two against each other.
 
 ## Deleting
 

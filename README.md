@@ -18,14 +18,20 @@ The current C ABI version is **86** and the document schema is **186**.
 | `occt-parametric` (kernel regeneration) | Schema 186 | Active development |
 | Sketch studio and viewer (`occt-view --serve`) | — | Edits the same documents; adds no capability of its own |
 
-Tests: C 8/8, bridge 213, parametric core 85, kernel 825, view command 105,
-model command 118, viewer Node 479 and MCP Python 32, all passing. The scale
+Tests: C 8/8, bridge 213, parametric core 85, kernel 825, view command 110,
+model command 118, viewer Node 486 and MCP Python 32, all passing. The scale
 benchmark suite covers geometry, document operations, sketch authoring, MCP
 and model-command publication, with enforced time budgets. Formatting and Clippy are clean across all crates. Full
 gate results and history live in [the roadmap](ROADMAP.md#current-status).
 
 Recently landed:
 
+- **Hardware and templates in the studio:** the solid editor fastens solids
+  with screws by clicking screw positions, previews the chosen screw and
+  parts list, and inserts single catalog parts on a clicked face. A
+  Templates button previews a design template with your inputs and starts the
+  model from it as an undoable edit. See
+  [sketch studio](docs/SKETCH_STUDIO.md#fastened-joints-and-catalog-parts).
 - **Fastened joints (schema 186):** socket head cap screws through a stack
   of parts, held by nuts or tapped holes, with the screw length chosen from
   the measured stack and checked. Washers, nuts, counterbores and matching

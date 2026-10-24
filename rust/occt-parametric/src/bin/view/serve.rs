@@ -28,6 +28,8 @@ mod sketch_links;
 mod spline_refinement;
 #[path = "serve_studio.rs"]
 mod studio;
+#[path = "serve_templates.rs"]
+mod templates;
 use super::{POLL, stamp, view_data};
 use occt_bridge::Session;
 use occt_parametric::InstanceGraphParallelExport;
@@ -733,6 +735,12 @@ impl Studio {
             ("GET", "/solid-holes.mjs") => {
                 Response::text(200, "text/javascript", include_str!("web/solid-holes.mjs"))
             }
+            ("GET", "/solid-joints.mjs") => {
+                Response::text(200, "text/javascript", include_str!("web/solid-joints.mjs"))
+            }
+            ("GET", "/solid-parts.mjs") => {
+                Response::text(200, "text/javascript", include_str!("web/solid-parts.mjs"))
+            }
             ("GET", "/solid-finishes.mjs") => Response::text(
                 200,
                 "text/javascript",
@@ -865,6 +873,14 @@ impl Studio {
                     content_type: "image/vnd.dxf",
                     body: text,
                 },
+                Err(error) => Response::error(422, &error),
+            },
+            ("GET", "/api/templates") => match templates::summaries() {
+                Ok(value) => Response::json(200, &json!({"templates": value})),
+                Err(error) => Response::error(500, &error),
+            },
+            ("POST", "/api/template") => match self.start_template(body) {
+                Ok(value) => Response::json(200, &value),
                 Err(error) => Response::error(422, &error),
             },
             ("POST", "/api/dxf-import") => match self.dxf_import(body) {

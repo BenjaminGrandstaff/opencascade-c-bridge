@@ -106,6 +106,12 @@ instances are measured where they are. The library entry point is
 `occt_parametric::fasteners::plan_joint`. Section renders now cut each solid
 of a compound separately, so a screw in its tapped hole is drawn correctly.
 
+## In the studio
+
+The solid editor's **Fasten solids with screws** builds a joint by clicking
+screw positions on the head-side solid. Its preview lists the chosen screw
+and parts. See [sketch studio](SKETCH_STUDIO.md#fastened-joints-and-catalog-parts).
+
 ## Sources
 
 - Screw, nut and washer dimensions: the
@@ -124,6 +130,7 @@ of a compound separately, so a screw in its tapped hole is drawn correctly.
 - Screws are straight lines through parts that touch. Spacers, gaps and
   slotted holes are not modeled.
 - Threads are not modeled, and neither is preload or joint strength.
+- Joint tapped holes get no thread callouts in drawings.
 - The joint and its holes are measured on the stack parts as they are
   generated, so drill the parts with `joint_holes`, not with separate hole
   features that would change the measured material.
