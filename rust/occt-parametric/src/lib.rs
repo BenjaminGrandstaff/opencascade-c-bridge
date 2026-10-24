@@ -58,6 +58,7 @@ pub use features::{
     LoftProfileCheck, LoftProfileIssue, LoftProfileReport, LoftStationRegionCheck,
     ResolvedLoftEndTangent, ResolvedLoftProfileSeam, diagnose_loft_profiles,
 };
+pub use features::{PartInstanceFasteners, PlacedJoint};
 pub use graph::InstanceGraphPatternEdits;
 pub use graph::InstanceGraphRegeneration;
 pub(crate) use graph::InstanceGraphRegenerationInternal;
@@ -83,8 +84,8 @@ pub mod prelude {
         InstanceGraphClosedMotion, InstanceGraphContinuousMotion, InstanceGraphDrawView,
         InstanceGraphExport, InstanceGraphMass, InstanceGraphMaterials, InstanceGraphMotion,
         InstanceGraphPatternEdits, InstanceGraphRegeneration, InstanceGraphRequirements,
-        InstanceGraphStepExport, MeshExportDefinitionMeshExport, PartInstanceHoles,
-        PartInstanceProjection, PartInstanceRegeneration, PartInstanceSelection,
+        InstanceGraphStepExport, MeshExportDefinitionMeshExport, PartInstanceFasteners,
+        PartInstanceHoles, PartInstanceProjection, PartInstanceRegeneration, PartInstanceSelection,
         PartInstanceSupport, ResolvedInstanceRegeneration, SketchDefinitionChecks,
         SketchDefinitionEditing, SketchDefinitionProfiles, SketchDefinitionSolving,
         TaggedSurfaceMeshExport,

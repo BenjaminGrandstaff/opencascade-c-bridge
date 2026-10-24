@@ -1293,6 +1293,20 @@ class McpTests(unittest.TestCase):
         imported = self.client.tool('occt_import_dxf', dict(dxf=content['text'], options=dict(layers=['OUTLINE', 'HOLES'])))['structuredContent']
         self.assertAlmostEqual(imported['face']['area_mm2'], output['dxf']['area_mm2'], places=6)
 
+    def test_builds_report_fastened_joint_hardware(self):
+        request = self.client.tool('occt_get_example', dict(name='fastened-lid'))['structuredContent']
+        request.update(step=False, preview=False)
+        built = self.client.tool('occt_build', request)
+        self.assertFalse(built['isError'], built)
+        joint = built['structuredContent']['report']['outputs'][0]['fastened_joints'][0]
+        self.assertEqual(joint['screw']['length_mm'], 12.0)
+        self.assertEqual(joint['hardware'], [dict(part='socket_head_cap_screw_iso_4762', designation='ISO 4762 M5 × 12', quantity=4)])
+        # A screw that cannot fit is refused with the reason.
+        request['edits'] = [dict(instance='lid', parameter='lid', value=dict(scalar=dict(value=4, dimension='length', unit='millimeter')))]
+        refused = self.client.tool('occt_build', request)
+        self.assertTrue(refused['isError'], refused)
+        self.assertIn('counterbore does not fit', json.dumps(refused['structuredContent']))
+
     def command_example(self, name):
         return self.client.tool('occt_get_example', dict(name=name))['structuredContent']
 

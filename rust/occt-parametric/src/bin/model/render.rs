@@ -268,13 +268,7 @@ pub fn write(
     for section in &options.sections {
         let normal = unit(section.normal).ok_or("section normal is zero")?;
         let cut = half_space(session, section.origin_mm, normal, lo, hi)?;
-        let kept = session.cut(shape, &cut)?;
-        // A plane past the part leaves nothing to mesh.
-        let triangles = if session.subshapes(&kept, ShapeType::Face)?.is_empty() {
-            Vec::new()
-        } else {
-            session.surface_mesh(&kept, mesh_options)?
-        };
+        let triangles = section_mesh(session, shape, &cut, mesh_options)?;
         let file = format!("{:04}-section-{}.png", index + 1, section.id);
         let up = if normal[2].abs() > 0.9 {
             [0.0, 1.0, 0.0]
@@ -417,14 +411,7 @@ pub fn write_scene(
     for section in &options.sections {
         let normal = unit(section.normal).ok_or("section normal is zero")?;
         let cut = half_space(session, section.origin_mm, normal, lo, hi)?;
-        let mesh_kept = |shape: &Shape<'_>| -> Result<Vec<MeshTriangle>, Box<dyn Error>> {
-            let kept = session.cut(shape, &cut)?;
-            Ok(if session.subshapes(&kept, ShapeType::Face)?.is_empty() {
-                Vec::new()
-            } else {
-                session.surface_mesh(&kept, mesh_options)?
-            })
-        };
+        let mesh_kept = |shape: &Shape<'_>| section_mesh(session, shape, &cut, mesh_options);
         let meshes = parts
             .iter()
             .map(|(_, shape)| mesh_kept(shape))
@@ -513,6 +500,32 @@ fn circles(session: &Session, shape: &Shape<'_>) -> Result<Vec<Circle>, Box<dyn 
         }
     }
     Ok(found)
+}
+
+/// The part of `shape` that `cut` leaves, meshed. Each solid of a compound
+/// is cut on its own, so overlapping solids (a screw in its tapped hole) do
+/// not merge or vanish in one boolean. A plane past the part leaves nothing
+/// to mesh. O(solids) booleans.
+fn section_mesh(
+    session: &Session,
+    shape: &Shape<'_>,
+    cut: &Shape<'_>,
+    options: MeshOptions,
+) -> Result<Vec<MeshTriangle>, Box<dyn Error>> {
+    let solids = session.subshapes(shape, ShapeType::Solid)?;
+    let pieces: Vec<&Shape<'_>> = if solids.len() > 1 {
+        solids.iter().collect()
+    } else {
+        vec![shape]
+    };
+    let mut triangles = Vec::new();
+    for piece in pieces {
+        let kept = session.cut(piece, cut)?;
+        if !session.subshapes(&kept, ShapeType::Face)?.is_empty() {
+            triangles.extend(session.surface_mesh(&kept, options)?);
+        }
+    }
+    Ok(triangles)
 }
 
 /// A prism covering the half of the bounding box the normal points into,

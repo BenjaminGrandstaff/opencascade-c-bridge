@@ -867,3 +867,14 @@ selected face. The file has OUTLINE, HOLES and BEND layers, with exact curves,
 in millimeters. It is readable as an `image/vnd.dxf` resource listed under
 the output's `dxf.file`, and `occt_import_dxf` reads it back. See
 [DXF export](../../docs/DXF_EXPORT.md).
+
+## Fastened joints
+
+A `fastened_joint` feature puts socket head cap screws through a stack of
+parts, with nuts or tapped holes, and `joint_holes` drills each part to
+match. `occt_build` reports, under each output built from one, the screw
+chosen, its grip and engagement, and the parts list as `fastened_joints`. A
+joint that cannot be assembled fails with the reason, for example a screw
+too long for its tapped part. The `fastened-lid` example from
+`occt_get_example` shows one. See
+[fastened joints](../../docs/FASTENED_JOINTS.md).

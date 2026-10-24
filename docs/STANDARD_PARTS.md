@@ -67,5 +67,9 @@ washer under its head, and a washer and nut below, all driven by `bolt`,
 frustums), check seats and bounds for any axis, and check errors and the
 catalog expression.
 
+To place screws, washers and nuts through a stack of parts with the screw
+length chosen and matching holes cut, use a
+[fastened joint](FASTENED_JOINTS.md).
+
 Not yet included: rolling bearings (no public, machine-readable manufacturer
 table was reachable) and inch hardware.

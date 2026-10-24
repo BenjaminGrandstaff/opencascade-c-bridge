@@ -12,19 +12,34 @@ tracks status and order.
 | `occt-types` (shared value types) | — | No native dependency |
 | `occt-bridge` (safe Rust wrapper) | — | Covers the full ABI; re-exports `occt-types` |
 | `occt-recipes` (application constructors) | — | Stone and wall torch |
-| `occt-parametric-core` (kernel-free engineering layer) | Schema 185 | Definitions, documents, solving and checks without OCCT |
-| `occt-parametric` (kernel regeneration) | Schema 185 | Active development; re-exports the core API |
+| `occt-parametric-core` (kernel-free engineering layer) | Schema 186 | Definitions, documents, solving and checks without OCCT |
+| `occt-parametric` (kernel regeneration) | Schema 186 | Active development; re-exports the core API |
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 8/8, bridge 207 + first-use integration 1 (+1 doc test), recipes 3, parametric core 79 + kernel 821 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 105 + viewer Node 479 + branch command 2 + model command 116, MCP Python 31, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 8/8, bridge 207 + first-use integration 1 (+1 doc test), recipes 3, parametric core 85 + kernel 825 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 105 + viewer Node 479 + branch command 2 + model command 118, MCP Python 32, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 8 clang-tidy warnings (7 complexity warnings and one public ABI padding warning) plus 82 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all five crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
 | Coverage | 2026-10-23: 92.65% lines overall; C++ 94.36% lines, 82.94% branches, 99.89% functions; Rust 92.25% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
-| Scale benchmarks | Current run: all 139 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
+| Scale benchmarks | Current run: all 140 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
 
 ## Done
+
+- Fastened joints (schema 186; ABI 86 unchanged): `fastened_joint` places
+  ISO 4762 screws through a stack of up to 8 parts at up to 1,000 positions,
+  held by ISO 4032 nuts or tapped into the last part, with ISO 7089 washers
+  or a flush Carr Lane counterbore. It measures each part along every screw
+  line and picks the shortest ISO 4762 length that reaches two pitches past
+  the nut, or the required engagement. Joints are refused, with the reason,
+  when parts don't touch, a screw is too short, a plain shank would reach the
+  nut, a tapped hole would break through, a counterbore doesn't fit, or
+  screws collide. `joint_holes` cuts ISO 273 clearance holes, counterbores
+  and drill-pointed tap-drill holes in one boolean per part. Build reports
+  list each joint's screw and parts list, also for placed instances. Section
+  renders now cut each solid of a compound separately. Volumes match closed
+  forms; 1,000 screws plan, place and drill in 4.8 s. See
+  [fastened joints](docs/FASTENED_JOINTS.md).
 
 - Closest-curve query refactor (schema 185 and ABI 86 unchanged): parameter
   and contact queries share typed curve loading, while fraction normalization,

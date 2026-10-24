@@ -24,7 +24,7 @@ explicitly selected.
 ```json
 {
   "schema": "occb-model-request-v1",
-  "model": { "schema_version": 185, "...": "complete ModelDocument" },
+  "model": { "schema_version": 186, "...": "complete ModelDocument" },
   "outputs": [{ "instance": "bracket", "output": "body" }],
   "edits": [{
     "instance": "bracket",
@@ -124,6 +124,10 @@ limits are demonstration assumptions, not manufacturing qualification.
 margin and root bending against the [material catalog](../../docs/MATERIALS.md).
 [`bolted-joint`](bolted-joint.request.json) stacks plates, washers, a nut and
 an ISO 4762 screw from the [standard-part catalog](../../docs/STANDARD_PARTS.md).
+[`fastened-lid`](fastened-lid.request.json) fixes a lid with four counterbored
+screws tapped into its base, planned by a
+[fastened joint](../../docs/FASTENED_JOINTS.md); its build report lists the
+screws under `fastened_joints`.
 
 The final **stderr line** is a JSON object with schema `occb-model-report-v1`.
 Exit status is zero for a completed build and nonzero for failure. Native STEP
@@ -131,7 +135,9 @@ progress can appear on stdout; use `report.json` or the final stderr line for
 machine consumption. Successful reports contain selected output identities,
 exact model-space bounds in millimeters, volume in cubic millimeters, BREP
 validity, artifact paths, distinct generated-variant count, and all generated
-part/assembly verification results. Results preserve exact versus sampled
+part/assembly verification results, and, for outputs built from
+[fastened joints](../../docs/FASTENED_JOINTS.md#reports), each joint's screw
+and parts list under `fastened_joints`. Results preserve exact versus sampled
 evidence, measurements with limits/units, and witnesses where available.
 `built` means regeneration and requested publication completed; inspect
 individual results for unmet preferred/advisory requirements. A model without

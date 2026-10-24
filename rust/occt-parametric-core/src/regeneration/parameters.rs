@@ -80,6 +80,25 @@ pub fn collect_operation_parameters<'a>(
                 collect_scalar_parameters(length, names);
             }
         }
+        FeatureOperation::FastenedJoint {
+            positions,
+            axis,
+            nominal_diameter,
+            length,
+            engagement,
+            ..
+        } => {
+            for position in positions {
+                collect_vector_parameters(position, names);
+            }
+            collect_vector_parameters(axis, names);
+            collect_scalar_parameters(nominal_diameter, names);
+            for value in length.iter().chain(engagement) {
+                collect_scalar_parameters(value, names);
+            }
+        }
+        // Holes follow their joint, which rebuilds them when it changes.
+        FeatureOperation::JointHoles { .. } => {}
         FeatureOperation::Cone {
             origin,
             axis,

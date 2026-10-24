@@ -120,7 +120,7 @@
   "request": {
     "schema": "occb-model-request-v1",
     "model": {
-      "schema_version": 185,
+      "schema_version": 186,
       "family": {
         "id": "printed-enclosure",
         "version": 1,
