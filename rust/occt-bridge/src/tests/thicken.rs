@@ -213,3 +213,124 @@ fn invalid_sheets_and_thicknesses_fail_without_leaking_shapes() {
     assert_eq!(inward, 1, "exactly the inward 25 mm thicken must fail");
     assert_eq!(session.shape_count().unwrap(), count);
 }
+
+#[test]
+fn holed_sheet_history_keeps_each_boundary_wall_across_signs_and_symmetric_modes() {
+    let s = Session::new().unwrap();
+    {
+        let outer = s
+            .create_polyline_wire(
+                &[
+                    Vec3::new(0., 0., 0.),
+                    Vec3::new(40., 0., 0.),
+                    Vec3::new(40., 20., 0.),
+                    Vec3::new(0., 20., 0.),
+                ],
+                true,
+            )
+            .unwrap();
+        let hole = s
+            .create_circle_wire(Vec3::new(10., 10., 0.), Vec3::new(0., 0., 1.), 3.)
+            .unwrap();
+        let face = s.create_face_with_holes(&outer, &[&hole]).unwrap();
+        let face = s
+            .rotate(&face, Vec3::new(0., 0., 0.), Vec3::new(1., 0., 0.), 0.4)
+            .unwrap();
+        let face = s.translate(&face, Vec3::new(500., -200., 70.)).unwrap();
+        let before = s.exact_bounds(&face).unwrap();
+        for thickness in [-2.5_f64, 2.5] {
+            for symmetric in [false, true] {
+                let solid = s.thicken(&face, thickness, symmetric, 1e-6).unwrap();
+                assert!(
+                    (solid_volume(&s, &solid) - (800. - 9. * PI) * thickness.abs()).abs() < 1e-6
+                );
+                let result_faces = s.subshapes(&solid, ShapeType::Face).unwrap();
+                assert_eq!(result_faces.len(), 7);
+                assert_eq!(
+                    s.history_count(&solid, &face, HistoryRelation::Generated)
+                        .unwrap(),
+                    1
+                );
+                assert_eq!(
+                    s.history_count(&solid, &face, HistoryRelation::Modified)
+                        .unwrap(),
+                    usize::from(symmetric)
+                );
+                assert!(!s.history_is_deleted(&solid, &face).unwrap());
+                for edge in s.subshapes(&face, ShapeType::Edge).unwrap() {
+                    let mut walls = Vec::new();
+                    for i in 0..s
+                        .history_count(&solid, &edge, HistoryRelation::Generated)
+                        .unwrap()
+                    {
+                        let image = s
+                            .history(&solid, &edge, HistoryRelation::Generated, i)
+                            .unwrap();
+                        if s.shape_type(&image).unwrap() == ShapeType::Face {
+                            walls.push(image);
+                        }
+                    }
+                    assert_eq!(walls.len(), 1);
+                    assert!(
+                        result_faces
+                            .iter()
+                            .any(|f| s.is_same(f, &walls[0]).unwrap())
+                    );
+                    assert!(
+                        (s.surface_area(&walls[0]).unwrap()
+                            - thickness.abs() * s.edge_length(&edge).unwrap())
+                        .abs()
+                            < 1e-6
+                    );
+                    assert!(!s.history_is_deleted(&solid, &edge).unwrap());
+                }
+                assert_eq!(s.exact_bounds(&face).unwrap(), before);
+            }
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn joined_sheet_internal_seams_do_not_generate_boundary_wall_faces() {
+    let s = Session::new().unwrap();
+    {
+        let profile = s
+            .create_polyline_wire(
+                &[
+                    Vec3::new(0., 0., 0.),
+                    Vec3::new(30., 0., 0.),
+                    Vec3::new(30., 0., 20.),
+                ],
+                false,
+            )
+            .unwrap();
+        let source = sheet(&s, &profile, 25.);
+        let edges = s.subshapes(&source, ShapeType::Edge).unwrap();
+        let hinge = edges
+            .iter()
+            .find(|edge| {
+                let b = s.exact_bounds(edge).unwrap();
+                (b.min.x - 30.).abs() < 1e-7
+                    && (b.max.x - 30.).abs() < 1e-7
+                    && b.min.z.abs() < 1e-7
+                    && b.max.z.abs() < 1e-7
+            })
+            .unwrap();
+        for symmetric in [false, true] {
+            let solid = s.thicken(&source, 2., symmetric, 1e-6).unwrap();
+            let count = s
+                .history_count(&solid, hinge, HistoryRelation::Generated)
+                .unwrap();
+            for i in 0..count {
+                let image = s
+                    .history(&solid, hinge, HistoryRelation::Generated, i)
+                    .unwrap();
+                assert_ne!(s.shape_type(&image).unwrap(), ShapeType::Face);
+            }
+            assert!(!s.history_is_deleted(&solid, hinge).unwrap());
+            assert_eq!(s.subshape_count(&solid, ShapeType::Face).unwrap(), 10);
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}

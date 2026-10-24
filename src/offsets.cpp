@@ -90,6 +90,39 @@ bool offset_done(const BRepOffset_MakeOffset& builder, const std::string& except
     return exception.empty() && builder.IsDone() && !builder.Shape().IsNull();
 }
 
+void append_thick_history(BRepOffset_MakeOffset& thick, bool symmetric,
+    const TopTools_IndexedMapOfShape& result, const TopTools_IndexedMapOfShape& skin_faces,
+    const TopTools_IndexedDataMapOfShapeListOfShape& edge_faces,
+    const TopoDS_Shape& image, occt_bridge_history_entry& entry) {
+    if (symmetric && result.Contains(image)) {
+        append_unique_shape(entry.modified, image);
+    }
+    for (TopTools_ListIteratorOfListOfShape it(thick.Generated(image)); it.More(); it.Next()) {
+        append_unique_shape(entry.generated, it.Value());
+    }
+    for (TopTools_ListIteratorOfListOfShape it(thick.Modified(image)); it.More(); it.Next()) {
+        append_unique_shape(entry.modified, it.Value());
+    }
+    if (image.ShapeType() == TopAbs_EDGE && edge_faces.Contains(image)) {
+        for (TopTools_ListIteratorOfListOfShape it(edge_faces.FindFromKey(image)); it.More(); it.Next()) {
+            if (!skin_faces.Contains(it.Value())) {
+                append_unique_shape(entry.generated, it.Value());
+            }
+        }
+    }
+}
+
+std::vector<TopoDS_Shape> moved_source_images(BRepOffset_MakeOffset& moved, const TopoDS_Shape& source) {
+    std::vector<TopoDS_Shape> images;
+    for (TopTools_ListIteratorOfListOfShape it(moved.Generated(source)); it.More(); it.Next()) {
+        append_unique_shape(images, it.Value());
+    }
+    for (TopTools_ListIteratorOfListOfShape it(moved.Modified(source)); it.More(); it.Next()) {
+        append_unique_shape(images, it.Value());
+    }
+    return images;
+}
+
 /*
  * History of a thicken. `thick` closed `skin` (the sheet, or with `moved` its
  * half offset) into a solid. Each sheet subshape maps to its skin image
@@ -108,41 +141,17 @@ std::vector<occt_bridge_history_entry> thicken_history(
     TopExp::MapShapes(skin, TopAbs_FACE, skin_faces);
     TopTools_IndexedDataMapOfShapeListOfShape edge_faces;
     TopExp::MapShapesAndAncestors(thick.Shape(), TopAbs_EDGE, TopAbs_FACE, edge_faces);
-    const auto through_thick = [&](const TopoDS_Shape& image, occt_bridge_history_entry& entry) {
-        if (moved != nullptr && result.Contains(image)) {
-            append_unique_shape(entry.modified, image);
-        }
-        for (TopTools_ListIteratorOfListOfShape it(thick.Generated(image)); it.More(); it.Next()) {
-            append_unique_shape(entry.generated, it.Value());
-        }
-        for (TopTools_ListIteratorOfListOfShape it(thick.Modified(image)); it.More(); it.Next()) {
-            append_unique_shape(entry.modified, it.Value());
-        }
-        if (image.ShapeType() == TopAbs_EDGE && edge_faces.Contains(image)) {
-            for (TopTools_ListIteratorOfListOfShape it(edge_faces.FindFromKey(image)); it.More(); it.Next()) {
-                if (!skin_faces.Contains(it.Value())) {
-                    append_unique_shape(entry.generated, it.Value());
-                }
-            }
-        }
-    };
     std::vector<occt_bridge_history_entry> history;
     for (const TopoDS_Shape& source : history_sources({&sheet})) {
         occt_bridge_history_entry entry;
         entry.source = source;
         if (moved == nullptr) {
-            through_thick(source, entry);
+            append_thick_history(thick,false,result,skin_faces,edge_faces,source,entry);
             entry.deleted = !result.Contains(source) && entry.modified.empty() && entry.generated.empty();
         } else {
-            std::vector<TopoDS_Shape> images;
-            for (TopTools_ListIteratorOfListOfShape it(moved->Generated(source)); it.More(); it.Next()) {
-                append_unique_shape(images, it.Value());
-            }
-            for (TopTools_ListIteratorOfListOfShape it(moved->Modified(source)); it.More(); it.Next()) {
-                append_unique_shape(images, it.Value());
-            }
+            const auto images = moved_source_images(*moved,source);
             for (const TopoDS_Shape& image : images) {
-                through_thick(image, entry);
+                append_thick_history(thick,true,result,skin_faces,edge_faces,image,entry);
             }
             entry.deleted = entry.modified.empty() && entry.generated.empty();
         }

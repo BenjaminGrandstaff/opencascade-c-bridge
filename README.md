@@ -18,7 +18,7 @@ The current C ABI version is **86** and the document schema is **186**.
 | `occt-parametric` (kernel regeneration) | Schema 186 | Active development |
 | Sketch studio and viewer (`occt-view --serve`) | — | Edits the same documents; adds no capability of its own |
 
-Tests: C 8/8, bridge 211, parametric core 85, kernel 825, view command 105,
+Tests: C 8/8, bridge 213, parametric core 85, kernel 825, view command 105,
 model command 118, viewer Node 479 and MCP Python 32, all passing. The scale
 benchmark suite covers geometry, document operations, sketch authoring, MCP
 and model-command publication, with enforced time budgets. Formatting and Clippy are clean across all crates. Full
