@@ -575,6 +575,148 @@ namespace {
     }
 
 
+    enum class CurveQueryKind { Parameter, Contact };
+    struct QueryCurve {
+        TopoDS_Edge edge;
+        Handle(Geom_Curve) curve;
+        double first = 0.;
+        double last = 0.;
+    };
+
+    occt_bridge_status_t load_query_curve(occt_bridge_session_t* s, occt_bridge_shape_id_t id,
+        CurveQueryKind kind, QueryCurve& span) {
+        const bool parameter = kind == CurveQueryKind::Parameter;
+        const auto* shape = find_shape(s,id);
+        if(!shape) return fail(s,OCCT_BRIDGE_SHAPE_NOT_FOUND,
+            parameter ? "parameter curve was not found" : "contact curve was not found");
+        const auto invalid = parameter ? OCCT_BRIDGE_INVALID_ARGUMENT : OCCT_BRIDGE_INVALID_GEOMETRY;
+        if(shape->ShapeType()!=TopAbs_EDGE && shape->ShapeType()!=TopAbs_WIRE)
+            return fail(s,invalid,parameter ? "parameter query requires an edge or wire" : "contact query requires an edge or wire");
+        span.edge = single_edge(*shape);
+        if(span.edge.IsNull()) return fail(s,invalid,
+            parameter ? "parameter query requires one edge" : "contact query requires one edge");
+        span.curve = BRep_Tool::Curve(span.edge,span.first,span.last);
+        if(span.curve.IsNull()) return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,
+            parameter ? "parameter curve has no finite active span" : "contact edge has no curve");
+        return OCCT_BRIDGE_OK;
+    }
+
+    double normalized_fraction(double first, double last, bool reversed, bool closed, double u) {
+        double f = std::clamp((u-first)/(last-first), 0., 1.);
+        if (reversed) f = 1.-f;
+        if (closed && (f < 1e-10 || f > 1.-1e-10)) f = 0.;
+        return f;
+    }
+
+    occt_bridge_status_t parameter_candidates(occt_bridge_session_t* s,
+        const Handle(Geom_Curve)& curve, double first, double last, bool reversed, bool closed,
+        const gp_Pnt& query, std::vector<std::pair<double,double>>& candidates) {
+        auto append = [&](double u) { candidates.emplace_back(normalized_fraction(first,last,reversed,closed,u), curve->Value(u).Distance(query)); };
+        append(first); append(last);
+        GeomAPI_ProjectPointOnCurve projection(query, curve, first, last);
+        if (projection.NbPoints() > 1000) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "closest parameter exceeds 1000 native extrema");
+        if (closed && projection.NbPoints() == 0 && candidates[0].second > Precision::Confusion()) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "closed curve has no unique nearest parameter");
+        for (int i=1; i<=projection.NbPoints(); ++i) append(projection.Parameter(i));
+        return OCCT_BRIDGE_OK;
+    }
+
+    occt_bridge_status_t unique_parameter_fraction(occt_bridge_session_t* s,
+        const std::vector<std::pair<double,double>>& candidates, double& fraction) {
+        const auto best = std::min_element(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) { return a.second < b.second; });
+        if (!std::isfinite(best->second)) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "closest parameter projection failed");
+        for (const auto& candidate : candidates) {
+            if (std::abs(candidate.second-best->second) <= Precision::Confusion() && std::abs(candidate.first-best->first) > 1e-10) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "closest parameter is ambiguous; pick nearer one branch");
+        }
+        fraction = best->first;
+        return OCCT_BRIDGE_OK;
+    }
+
+    std::pair<double,double> nearest_contact_parameter(const Handle(Geom_Curve)& curve,
+        double first, double last, const gp_Pnt& query) {
+        double distance = std::numeric_limits<double>::infinity(), at = first;
+        auto choose = [&](double u) {
+            const double d = curve->Value(u).SquareDistance(query);
+            if (d < distance) { distance = d; at = u; }
+        };
+        choose(first); choose(last);
+        GeomAPI_ProjectPointOnCurve projection(query, curve, first, last);
+        for (int i = 1; i <= projection.NbPoints(); ++i) choose(projection.Parameter(i));
+        return {distance,at};
+    }
+
+    const char* contact_knot_error(const Handle(Geom_Curve)& curve,
+        double first, double last, double at) {
+        auto basis = curve;
+        while (const auto trimmed = Handle(Geom_TrimmedCurve)::DownCast(basis)) basis = trimmed->BasisCurve();
+        const auto spline = Handle(Geom_BSplineCurve)::DownCast(basis);
+        if (!spline.IsNull() && !spline->IsCN(1)) {
+            const double tolerance = 1e-12 * std::max(1., std::abs(last-first));
+            for (int i = spline->FirstUKnotIndex(); i <= spline->LastUKnotIndex(); ++i) {
+                const double knot = spline->Knot(i);
+                if (spline->Multiplicity(i) >= spline->Degree() && std::abs(at-knot) <= tolerance
+                    && (spline->IsPeriodic() || (knot > first && knot < last))) {
+                    return "curve contact at a C0 knot has no unique smooth tangent";
+                }
+            }
+        }
+        return nullptr;
+    }
+
+    occt_bridge_status_t closest_fraction(occt_bridge_session_t* s, occt_bridge_shape_id_t id,
+        const occt_bridge_vec3_t& hint, double* fraction, occt_bridge_vec3_t* point) {
+        if (fraction == nullptr || point == nullptr) return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "closest parameter outputs are null");
+        *fraction = 0.; *point = {0.,0.,0.};
+        if (!finite(hint)) return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "closest parameter hint is not finite");
+        QueryCurve span;
+        const auto load_status = load_query_curve(s,id,CurveQueryKind::Parameter,span);
+        if(load_status!=OCCT_BRIDGE_OK)return load_status;
+        const auto& curve = span.curve;
+        const double first = span.first, last = span.last;
+        const auto& edge = span.edge;
+        if(!std::isfinite(first)||!std::isfinite(last)||!(last>first))
+            return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"parameter curve has no finite active span");
+        const gp_Pnt query = to_point(hint);
+        const bool reversed = edge.Orientation() == TopAbs_REVERSED;
+        const bool closed = curve->Value(first).Distance(curve->Value(last)) <= Precision::Confusion();
+        std::vector<std::pair<double,double>> candidates;
+        const auto candidate_status = parameter_candidates(s,curve,first,last,reversed,closed,query,candidates);
+        if(candidate_status!=OCCT_BRIDGE_OK)return candidate_status;
+        double f = 0.;
+        const auto status = unique_parameter_fraction(s,candidates,f);
+        if(status!=OCCT_BRIDGE_OK)return status;
+        const auto p = curve->Value(first+(reversed ? 1.-f : f)*(last-first));
+        const occt_bridge_vec3_t position = {p.X(),p.Y(),p.Z()};
+        if (!finite(position)) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "closest parameter point is not finite");
+        *fraction = f; *point = position;
+        return succeed(s);
+    }
+
+    occt_bridge_status_t closest_data(occt_bridge_session_t* s, occt_bridge_shape_id_t id,
+        occt_bridge_vec3_t point, occt_bridge_vec3_t* closest, occt_bridge_vec3_t* tangent) {
+        if (closest == nullptr || tangent == nullptr) return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "curve contact outputs are null");
+        *closest = *tangent = {0.,0.,0.};
+        if (!finite(point)) return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "curve contact point is not finite");
+        QueryCurve span;
+        const auto status = load_query_curve(s,id,CurveQueryKind::Contact,span);
+        if(status!=OCCT_BRIDGE_OK)return status;
+        const auto& curve = span.curve;
+        const double first = span.first, last = span.last;
+        const auto& edge = span.edge;
+        const gp_Pnt query(point.x, point.y, point.z);
+        const auto [distance,at] = nearest_contact_parameter(curve,first,last,query);
+        if (!std::isfinite(distance)) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "curve contact projection failed");
+        if(const char* error=contact_knot_error(curve,first,last,at))
+            return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,error);
+        gp_Pnt p; gp_Vec d;
+        curve->D1(at, p, d);
+        if (edge.Orientation() == TopAbs_REVERSED) d.Reverse();
+        const occt_bridge_vec3_t position = {p.X(),p.Y(),p.Z()}, derivative = {d.X(),d.Y(),d.Z()};
+        if (!finite(position) || !finite(derivative) || (derivative.x == 0. && derivative.y == 0. && derivative.z == 0.)) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "curve contact tangent is zero or not finite");
+        *closest = position; *tangent = derivative;
+        return succeed(s);
+    }
+
+
 }
 extern "C" {
     occt_bridge_status_t occt_bridge_fillet_wire_corner(occt_bridge_session_t* s, occt_bridge_shape_id_t id, occt_bridge_vec3_t point, double radius, occt_bridge_shape_id_t* out) {
@@ -687,93 +829,12 @@ extern "C" {
     occt_bridge_status_t occt_bridge_curve_closest_fraction(
         occt_bridge_session_t* s, occt_bridge_shape_id_t id, occt_bridge_vec3_t hint,
         double* fraction, occt_bridge_vec3_t* point) {
-        return guarded(s, [&] {
-            if (fraction == nullptr || point == nullptr) return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "closest parameter outputs are null");
-            *fraction = 0.; *point = {0.,0.,0.};
-            if (!finite(hint)) return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "closest parameter hint is not finite");
-            const auto* shape = find_shape(s, id);
-            if (!shape) return fail(s, OCCT_BRIDGE_SHAPE_NOT_FOUND, "parameter curve was not found");
-            if (shape->ShapeType() != TopAbs_EDGE && shape->ShapeType() != TopAbs_WIRE) return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "parameter query requires an edge or wire");
-            const auto edge = single_edge(*shape);
-            if (edge.IsNull()) return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "parameter query requires one edge");
-            double first, last;
-            const auto curve = BRep_Tool::Curve(edge, first, last);
-            if (curve.IsNull() || !std::isfinite(first) || !std::isfinite(last) || !(last > first)) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "parameter curve has no finite active span");
-            const gp_Pnt query = to_point(hint);
-            const bool reversed = edge.Orientation() == TopAbs_REVERSED;
-            const bool closed = curve->Value(first).Distance(curve->Value(last)) <= Precision::Confusion();
-            auto normalized = [&](double u) {
-                double f = std::clamp((u-first)/(last-first), 0., 1.);
-                if (reversed) f = 1.-f;
-                if (closed && (f < 1e-10 || f > 1.-1e-10)) f = 0.;
-                return f;
-            };
-            std::vector<std::pair<double,double>> candidates;
-            auto append = [&](double u) { candidates.emplace_back(normalized(u), curve->Value(u).Distance(query)); };
-            append(first); append(last);
-            GeomAPI_ProjectPointOnCurve projection(query, curve, first, last);
-            if (projection.NbPoints() > 1000) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "closest parameter exceeds 1000 native extrema");
-            if (closed && projection.NbPoints() == 0 && candidates[0].second > Precision::Confusion()) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "closed curve has no unique nearest parameter");
-            for (int i=1; i<=projection.NbPoints(); ++i) append(projection.Parameter(i));
-            const auto best = std::min_element(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) { return a.second < b.second; });
-            if (!std::isfinite(best->second)) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "closest parameter projection failed");
-            for (const auto& candidate : candidates) {
-                if (std::abs(candidate.second-best->second) <= Precision::Confusion() && std::abs(candidate.first-best->first) > 1e-10) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "closest parameter is ambiguous; pick nearer one branch");
-            }
-            const double f = best->first;
-            const auto p = curve->Value(first+(reversed ? 1.-f : f)*(last-first));
-            const occt_bridge_vec3_t position = {p.X(),p.Y(),p.Z()};
-            if (!finite(position)) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "closest parameter point is not finite");
-            *fraction = f; *point = position;
-            return succeed(s);
-        });
+        return guarded(s,[&] { return closest_fraction(s,id,hint,fraction,point); });
     }
     occt_bridge_status_t occt_bridge_curve_closest_data(
         occt_bridge_session_t* s, occt_bridge_shape_id_t id, occt_bridge_vec3_t point,
         occt_bridge_vec3_t* closest, occt_bridge_vec3_t* tangent) {
-        return guarded(s, [&] {
-            if (closest == nullptr || tangent == nullptr) return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "curve contact outputs are null");
-            *closest = *tangent = {0.,0.,0.};
-            if (!finite(point)) return fail(s, OCCT_BRIDGE_INVALID_ARGUMENT, "curve contact point is not finite");
-            const auto* shape = find_shape(s, id);
-            if (!shape) return fail(s, OCCT_BRIDGE_SHAPE_NOT_FOUND, "contact curve was not found");
-            if (shape->ShapeType() != TopAbs_EDGE && shape->ShapeType() != TopAbs_WIRE) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "contact query requires an edge or wire");
-            const auto edge = single_edge(*shape);
-            if (edge.IsNull()) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "contact query requires one edge");
-            double first, last;
-            const auto curve = BRep_Tool::Curve(edge, first, last);
-            if (curve.IsNull()) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "contact edge has no curve");
-            const gp_Pnt query(point.x, point.y, point.z);
-            double distance = std::numeric_limits<double>::infinity(), at = first;
-            auto choose = [&](double u) {
-                const double d = curve->Value(u).SquareDistance(query);
-                if (d < distance) { distance = d; at = u; }
-            };
-            choose(first); choose(last);
-            GeomAPI_ProjectPointOnCurve projection(query, curve, first, last);
-            for (int i = 1; i <= projection.NbPoints(); ++i) choose(projection.Parameter(i));
-            if (!std::isfinite(distance)) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "curve contact projection failed");
-            auto basis = curve;
-            while (const auto trimmed = Handle(Geom_TrimmedCurve)::DownCast(basis)) basis = trimmed->BasisCurve();
-            const auto spline = Handle(Geom_BSplineCurve)::DownCast(basis);
-            if (!spline.IsNull() && !spline->IsCN(1)) {
-                const double tolerance = 1e-12 * std::max(1., std::abs(last-first));
-                for (int i = spline->FirstUKnotIndex(); i <= spline->LastUKnotIndex(); ++i) {
-                    const double knot = spline->Knot(i);
-                    if (spline->Multiplicity(i) >= spline->Degree() && std::abs(at-knot) <= tolerance
-                        && (spline->IsPeriodic() || (knot > first && knot < last))) {
-                        return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "curve contact at a C0 knot has no unique smooth tangent");
-                    }
-                }
-            }
-            gp_Pnt p; gp_Vec d;
-            curve->D1(at, p, d);
-            if (edge.Orientation() == TopAbs_REVERSED) d.Reverse();
-            const occt_bridge_vec3_t position = {p.X(),p.Y(),p.Z()}, derivative = {d.X(),d.Y(),d.Z()};
-            if (!finite(position) || !finite(derivative) || (derivative.x == 0. && derivative.y == 0. && derivative.z == 0.)) return fail(s, OCCT_BRIDGE_INVALID_GEOMETRY, "curve contact tangent is zero or not finite");
-            *closest = position; *tangent = derivative;
-            return succeed(s);
-        });
+        return guarded(s,[&] { return closest_data(s,id,point,closest,tangent); });
     }
     occt_bridge_status_t occt_bridge_curve_curvature_at(occt_bridge_session_t* s,occt_bridge_shape_id_t id,occt_bridge_vec3_t point,occt_bridge_vec3_t* out) {
         return guarded(s,[&] {

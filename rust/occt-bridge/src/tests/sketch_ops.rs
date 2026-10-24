@@ -1007,3 +1007,90 @@ fn spline_extension_reaches_oriented_tangent_targets_without_changing_its_source
     }
     assert_eq!(s.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn closest_queries_preserve_distinct_ambiguity_rules_and_reversed_contact_tangents() {
+    let s = Session::new().unwrap();
+    let zero = Vec3::new(0., 0., 0.);
+    {
+        let circle = s
+            .create_circle_wire(zero, Vec3::new(0., 0., 1.), 5.)
+            .unwrap();
+        for reverse in [false, true] {
+            let wire = s.align_profile_wire(&circle, None, reverse).unwrap();
+            let error = s.curve_closest_fraction(&wire, zero).unwrap_err();
+            assert_eq!(
+                error.message,
+                "closed curve has no unique nearest parameter"
+            );
+            let (point, tangent) = s.curve_closest_data(&wire, zero).unwrap();
+            assert!((point.x - 5.).abs() < 1e-10 && point.y.abs() < 1e-10);
+            assert!((tangent.y - if reverse { -5. } else { 5. }).abs() < 1e-10);
+            let (fraction, seam) = s
+                .curve_closest_fraction(&wire, Vec3::new(6., 0., 0.))
+                .unwrap();
+            assert_eq!(fraction, 0.);
+            assert!((seam.x - 5.).abs() < 1e-10 && seam.y.abs() < 1e-10);
+            let arc = s.trim_curve(&wire, 0., 0.25).unwrap();
+            let before = s.curve_end_data(&arc).unwrap();
+            assert_eq!(
+                s.curve_closest_fraction(&arc, zero).unwrap_err().message,
+                "closest parameter is ambiguous; pick nearer one branch"
+            );
+            let (point, tangent) = s.curve_closest_data(&arc, zero).unwrap();
+            let expected = if reverse {
+                (before.1, before.3)
+            } else {
+                (before.0, before.2)
+            };
+            for (actual, expected) in [(point, expected.0), (tangent, expected.1)] {
+                assert!((actual.x - expected.x).abs() < 1e-10);
+                assert!((actual.y - expected.y).abs() < 1e-10);
+            }
+            assert_eq!(s.curve_end_data(&arc).unwrap(), before);
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn closest_fraction_accepts_a_c0_knot_while_contact_requires_a_smooth_tangent() {
+    let s = Session::new().unwrap();
+    let p = |x, y| Vec3::new(x, y, 0.);
+    {
+        let wire = s
+            .create_curve_wire(
+                &[CurveSegment::BSpline {
+                    non_clamped: false,
+                    periodic: false,
+                    poles: vec![p(0., 0.), p(2., 0.), p(4., 0.), p(4., 2.), p(4., 4.)],
+                    degree: 2,
+                    knots: vec![0., 0.5, 1.],
+                    multiplicities: vec![3, 2, 3],
+                    weights: vec![],
+                }],
+                false,
+            )
+            .unwrap();
+        let before = s.curve_end_data(&wire).unwrap();
+        let (fraction, point) = s.curve_closest_fraction(&wire, p(4., 0.)).unwrap();
+        assert!((fraction - 0.5).abs() < 1e-12);
+        assert_eq!(point, p(4., 0.));
+        let count = s.shape_count().unwrap();
+        assert_eq!(
+            s.curve_closest_data(&wire, p(4., 0.)).unwrap_err().message,
+            "curve contact at a C0 knot has no unique smooth tangent"
+        );
+        assert_eq!(s.shape_count().unwrap(), count);
+        for (query, horizontal) in [(p(2., 1.), true), (p(3., 2.), false)] {
+            let (_, tangent) = s.curve_closest_data(&wire, query).unwrap();
+            assert!(if horizontal {
+                tangent.x > 0. && tangent.y.abs() < 1e-10
+            } else {
+                tangent.y > 0. && tangent.x.abs() < 1e-10
+            });
+        }
+        assert_eq!(s.curve_end_data(&wire).unwrap(), before);
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
