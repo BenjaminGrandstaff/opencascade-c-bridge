@@ -426,3 +426,101 @@ fn advanced_section_history_tracks_profile_edges_without_changing_sources() {
     }
     assert_eq!(s.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn glued_fuse_composes_outer_face_history_and_removes_internal_interfaces() {
+    let s = Session::new().unwrap();
+    {
+        let a = s
+            .create_box(Vec3::new(0., 0., 0.), Vec3::new(10., 10., 10.))
+            .unwrap();
+        let b = s
+            .create_box(Vec3::new(10., 0., 0.), Vec3::new(10., 10., 10.))
+            .unwrap();
+        let faces_a = s.subshapes(&a, ShapeType::Face).unwrap();
+        let faces_b = s.subshapes(&b, ShapeType::Face).unwrap();
+        let top = |faces: &[Shape<'_>]| {
+            faces
+                .iter()
+                .position(|f| s.exact_bounds(f).unwrap().min.z > 9.99)
+                .unwrap()
+        };
+        let top_a = top(&faces_a);
+        let top_b = top(&faces_b);
+        let contact = |faces: &[Shape<'_>]| {
+            faces
+                .iter()
+                .position(|f| {
+                    let bounds = s.exact_bounds(f).unwrap();
+                    (bounds.min.x - 10.).abs() < 1e-7 && (bounds.max.x - 10.).abs() < 1e-7
+                })
+                .unwrap()
+        };
+        let interface_a = contact(&faces_a);
+        let interface_b = contact(&faces_b);
+        let before = [s.exact_bounds(&a).unwrap(), s.exact_bounds(&b).unwrap()];
+        let fused = s.fuse_glued(&[&a, &b]).unwrap();
+        assert_eq!(s.shape_type(&fused).unwrap(), ShapeType::Solid);
+        assert_eq!(s.subshape_count(&fused, ShapeType::Face).unwrap(), 6);
+        assert!((s.volume(&fused).unwrap() - 2000.).abs() < 1e-8);
+        for interface in [&faces_a[interface_a], &faces_b[interface_b]] {
+            assert!(s.history_is_deleted(&fused, interface).unwrap());
+            assert_eq!(
+                s.history_count(&fused, interface, HistoryRelation::Modified)
+                    .unwrap(),
+                0
+            );
+            assert_eq!(
+                s.history_count(&fused, interface, HistoryRelation::Generated)
+                    .unwrap(),
+                0
+            );
+        }
+        let mut merged = Vec::new();
+        for face in [&faces_a[top_a], &faces_b[top_b]] {
+            assert_eq!(
+                s.history_count(&fused, face, HistoryRelation::Modified)
+                    .unwrap(),
+                1
+            );
+            assert!(!s.history_is_deleted(&fused, face).unwrap());
+            merged.push(
+                s.history(&fused, face, HistoryRelation::Modified, 0)
+                    .unwrap(),
+            );
+        }
+        assert!(s.is_same(&merged[0], &merged[1]).unwrap());
+        assert_eq!(
+            [s.exact_bounds(&a).unwrap(), s.exact_bounds(&b).unwrap()],
+            before
+        );
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn glued_fuse_keeps_disconnected_solids_and_rejects_invalid_counts_without_leaks() {
+    let s = Session::new().unwrap();
+    {
+        let a = s
+            .create_box(Vec3::new(0., 0., 0.), Vec3::new(10., 10., 10.))
+            .unwrap();
+        let b = s
+            .create_box(Vec3::new(30., 0., 0.), Vec3::new(10., 10., 10.))
+            .unwrap();
+        let fused = s.fuse_glued(&[&a, &b]).unwrap();
+        assert_eq!(s.shape_type(&fused).unwrap(), ShapeType::Compound);
+        assert_eq!(s.subshape_count(&fused, ShapeType::Solid).unwrap(), 2);
+        assert!((s.volume(&fused).unwrap() - 2000.).abs() < 1e-8);
+        assert!(s.is_valid(&fused).unwrap());
+        for inputs in [vec![], vec![&a], vec![&a; 10_001]] {
+            let count = s.shape_count().unwrap();
+            assert_eq!(
+                s.fuse_glued(&inputs).unwrap_err().message,
+                "a glued fuse takes 2 to 10000 shapes"
+            );
+            assert_eq!(s.shape_count().unwrap(), count);
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}

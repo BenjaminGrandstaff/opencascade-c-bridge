@@ -187,6 +187,74 @@ struct ToolsHistory {
     }
 };
 
+
+occt_bridge_status_t gather_glued_inputs(occt_bridge_session_t* session,
+    const occt_bridge_shape_id_t* shapes, size_t shape_count,
+    std::vector<const TopoDS_Shape*>& roots, TopTools_ListOfShape& arguments, TopTools_ListOfShape& tools) {
+    for (size_t index = 0; index < shape_count; ++index) {
+        const TopoDS_Shape* shape = find_shape(session, shapes[index]);
+        if (shape == nullptr) {
+            return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "glued fuse input was not found");
+        }
+        roots.push_back(shape);
+        (index == 0 ? arguments : tools).Append(*shape);
+    }
+    return OCCT_BRIDGE_OK;
+}
+
+void unwrap_glued_solid(TopoDS_Shape& result) {
+    // One solid comes back wrapped in a compound; return the solid.
+    if (result.ShapeType() == TopAbs_COMPOUND) {
+        TopExp_Explorer solids(result, TopAbs_SOLID);
+        if (solids.More()) {
+            const TopoDS_Shape first = solids.Current();
+            solids.Next();
+            if (!solids.More()) {
+                result = first;
+            }
+        }
+    }
+}
+
+occt_bridge_status_t fuse_glued(occt_bridge_session_t* session,
+    const occt_bridge_shape_id_t* shapes, size_t shape_count, occt_bridge_shape_id_t* out_shape) {
+    if (out_shape == nullptr || shapes == nullptr) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "shapes or out_shape is null");
+    }
+    *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    if (shape_count < 2 || shape_count > 10000) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "a glued fuse takes 2 to 10000 shapes");
+    }
+    std::vector<const TopoDS_Shape*> roots;
+    TopTools_ListOfShape arguments;
+    TopTools_ListOfShape tools;
+    const auto status = gather_glued_inputs(session,shapes,shape_count,roots,arguments,tools);
+    if(status!=OCCT_BRIDGE_OK)return status;
+    BRepAlgoAPI_Fuse fuse;
+    fuse.SetArguments(arguments);
+    fuse.SetTools(tools);
+    fuse.SetGlue(BOPAlgo_GlueShift);
+    if (session->options.boolean_fuzzy_tolerance > 0.0) {
+        fuse.SetFuzzyValue(session->options.boolean_fuzzy_tolerance);
+    }
+    fuse.Build();
+    if (!fuse.IsDone() || fuse.HasErrors()) {
+        return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "glued fuse failed");
+    }
+    ShapeUpgrade_UnifySameDomain unify(fuse.Shape(), Standard_True, Standard_True, Standard_False);
+    const std::string exception = perform_reporting_exception([&] { unify.Build(); });
+    if (!exception.empty() || unify.Shape().IsNull()) {
+        return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "glued fuse could not merge its faces");
+    }
+    TopTools_ListOfShape all = arguments;
+    all.Append(tools);
+    opencascade::handle<BRepTools_History> history = new BRepTools_History(all, fuse);
+    history->Merge(unify.History());
+    ToolsHistory composed{history, {}};
+    TopoDS_Shape result = unify.Shape();
+    unwrap_glued_solid(result);
+    return store_checked_result(session, "glued fuse", result, out_shape, composed, roots);
+}
 }  // namespace
 
 extern "C" {
@@ -204,64 +272,9 @@ occt_bridge_status_t occt_bridge_fuse(
 // One glued fuse of every input and one merge of its faces: roughly linear in
 // the pieces' faces when they only touch.
 occt_bridge_status_t occt_bridge_fuse_glued(
-    occt_bridge_session_t* session,
-    const occt_bridge_shape_id_t* shapes,
-    size_t shape_count,
-    occt_bridge_shape_id_t* out_shape) {
-    return guarded(session, [&] {
-        if (out_shape == nullptr || shapes == nullptr) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "shapes or out_shape is null");
-        }
-        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
-        if (shape_count < 2 || shape_count > 10000) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "a glued fuse takes 2 to 10000 shapes");
-        }
-        std::vector<const TopoDS_Shape*> roots;
-        TopTools_ListOfShape arguments;
-        TopTools_ListOfShape tools;
-        for (size_t index = 0; index < shape_count; ++index) {
-            const TopoDS_Shape* shape = find_shape(session, shapes[index]);
-            if (shape == nullptr) {
-                return fail(session, OCCT_BRIDGE_SHAPE_NOT_FOUND, "glued fuse input was not found");
-            }
-            roots.push_back(shape);
-            (index == 0 ? arguments : tools).Append(*shape);
-        }
-        BRepAlgoAPI_Fuse fuse;
-        fuse.SetArguments(arguments);
-        fuse.SetTools(tools);
-        fuse.SetGlue(BOPAlgo_GlueShift);
-        if (session->options.boolean_fuzzy_tolerance > 0.0) {
-            fuse.SetFuzzyValue(session->options.boolean_fuzzy_tolerance);
-        }
-        fuse.Build();
-        if (!fuse.IsDone() || fuse.HasErrors()) {
-            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "glued fuse failed");
-        }
-        ShapeUpgrade_UnifySameDomain unify(fuse.Shape(), Standard_True, Standard_True, Standard_False);
-        const std::string exception = perform_reporting_exception([&] { unify.Build(); });
-        if (!exception.empty() || unify.Shape().IsNull()) {
-            return fail(session, OCCT_BRIDGE_KERNEL_ERROR, "glued fuse could not merge its faces");
-        }
-        TopTools_ListOfShape all = arguments;
-        all.Append(tools);
-        opencascade::handle<BRepTools_History> history = new BRepTools_History(all, fuse);
-        history->Merge(unify.History());
-        ToolsHistory composed{history, {}};
-        // One solid comes back wrapped in a compound; return the solid.
-        TopoDS_Shape result = unify.Shape();
-        if (result.ShapeType() == TopAbs_COMPOUND) {
-            TopExp_Explorer solids(result, TopAbs_SOLID);
-            if (solids.More()) {
-                const TopoDS_Shape first = solids.Current();
-                solids.Next();
-                if (!solids.More()) {
-                    result = first;
-                }
-            }
-        }
-        return store_checked_result(session, "glued fuse", result, out_shape, composed, roots);
-    });
+    occt_bridge_session_t* session, const occt_bridge_shape_id_t* shapes,
+    size_t shape_count, occt_bridge_shape_id_t* out_shape) {
+    return guarded(session,[&] { return fuse_glued(session,shapes,shape_count,out_shape); });
 }
 
 occt_bridge_status_t occt_bridge_cut(
