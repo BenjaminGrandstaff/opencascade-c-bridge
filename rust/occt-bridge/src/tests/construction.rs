@@ -1787,3 +1787,85 @@ fn curve_wire_errors_follow_incremental_segment_order_without_storing_partial_wi
         assert_eq!(s.shape_count().unwrap(), before);
     }
 }
+
+#[test]
+fn curve_point_evaluation_preserves_reversed_located_ellipse_parameters_and_endpoints() {
+    let s = Session::new().unwrap();
+    {
+        let ellipse = s
+            .create_ellipse_wire_axes(
+                Vec3::new(0., 0., 0.),
+                Vec3::new(0., 0., 1.),
+                Vec3::new(1., 0., 0.),
+                5.,
+                3.,
+            )
+            .unwrap();
+        let angle = 0.4_f64;
+        for reverse in [false, true] {
+            let wire = s.align_profile_wire(&ellipse, None, reverse).unwrap();
+            let rotated = s
+                .rotate(&wire, Vec3::new(0., 0., 0.), Vec3::new(0., 1., 0.), angle)
+                .unwrap();
+            let placed = s.translate(&rotated, Vec3::new(500., -200., 70.)).unwrap();
+            let edge = s.subshape(&placed, ShapeType::Edge, 0).unwrap();
+            let before = s.curve_end_data(&placed).unwrap();
+            for source in [&placed, &edge] {
+                assert_eq!(s.curve_point_at_fraction(source, 0.).unwrap(), before.0);
+                assert_eq!(s.curve_point_at_fraction(source, 1.).unwrap(), before.1);
+                for fraction in [f64::EPSILON, 0.125, 0.375, 0.7, 1. - f64::EPSILON] {
+                    let parameter =
+                        std::f64::consts::TAU * if reverse { 1. - fraction } else { fraction };
+                    let x = 5. * parameter.cos();
+                    let expected = Vec3::new(
+                        500. + x * angle.cos(),
+                        -200. + 3. * parameter.sin(),
+                        70. - x * angle.sin(),
+                    );
+                    let actual = s.curve_point_at_fraction(source, fraction).unwrap();
+                    assert!((actual.x - expected.x).abs() < 1e-10);
+                    assert!((actual.y - expected.y).abs() < 1e-10);
+                    assert!((actual.z - expected.z).abs() < 1e-10);
+                }
+            }
+            assert_eq!(s.curve_end_data(&placed).unwrap(), before);
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn curve_point_query_errors_keep_fraction_and_shape_validation_order_without_leaks() {
+    let s = Session::new().unwrap();
+    {
+        let wire = s
+            .create_polyline_wire(
+                &[
+                    Vec3::new(0., 0., 0.),
+                    Vec3::new(10., 0., 0.),
+                    Vec3::new(10., 5., 0.),
+                    Vec3::new(0., 5., 0.),
+                ],
+                true,
+            )
+            .unwrap();
+        let face = s.create_face_from_wire(&wire).unwrap();
+        for (source, fraction, expected) in [
+            (&face, f64::NAN, "curve fraction must be in [0, 1]"),
+            (&wire, -f64::EPSILON, "curve fraction must be in [0, 1]"),
+            (&wire, 1. + f64::EPSILON, "curve fraction must be in [0, 1]"),
+            (&face, 0.5, "curve point query requires an edge or wire"),
+            (&wire, 0.5, "curve point query requires one edge"),
+        ] {
+            let count = s.shape_count().unwrap();
+            assert_eq!(
+                s.curve_point_at_fraction(source, fraction)
+                    .unwrap_err()
+                    .message,
+                expected
+            );
+            assert_eq!(s.shape_count().unwrap(), count);
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
