@@ -18,7 +18,7 @@ The current C ABI version is **86** and the document schema is **186**.
 | `occt-parametric` (kernel regeneration) | Schema 186 | Active development |
 | Sketch studio and viewer (`occt-view --serve`) | — | Edits the same documents; adds no capability of its own |
 
-Tests: C 8/8, bridge 217, parametric core 85, kernel 825, view command 110,
+Tests: C 8/8, bridge 217, parametric core 86, kernel 827, view command 110,
 model command 118, viewer Node 486 and MCP Python 32, all passing. The scale
 benchmark suite covers geometry, document operations, sketch authoring, MCP
 and model-command publication, with enforced time budgets. Formatting and Clippy are clean across all crates. Full
@@ -26,6 +26,11 @@ gate results and history live in [the roadmap](ROADMAP.md#current-status).
 
 Recently landed:
 
+- **Joint hole callouts:** drawing hole callouts can name a fastened joint's
+  holes in a part (`4× Ø4.200 mm FULL DIA DEPTH 10.600 mm; … THREAD M5x0.8`),
+  measured on the generated parts. Tapped joint holes get thread lines, and
+  inspection reports measure the callouts. See
+  [drawings](docs/DRAWINGS.md).
 - **Hardware and templates in the studio:** the solid editor fastens solids
   with screws by clicking screw positions, previews the chosen screw and
   parts list, and inserts single catalog parts on a clicked face. A

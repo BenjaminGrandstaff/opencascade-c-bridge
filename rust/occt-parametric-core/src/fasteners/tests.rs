@@ -251,3 +251,38 @@ fn spacing_refuses_colliding_hardware() {
         "{message}"
     );
 }
+
+#[test]
+fn one_callout_describes_a_parts_holes_only_when_they_match() {
+    // Two tapped screws into a base 20 mm thick at one and 24 mm at the
+    // other: equal engagement, so equal tapped holes, and through holes in
+    // the lid of any thickness share one THRU callout.
+    let plan = plan_joint(
+        &settings(5.0, JointFastening::Tapped),
+        &["lid", "base"],
+        &[spans(&[6.0, 20.0]), spans(&[6.0, 24.0])],
+    )
+    .unwrap();
+    let lid = plan.hole_callout(0, "lid").unwrap();
+    assert_eq!(lid.count, 2);
+    assert!(
+        matches!(lid.kind, JointHoleKind::Clearance { diameter, counterbore: None } if diameter == 5.5)
+    );
+    let base = plan.hole_callout(1, "base").unwrap();
+    let JointHoleKind::Tapped { drill, depth, .. } = base.kind else {
+        panic!("tapped hole expected");
+    };
+    close(drill, 4.2);
+    close(depth, 9.0 + 1.6);
+    // A thicker lid at one screw changes that screw's engagement, so the
+    // base's holes differ and one callout cannot describe them.
+    let uneven = plan_joint(
+        &settings(5.0, JointFastening::Tapped),
+        &["lid", "base"],
+        &[spans(&[6.0, 20.0]), spans(&[8.0, 20.0])],
+    )
+    .unwrap();
+    let message = uneven.hole_callout(1, "base").unwrap_err().message;
+    assert!(message.contains("holes in 'base' differ"), "{message}");
+    assert_eq!(uneven.hole_callout(0, "lid").unwrap().count, 2);
+}

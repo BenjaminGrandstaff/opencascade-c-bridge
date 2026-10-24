@@ -174,6 +174,19 @@ fn nominal_value(
 ) -> Result<Quantity, ModelError> {
     if let Some(hole) = &dimension.presentation.hole {
         let (operation, params) = hole_source(hole, context)?;
+        if let FeatureOperation::JointHoles { .. } = operation {
+            use crate::fasteners::JointHoleKind;
+            let callout = super::joint_callout(hole, context)?.ok_or_else(|| {
+                ModelError::new(
+                    "joint hole callouts are measured on the generated parts; evaluate them on the model",
+                )
+            })?;
+            let diameter = match callout.kind {
+                JointHoleKind::Clearance { diameter, .. } => diameter,
+                JointHoleKind::Tapped { drill, .. } => drill,
+            };
+            return Ok(Quantity::length(diameter, LengthUnit::Millimeter));
+        }
         let FeatureOperation::Hole { diameter, .. } = operation else {
             return Err(ModelError::new(
                 "measurement callout requires a Hole feature",
@@ -206,11 +219,26 @@ impl DrawingDefinition {
         graph: &InstanceGraph<'_>,
         measurements: &[DrawingDimensionMeasurement],
     ) -> Result<Vec<DrawingDimensionMeasurementResult>, ModelError> {
+        self.evaluate_dimension_measurements_with(graph, measurements, None)
+    }
+
+    /// As `evaluate_dimension_measurements`, with joint hole callouts
+    /// measured on the generated parts (schema 186), whose nominal is the
+    /// joint's hole diameter.
+    pub fn evaluate_dimension_measurements_with(
+        &self,
+        graph: &InstanceGraph<'_>,
+        measurements: &[DrawingDimensionMeasurement],
+        joints: Option<super::JointCallouts>,
+    ) -> Result<Vec<DrawingDimensionMeasurementResult>, ModelError> {
         self.validate(graph)?;
         let views: HashMap<_, _> = self.views.iter().map(|v| (v.id.as_str(), v)).collect();
         let dimensions: HashMap<_, _> =
             self.dimensions.iter().map(|d| (d.id.as_str(), d)).collect();
-        let context = DimensionContext::new(&self.dimensions, graph)?;
+        let mut context = DimensionContext::new(&self.dimensions, graph)?;
+        if let Some(joints) = joints {
+            context = context.with_joints(joints);
+        }
         let mut nominals = HashMap::new();
         measurements
             .iter()

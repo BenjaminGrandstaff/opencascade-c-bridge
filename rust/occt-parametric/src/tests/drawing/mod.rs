@@ -7,6 +7,7 @@ mod gdt;
 mod guides;
 mod hatching;
 mod hole_callouts;
+mod joint_callouts;
 mod material_hatching;
 mod sheets;
 mod slices;

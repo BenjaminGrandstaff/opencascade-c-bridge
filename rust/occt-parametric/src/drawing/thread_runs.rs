@@ -122,6 +122,9 @@ pub(super) fn lines(
                     lines.extend(represent(view, &thread)?);
                 }
             }
+            for thread in crate::features::joint_threads(session, graph, generation, output)? {
+                lines.extend(represent(view, &thread)?);
+            }
         }
     }
     Ok(lines)

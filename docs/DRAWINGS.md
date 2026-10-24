@@ -329,6 +329,21 @@ values remain untoleranced. Thread intent is identified separately from the bore
 Callouts regenerate on instance overrides and survive document reloads. They do
 not infer thread classes, verify fits, or certify the caller's designation.
 
+`presentation.hole` can also name a `joint_holes` feature (schema 186). The
+callout then describes the holes that a [fastened joint](FASTENED_JOINTS.md)
+drills in that part, measured on the generated parts, with their count:
+- clearance holes: `4× Ø5.500 mm THRU; CBORE Ø9.750 DEPTH 5.000 mm`;
+- tapped holes: `4× Ø4.200 mm FULL DIA DEPTH 10.600 mm; DRILL POINT 118.000°;
+  THREAD M5x0.8 (5.000 x 0.800 mm, RH)`.
+
+All of the part's joint holes must be alike, since one callout describes
+them all. Holes that differ, such as tapped holes of different depths under
+a lid of varying thickness, are refused with the reason. Tolerances apply to
+the bore or drill diameter, which is also the nominal when an inspection
+report measures the callout. Validating a drawing without the kernel checks
+the reference only. The tapped holes also get thread representation lines
+in views that ask for them.
+
 Annotation vertices, including angle arcs and basic boxes, count against the shared
 export budget. Callout generation indexes features and resolves parameters once
 per referenced instance, avoiding a feature scan for each annotation. With fixed

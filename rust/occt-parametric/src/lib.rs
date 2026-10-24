@@ -58,7 +58,7 @@ pub use features::{
     LoftProfileCheck, LoftProfileIssue, LoftProfileReport, LoftStationRegionCheck,
     ResolvedLoftEndTangent, ResolvedLoftProfileSeam, diagnose_loft_profiles,
 };
-pub use features::{PartInstanceFasteners, PlacedJoint};
+pub use features::{PartInstanceFasteners, PlacedJoint, joint_hole_callouts};
 pub use graph::InstanceGraphPatternEdits;
 pub use graph::InstanceGraphRegeneration;
 pub(crate) use graph::InstanceGraphRegenerationInternal;
@@ -66,6 +66,9 @@ pub use graph::ResolvedInstanceRegeneration;
 pub use mesh::InstanceGraphExport;
 pub use mesh::MeshExportDefinitionMeshExport;
 pub use mesh::TaggedSurfaceMeshExport;
+pub use occt_parametric_core::drawing::dimensions::{
+    JointCalloutReference, JointCallouts, joint_callout_references,
+};
 pub use regeneration::PartInstanceRegeneration;
 pub use selection::PartInstanceSelection;
 pub(crate) use sheet_metal::SheetMetalDefinitionUnfoldingInternal;

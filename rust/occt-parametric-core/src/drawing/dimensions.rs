@@ -61,6 +61,24 @@ impl DimensionPresentation {
 /// plus parameter-expression evaluation, with proportional index storage.
 pub struct DimensionContext<'a> {
     holes: HashMap<String, HoleContext<'a>>,
+    /// Measured joint holes by (instance, `joint_holes` feature), from the
+    /// kernel. None when the drawing is only validated: a joint hole
+    /// callout is then checked for its reference but not labeled.
+    joints: Option<JointCallouts>,
+}
+
+/// Joint hole callouts measured on the generated parts, by instance and
+/// `joint_holes` feature (schema 186).
+pub type JointCallouts = HashMap<(String, String), crate::fasteners::JointHoleCallout>;
+
+/// A hole callout that references a `joint_holes` feature: its instance,
+/// the feature, the joint and the drilled stack part.
+#[derive(Clone, Debug, PartialEq)]
+pub struct JointCalloutReference {
+    pub instance: String,
+    pub feature: String,
+    pub joint: String,
+    pub input: String,
 }
 struct HoleContext<'a> {
     features: HashMap<&'a str, &'a FeatureDefinition>,
@@ -96,8 +114,51 @@ impl<'a> DimensionContext<'a> {
                 },
             );
         }
-        Ok(Self { holes })
+        Ok(Self {
+            holes,
+            joints: None,
+        })
     }
+
+    /// Supplies the measured joint holes, so their callouts are labeled.
+    pub fn with_joints(mut self, joints: JointCallouts) -> Self {
+        self.joints = Some(joints);
+        self
+    }
+}
+
+/// The hole callouts among `dimensions` that reference `joint_holes`
+/// features, which the kernel must measure. O(dimensions + features).
+pub fn joint_callout_references(
+    dimensions: &[DrawingDimension],
+    graph: &InstanceGraph<'_>,
+) -> Result<Vec<JointCalloutReference>, ModelError> {
+    let mut seen = HashSet::new();
+    let mut found = Vec::new();
+    for reference in dimensions
+        .iter()
+        .filter_map(|d| d.presentation.hole.as_ref())
+    {
+        if !seen.insert((reference.instance.as_str(), reference.output.as_str())) {
+            continue;
+        }
+        let instance = graph.resolve(&reference.instance)?;
+        if let Some(FeatureOperation::JointHoles { joint, input }) = instance
+            .definition
+            .features
+            .iter()
+            .find(|f| f.id == reference.output)
+            .map(|f| &f.operation)
+        {
+            found.push(JointCalloutReference {
+                instance: reference.instance.clone(),
+                feature: reference.output.clone(),
+                joint: joint.clone(),
+                input: input.clone(),
+            });
+        }
+    }
+    Ok(found)
 }
 
 pub fn require_coplanar(
@@ -298,6 +359,9 @@ fn hole_label(
     context: &DimensionContext<'_>,
 ) -> Result<String, ModelError> {
     let (operation, params) = hole_source(reference, context)?;
+    if let FeatureOperation::JointHoles { .. } = operation {
+        return joint_label(d, reference, context);
+    }
     let FeatureOperation::Hole {
         diameter,
         extent,
@@ -308,7 +372,7 @@ fn hole_label(
     } = operation
     else {
         return Err(ModelError::new(
-            "hole callout must reference a Hole feature",
+            "hole callout must reference a Hole or joint_holes feature",
         ));
     };
     let factor = d.presentation.length_unit.millimeter_factor();
@@ -397,6 +461,86 @@ fn hole_label(
         ));
     }
     Ok(text)
+}
+
+/// The measured joint hole a callout references, or None when the drawing
+/// is only being validated.
+pub(crate) fn joint_callout(
+    reference: &InstanceOutputRef,
+    context: &DimensionContext<'_>,
+) -> Result<Option<crate::fasteners::JointHoleCallout>, ModelError> {
+    let Some(joints) = &context.joints else {
+        return Ok(None);
+    };
+    joints
+        .get(&(reference.instance.clone(), reference.output.clone()))
+        .copied()
+        .map(Some)
+        .ok_or_else(|| {
+            ModelError::new(format!(
+                "joint holes '{}' were not measured on instance '{}'",
+                reference.output, reference.instance
+            ))
+        })
+}
+
+/// A joint's holes in one part, labeled like a Hole feature's callout with
+/// their count: `4× Ø5.500 mm THRU; CBORE Ø9.750 DEPTH 5.000 mm`, or a tapped
+/// hole's drill, depth, point and metric coarse thread.
+fn joint_label(
+    d: &DrawingDimension,
+    reference: &InstanceOutputRef,
+    context: &DimensionContext<'_>,
+) -> Result<String, ModelError> {
+    use crate::fasteners::JointHoleKind;
+    let Some(callout) = joint_callout(reference, context)? else {
+        return Ok("joint holes".into());
+    };
+    let factor = d.presentation.length_unit.millimeter_factor();
+    let p = usize::from(d.precision);
+    let unit = unit_text(d.presentation.length_unit);
+    let count = if callout.count > 1 {
+        format!("{}× ", callout.count)
+    } else {
+        String::new()
+    };
+    let trim = |value: f64| {
+        let text = format!("{value:.4}");
+        text.trim_end_matches('0').trim_end_matches('.').to_owned()
+    };
+    Ok(match callout.kind {
+        JointHoleKind::Clearance {
+            diameter,
+            counterbore,
+        } => {
+            let mut text = format!(
+                "{count}Ø{} {unit} THRU",
+                tolerance_text(d, diameter / factor)?
+            );
+            if let Some((recess, depth)) = counterbore {
+                text.push_str(&format!(
+                    "; CBORE Ø{:.p$} DEPTH {:.p$} {unit}",
+                    recess / factor,
+                    depth / factor
+                ));
+            }
+            text
+        }
+        JointHoleKind::Tapped {
+            drill,
+            depth,
+            pitch,
+        } => format!(
+            "{count}Ø{} {unit} FULL DIA DEPTH {:.p$} {unit}; DRILL POINT {:.p$}°; THREAD M{}x{} ({:.p$} x {:.p$} {unit}, RH)",
+            tolerance_text(d, drill / factor)?,
+            depth / factor,
+            118.0,
+            trim(callout.nominal_diameter),
+            trim(pitch),
+            callout.nominal_diameter / factor,
+            pitch / factor
+        ),
+    })
 }
 
 fn line(drawing: &mut GeneratedDrawing, points: Vec<[f64; 2]>) -> Result<(), ModelError> {

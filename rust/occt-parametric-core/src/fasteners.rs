@@ -512,7 +512,73 @@ pub fn check_spacing(offsets: &[[f64; 2]], footprint: f64) -> Result<(), ModelEr
     Ok(())
 }
 
+/// What a hole callout says about one stack part's joint holes: how many,
+/// and the hole they all are.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct JointHoleCallout {
+    pub count: usize,
+    pub kind: JointHoleKind,
+    /// The screw size, for a tapped hole's thread.
+    pub nominal_diameter: f64,
+}
+
 impl JointPlan {
+    /// The callout of the holes in stack part `part`: every screw's hole in
+    /// it must be the same, as one callout describes them all. O(screws).
+    pub fn hole_callout(&self, part: usize, name: &str) -> Result<JointHoleCallout, ModelError> {
+        let mut holes = self.screws.iter().map(|screw| screw.holes.get(part));
+        let Some(Some(first)) = holes.next() else {
+            return Err(ModelError::new(format!(
+                "the joint has no holes in '{name}'"
+            )));
+        };
+        let same = |a: f64, b: f64| (a - b).abs() <= 1e-9 * a.abs().max(1.0);
+        let matches = |hole: &JointHole| match (hole.kind, first.kind) {
+            (
+                JointHoleKind::Clearance {
+                    diameter: a,
+                    counterbore: ca,
+                },
+                JointHoleKind::Clearance {
+                    diameter: b,
+                    counterbore: cb,
+                },
+            ) => {
+                same(a, b)
+                    && match (ca, cb) {
+                        (None, None) => true,
+                        (Some((d1, h1)), Some((d2, h2))) => same(d1, d2) && same(h1, h2),
+                        _ => false,
+                    }
+            }
+            (
+                JointHoleKind::Tapped {
+                    drill: a,
+                    depth: da,
+                    ..
+                },
+                JointHoleKind::Tapped {
+                    drill: b,
+                    depth: db,
+                    ..
+                },
+            ) => same(a, b) && same(da, db),
+            _ => false,
+        };
+        for hole in holes {
+            if !hole.is_some_and(matches) {
+                return Err(ModelError::new(format!(
+                    "the joint's holes in '{name}' differ in depth, so one callout cannot describe them; dimension them separately"
+                )));
+            }
+        }
+        Ok(JointHoleCallout {
+            count: self.screws.len(),
+            kind: first.kind,
+            nominal_diameter: self.nominal_diameter,
+        })
+    }
+
     /// The joint as build reports and the studio show it: the screw, its
     /// fit and the parts list.
     pub fn report(&self, feature: &str, stack: &[String]) -> serde_json::Value {

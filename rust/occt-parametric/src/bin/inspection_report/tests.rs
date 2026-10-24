@@ -578,3 +578,53 @@ fn measured_threads_count_against_their_class_limits() {
     let result: Value = serde_json::from_str(&fs::read_to_string(&args[2]).unwrap()).unwrap();
     assert_eq!(result["summary"]["threads_nonconforming"], 1);
 }
+
+#[test]
+fn joint_hole_callouts_take_their_nominal_from_the_measured_joint() {
+    // The fastened-lid example with a tolerance on its tapped holes' drill.
+    let request: Value = serde_json::from_str(
+        &fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tools/model/fastened-lid.request.json"
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    let mut model = request["model"].clone();
+    let length = |v: f64| json!({"value": v, "dimension": "length", "unit": "millimeter"});
+    let scalar = |v: f64| json!({"value": v, "dimension": "scalar", "unit": null});
+    let at = |x: f64| json!({"point": {"origin": {"literal": {"x": length(x), "y": length(10.0), "z": length(28.0)}}}});
+    model["family"]["datums"] =
+        json!([{"id": "a", "kind": at(10.0)}, {"id": "b", "kind": at(12.1)}]);
+    model["drawings"] = json!([{"id": "page", "title": "Joint", "paper_size_mm": [297.0, 210.0],
+        "views": [{"id": "top", "outputs": [{"instance": "lid", "output": "assembly"}],
+            "origin": {"x": length(0.0), "y": length(0.0), "z": length(28.0)},
+            "direction": {"x": scalar(0.0), "y": scalar(0.0), "z": scalar(1.0)},
+            "x_axis": {"x": scalar(1.0), "y": scalar(0.0), "z": scalar(0.0)},
+            "paper_origin_mm": [30.0, 50.0], "scale": 1.0, "show_hidden": false, "kind": "orthographic"}],
+        "dimensions": [{"id": "tap", "view": "top", "first": {"instance": "lid", "datum": "a"},
+            "second": {"instance": "lid", "datum": "b"}, "direction": "diameter", "offset_mm": 10.0, "precision": 3,
+            "presentation": {"tolerance": {"limits": {"lower": length(4.15), "upper": length(4.3)}},
+                "hole": {"instance": "lid", "output": "base_drilled"}}}],
+        "notes": []}]);
+    let document = ModelDocument::from_json(&model.to_string()).unwrap();
+    let directory = Directory::new();
+    let setup = json!({"schema": "occb-inspection-setup-v1", "drawings": [{"drawing": "page",
+        "dimensions": [{"dimension": "tap", "value": mm(4.25)}, {"dimension": "tap", "value": mm(4.35)}]}]});
+    let args = inputs(&directory, &document, &setup);
+    // 4.35 mm is past the 4.30 mm limit around the measured 4.2 mm drill.
+    assert!(run(&args).unwrap());
+    let result: Value = serde_json::from_str(&fs::read_to_string(&args[2]).unwrap()).unwrap();
+    let dimensions = &result["drawings"][0]["dimensions"];
+    assert_eq!(
+        dimensions[0]["evaluation"]["nominal"],
+        json!(mm(4.2)),
+        "{dimensions}"
+    );
+    assert_eq!(
+        result["summary"]["dimensions_within_limits"], 1,
+        "{}",
+        result["summary"]
+    );
+    assert_eq!(result["summary"]["dimensions_outside_limits"], 1);
+}

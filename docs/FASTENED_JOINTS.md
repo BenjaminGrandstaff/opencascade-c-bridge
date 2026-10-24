@@ -106,6 +106,15 @@ instances are measured where they are. The library entry point is
 `occt_parametric::fasteners::plan_joint`. Section renders now cut each solid
 of a compound separately, so a screw in its tapped hole is drawn correctly.
 
+## Drawings and inspection
+
+A drawing's hole callout can name a `joint_holes` feature. It reads, for
+example, `4× Ø4.200 mm FULL DIA DEPTH 10.600 mm; DRILL POINT 118.000°;
+THREAD M5x0.8 (5.000 x 0.800 mm, RH)`, from the joint measured on the
+generated parts. Views with thread representation draw the tapped holes'
+threads. Inspection reports measure such callouts against the joint's hole
+diameter. See [drawings](DRAWINGS.md).
+
 ## In the studio
 
 The solid editor's **Fasten solids with screws** builds a joint by clicking
@@ -130,7 +139,6 @@ and parts. See [sketch studio](SKETCH_STUDIO.md#fastened-joints-and-catalog-part
 - Screws are straight lines through parts that touch. Spacers, gaps and
   slotted holes are not modeled.
 - Threads are not modeled, and neither is preload or joint strength.
-- Joint tapped holes get no thread callouts in drawings.
 - The joint and its holes are measured on the stack parts as they are
   generated, so drill the parts with `joint_holes`, not with separate hole
   features that would change the measured material.

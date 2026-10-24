@@ -36,6 +36,33 @@ fn moves(operation: &FeatureOperation) -> bool {
     )
 }
 
+/// The features `output` is built from, itself included, short of any
+/// feature that moves the geometry before it, in walk order. O(features).
+pub fn unmoved_ancestors<'a>(
+    definition: &'a FamilyDefinition,
+    output: &str,
+) -> Vec<&'a FeatureDefinition> {
+    let features: HashMap<&str, &FeatureDefinition> = definition
+        .features
+        .iter()
+        .map(|f| (f.id.as_str(), f))
+        .collect();
+    let mut found = Vec::new();
+    let mut pending = vec![output];
+    let mut seen = HashSet::new();
+    while let Some(id) = pending.pop() {
+        let Some(feature) = features.get(id) else {
+            continue;
+        };
+        if !seen.insert(id) || moves(&feature.operation) {
+            continue;
+        }
+        found.push(*feature);
+        pending.extend(feature.operation.dependencies());
+    }
+    found
+}
+
 /// Threads of `output` on `instance` in assembly coordinates: thread
 /// features and threaded holes among the output's ancestors, short of any
 /// feature that moves them. A hole's thread runs its modeled length, or its
@@ -48,26 +75,13 @@ pub fn placed_threads(
     let resolved = graph.resolve_with_placement(&output.instance)?;
     let definition = resolved.instance.definition;
     let parameters = resolve_parameters(definition, &resolved.instance.overrides)?;
-    let features: HashMap<&str, &FeatureDefinition> = definition
-        .features
-        .iter()
-        .map(|f| (f.id.as_str(), f))
-        .collect();
     let length = |e: &ScalarExpr| crate::expressions::scalar(e, &parameters, Dimension::Length);
     let vector = |e: &VectorExpr, dimension| -> Result<Vec3, ModelError> {
         let value = e.evaluate(&parameters)?.normalized(dimension)?;
         Ok(Vec3::new(value.x, value.y, value.z))
     };
     let mut local = Vec::new();
-    let mut pending = vec![output.output.as_str()];
-    let mut seen = HashSet::new();
-    while let Some(id) = pending.pop() {
-        let Some(feature) = features.get(id) else {
-            continue;
-        };
-        if !seen.insert(id) || moves(&feature.operation) {
-            continue;
-        }
+    for feature in unmoved_ancestors(definition, &output.output) {
         match &feature.operation {
             FeatureOperation::Thread {
                 origin,
@@ -110,7 +124,6 @@ pub fn placed_threads(
             }
             _ => {}
         }
-        pending.extend(feature.operation.dependencies());
     }
     let mut placed = Vec::with_capacity(local.len());
     for (start, axis, run, major, pitch, internal) in local {

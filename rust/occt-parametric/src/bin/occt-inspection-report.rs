@@ -260,9 +260,29 @@ fn evaluate(document: &ModelDocument, setup: &Setup) -> Result<Report, Box<dyn E
             }
             None => (Vec::new(), Vec::new(), Vec::new()),
         };
+        // Joint hole callouts take their nominals from the measured joints.
+        let dimensions = if request.dimensions.is_empty()
+            || joint_callout_references(&drawing.dimensions, &graph)?.is_empty()
+        {
+            drawing.evaluate_dimension_measurements(&graph, &request.dimensions)?
+        } else {
+            if session.is_none() {
+                session = Some(Session::new()?);
+            }
+            let session = session.as_ref().expect("session started");
+            let mut regenerated = document.instance_graph()?;
+            let generation = regenerated.regenerate_all(session)?;
+            let joints =
+                joint_hole_callouts(session, &regenerated, &generation, &drawing.dimensions)?;
+            drawing.evaluate_dimension_measurements_with(
+                &graph,
+                &request.dimensions,
+                Some(joints),
+            )?
+        };
         let report = DrawingReport {
             drawing: request.drawing.clone(),
-            dimensions: drawing.evaluate_dimension_measurements(&graph, &request.dimensions)?,
+            dimensions,
             positions: drawing.evaluate_position_measurements(&graph, &request.positions)?,
             controls,
             surface_textures,

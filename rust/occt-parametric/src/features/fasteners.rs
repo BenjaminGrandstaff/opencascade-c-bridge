@@ -454,3 +454,123 @@ impl PartInstanceFasteners for PartInstance<'_> {
             .collect()
     }
 }
+
+/// The placed plans of every joint on `instance`, by joint feature id, as
+/// the instance graph generated and placed them.
+fn instance_joints(
+    session: &Session,
+    graph: &InstanceGraph<'_>,
+    generation: &GraphRegeneration<'_>,
+    instance: &str,
+) -> Result<HashMap<String, PlacedJoint>, ModelError> {
+    let resolved = graph.resolve_with_placement(instance)?;
+    let result = generation
+        .result(instance)
+        .ok_or_else(|| ModelError::new(format!("instance '{instance}' was not generated")))?;
+    let placements: Vec<Placement> = std::iter::once(resolved.placement)
+        .chain(resolved.frames.iter().copied())
+        .collect();
+    Ok(resolved
+        .instance
+        .fastened_joints(session, result, &placements)?
+        .into_iter()
+        .collect())
+}
+
+/// Measured callouts for the hole callouts among `dimensions` that
+/// reference `joint_holes` features (schema 186). Each referenced instance's
+/// joints are measured once. O(referenced joints · positions · stack rays).
+pub fn joint_hole_callouts(
+    session: &Session,
+    graph: &InstanceGraph<'_>,
+    generation: &GraphRegeneration<'_>,
+    dimensions: &[DrawingDimension],
+) -> Result<occt_parametric_core::drawing::dimensions::JointCallouts, ModelError> {
+    let references =
+        occt_parametric_core::drawing::dimensions::joint_callout_references(dimensions, graph)?;
+    let mut measured: HashMap<String, HashMap<String, PlacedJoint>> = HashMap::new();
+    let mut callouts = HashMap::new();
+    for reference in references {
+        if !measured.contains_key(&reference.instance) {
+            let joints = instance_joints(session, graph, generation, &reference.instance)?;
+            measured.insert(reference.instance.clone(), joints);
+        }
+        let placed = measured[&reference.instance]
+            .get(&reference.joint)
+            .ok_or_else(|| {
+                ModelError::new(format!(
+                    "'{}' is not a fastened joint of instance '{}'",
+                    reference.joint, reference.instance
+                ))
+            })?;
+        let part = placed
+            .stack
+            .iter()
+            .position(|id| *id == reference.input)
+            .ok_or_else(|| {
+                ModelError::new(format!(
+                    "'{}' is not in the stack of joint '{}'",
+                    reference.input, reference.joint
+                ))
+            })?;
+        let callout = placed
+            .plan
+            .hole_callout(part, &reference.input)
+            .map_err(|error| error.in_feature(&reference.feature))?;
+        callouts.insert((reference.instance, reference.feature), callout);
+    }
+    Ok(callouts)
+}
+
+/// The tapped threads of the joint holes `output` is built from, unmoved
+/// since, in assembly coordinates: one per screw, from the tapped part's
+/// face through the tapped depth. O(features + joints · positions).
+pub(crate) fn joint_threads(
+    session: &Session,
+    graph: &InstanceGraph<'_>,
+    generation: &GraphRegeneration<'_>,
+    output: &InstanceOutputRef,
+) -> Result<Vec<occt_parametric_core::drawing::thread_lines::PlacedThread>, ModelError> {
+    use occt_parametric_core::drawing::thread_lines::{PlacedThread, unmoved_ancestors};
+    let resolved = graph.resolve_with_placement(&output.instance)?;
+    let tapped: Vec<(&str, &str)> = unmoved_ancestors(resolved.instance.definition, &output.output)
+        .into_iter()
+        .filter_map(|feature| match &feature.operation {
+            FeatureOperation::JointHoles { joint, input } => Some((joint.as_str(), input.as_str())),
+            _ => None,
+        })
+        .collect();
+    if tapped.is_empty() {
+        return Ok(Vec::new());
+    }
+    let joints = instance_joints(session, graph, generation, &output.instance)?;
+    let mut threads = Vec::new();
+    for (joint, input) in tapped {
+        let Some(placed) = joints.get(joint) else {
+            continue;
+        };
+        let Some(part) = placed.stack.iter().position(|id| id == input) else {
+            continue;
+        };
+        let d = placed.plan.nominal_diameter;
+        for (position, screw) in placed.positions.iter().zip(&placed.plan.screws) {
+            if let Some(JointHole {
+                kind: JointHoleKind::Tapped { depth, pitch, .. },
+                entry,
+                ..
+            }) = screw.holes.get(part)
+            {
+                threads.push(PlacedThread {
+                    start: add(*position, scale(placed.axis, *entry)),
+                    axis: placed.axis,
+                    length: Some(*depth),
+                    major: d,
+                    // ISO 68-1 basic minor diameter, D − 2 · 5H/8.
+                    minor: d - 1.082_532 * pitch,
+                    internal: true,
+                });
+            }
+        }
+    }
+    Ok(threads)
+}

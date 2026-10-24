@@ -273,7 +273,9 @@ impl DrawingDefinitionRenderingInternal for DrawingDefinition {
         releases::append_changes(self, &views, graph, &mut drawing)?;
         guides::append(&self.guides, &views, graph, &mut drawing)?;
         drawing.polylines.extend(thread_lines);
-        let context = dimensions::DimensionContext::new(&self.dimensions, graph)?;
+        let context = dimensions::DimensionContext::new(&self.dimensions, graph)?.with_joints(
+            crate::features::joint_hole_callouts(session, graph, generation, &self.dimensions)?,
+        );
         for dimension in &self.dimensions {
             append_dimension(
                 dimension,

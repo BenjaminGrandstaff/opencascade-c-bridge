@@ -17,7 +17,7 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 8/8, bridge 217 + first-use integration 1 (+1 doc test), recipes 3, parametric core 85 + kernel 825 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 110 + viewer Node 486 + branch command 2 + model command 118, MCP Python 32, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 8/8, bridge 217 + first-use integration 1 (+1 doc test), recipes 3, parametric core 86 + kernel 827 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 10 + view command 110 + viewer Node 486 + branch command 2 + model command 118, MCP Python 32, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
 | clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 3 clang-tidy warnings (2 complexity warnings and one public ABI padding warning) plus 82 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all five crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
@@ -25,6 +25,18 @@ tracks status and order.
 | Scale benchmarks | Current run: all 140 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
 
 ## Done
+
+- Joint hole callouts (schema 186 and ABI 86 unchanged): a hole callout can
+  name a `joint_holes` feature.
+  - **Labels:** the kernel measures the joint and the core labels the
+    callout with the count, clearance and counterbore, or the tap drill,
+    depth, 118° point and metric thread. Holes that differ in one part are
+    refused.
+  - **Thread lines:** tapped joint holes get thread representation lines.
+  - **Inspection:** reports take the callout's nominal from the measured
+    joint. Kernel-free validation checks the reference only.
+  - **Checks:** verified in an exported drawing with a section through the
+    screws.
 
 - Curve-point evaluation refactor (schema 186 and ABI 86 unchanged): edge/wire
   selection and orientation-aware parameter mapping are separate stages.
