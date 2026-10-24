@@ -915,3 +915,95 @@ fn open_offsets_follow_traversal_normal_and_join_style() {
     }
     assert_eq!(s.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn analytic_extension_keeps_arc_lengths_and_rejects_periodic_overlap() {
+    let s = Session::new().unwrap();
+    {
+        for minor in [3., 5.] {
+            let ellipse = s
+                .create_ellipse_wire_axes(
+                    Vec3::new(500., -200., 70.),
+                    Vec3::new(0., -1., 0.),
+                    Vec3::new(1., 0., 0.),
+                    5.,
+                    minor,
+                )
+                .unwrap();
+            for reverse in [false, true] {
+                let loop_wire = s.align_profile_wire(&ellipse, None, reverse).unwrap();
+                let source = s.trim_curve(&loop_wire, 0.2, 0.45).unwrap();
+                let before = s.curve_end_data(&source).unwrap();
+                let edge = s.subshape(&source, ShapeType::Edge, 0).unwrap();
+                let length = s.edge_length(&edge).unwrap();
+                for (start, end) in [(0.5, 1.), (0., 1.), (0.5, 0.)] {
+                    let extended = s.extend_curve(&source, start, end).unwrap();
+                    let edge = s.subshape(&extended, ShapeType::Edge, 0).unwrap();
+                    assert!((s.edge_length(&edge).unwrap() - length - start - end).abs() < 1e-6);
+                    assert!(s.is_valid(&extended).unwrap());
+                }
+                let count = s.shape_count().unwrap();
+                let error = s.extend_curve(&source, 100., 0.).unwrap_err();
+                assert_eq!(error.message, "extension overlaps a full periodic curve");
+                assert_eq!(s.shape_count().unwrap(), count);
+                assert_eq!(s.curve_end_data(&source).unwrap(), before);
+            }
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn spline_extension_reaches_oriented_tangent_targets_without_changing_its_source() {
+    let s = Session::new().unwrap();
+    let p = |x, y| Vec3::new(x, y, 0.);
+    let shifted = |point: Vec3, tangent: Vec3, distance: f64| {
+        let norm = (tangent.x * tangent.x + tangent.y * tangent.y + tangent.z * tangent.z).sqrt();
+        Vec3::new(
+            point.x + distance * tangent.x / norm,
+            point.y + distance * tangent.y / norm,
+            point.z + distance * tangent.z / norm,
+        )
+    };
+    {
+        let lens = s
+            .create_curve_wire(
+                &[
+                    CurveSegment::Spline {
+                        points: vec![p(0., 0.), p(5., 2.), p(10., 0.)],
+                        start_tangent: None,
+                        end_tangent: None,
+                        periodic: false,
+                    },
+                    CurveSegment::Line {
+                        start: p(10., 0.),
+                        end: p(0., 0.),
+                    },
+                ],
+                true,
+            )
+            .unwrap();
+        for reverse in [false, true] {
+            let wire = s.align_profile_wire(&lens, None, reverse).unwrap();
+            let edge = s
+                .subshape(&wire, ShapeType::Edge, usize::from(reverse))
+                .unwrap();
+            let before = s.curve_end_data(&edge).unwrap();
+            for (start, end) in [(0.5, 1.5), (0., 1.5), (0.5, 0.)] {
+                let extended = s.extend_curve(&edge, start, end).unwrap();
+                let (a, b, _, _) = s.curve_end_data(&extended).unwrap();
+                for (actual, expected) in [
+                    (a, shifted(before.0, before.2, -start)),
+                    (b, shifted(before.1, before.3, end)),
+                ] {
+                    assert!((actual.x - expected.x).abs() < 1e-7);
+                    assert!((actual.y - expected.y).abs() < 1e-7);
+                    assert!((actual.z - expected.z).abs() < 1e-7);
+                }
+                assert!(s.is_valid(&extended).unwrap());
+                assert_eq!(s.curve_end_data(&edge).unwrap(), before);
+            }
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}

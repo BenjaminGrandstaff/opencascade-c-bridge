@@ -17,14 +17,36 @@ tracks status and order.
 
 | Quality gate | Result | Command |
 |---|---|---|
-| Tests | C 8/8, bridge 203 + first-use integration 1 (+1 doc test), recipes 3, parametric core 79 + kernel 821 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 105 + viewer Node 479 + branch command 2 + model command 116, MCP Python 31, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
+| Tests | C 8/8, bridge 205 + first-use integration 1 (+1 doc test), recipes 3, parametric core 79 + kernel 821 + merge driver 3 + motion command 16 + balance command 4 + drawing command 4 + inspection command 9 + view command 105 + viewer Node 479 + branch command 2 + model command 116, MCP Python 31, mesh Python 4, wing model 6 + CAD 1 | `ctest`, `cargo test` (see README) |
 | SonarQube (indexed Rust) | Gate OK, 0 issues, 93.9% line coverage (2026-10-04); Rust unit tests classified as tests | `tools/sonar/run.sh` |
-| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 14 clang-tidy warnings (13 complexity warnings and one public ABI padding warning) plus 82 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
+| clang-tidy, cppcheck, clang `-Werror` | Clang C++17 `-Werror` build passes. Full static analysis still fails with 12 clang-tidy warnings (11 complexity warnings and one public ABI padding warning) plus 82 cppcheck initialization/style/performance findings. Cppcheck now parses the OCCT handle macros; no parse errors remain. No analyzer checks or thresholds were disabled. | `tools/cpp-lint/run.sh` |
 | Rust formatting and Clippy | Clean across all five crates, including all targets | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` |
-| Coverage | 2026-10-23: 92.66% lines overall; C++ 94.41% lines, 82.80% branches, 99.89% functions; Rust 92.25% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
+| Coverage | 2026-10-23: 92.65% lines overall; C++ 94.40% lines, 82.97% branches, 99.89% functions; Rust 92.25% lines. Test source files are excluded; inline test modules in production files remain in these totals. Instrumented Rust tests pass serially with unchanged timing limits. | `tools/coverage/run.sh` |
 | Scale benchmarks | Current run: all 139 main Rust cases and the standalone document, sketch, solid, assembly and drawing suites pass; all model-command and MCP scale checks pass. Feature history: 100 walks through 10,000 reverse-ordered features in 0.126 s / 5 s. The runner now honors `CARGO_TARGET_DIR` for command checks. | `tools/bench/run.sh` |
 
 ## Done
+
+- Curve-extension refactor (schema 185 and ABI 86 unchanged): exact analytic
+  arc-length extension and tangent-based bounded-curve extension are separate
+  stages. Extension orchestration complexity falls from 47 to 11; the extracted
+  helpers are 8 and 4 against the unchanged limit of 25. Distance validation,
+  traversal-based start/end swapping, native curve copying, abscissa tolerances,
+  periodic overlap rejection, tangent checks and bounded-curve parameter updates
+  retain their behavior. A differential run covers 648 cases (228 successful
+  extensions) across lines, circles, ellipses, interpolated/rational/non-clamped/
+  periodic splines, zero-tangent curves, closed curves, multi-edge shapes and
+  faces, including reversed traversal, located geometry, rotated/scaled frames,
+  one-sided/asymmetric extensions, invalid distances and periodic overlap.
+  Exact BREP geometry, edge orientation, statuses, messages, output reset and
+  handle cleanup match the previous library; every source BREP remains unchanged.
+  Two Rust regressions check analytic arc lengths/overlap rejection and oriented
+  spline tangent targets without changing their sources. All 18 sketch-editing
+  tests also pass against the previous library. All 142 public C exports remain
+  unchanged. All eight native tests and the full instrumented C++/Rust suite
+  pass with unchanged timing limits; Rust formatting, bridge Clippy and the
+  Clang `-Werror` build pass. Full analysis adds no findings and removes two
+  complexity warnings; remaining totals are 12 clang-tidy warnings and
+  82 cppcheck findings.
 
 - Selected-face offset refactor (schema 185 and ABI 86 unchanged): ownership/
   duplicate selection checks, native offset execution, shell-to-solid closure

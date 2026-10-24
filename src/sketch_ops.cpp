@@ -514,6 +514,67 @@ namespace {
         return store_shape(s, result, out);
     }
 
+    occt_bridge_status_t extend_analytic_curve(occt_bridge_session_t* s,
+        const Handle(Geom_Curve)& curve, const GeomAdaptor_Curve& adaptor,
+        double start, double end, double& first, double& last) {
+        if(start>0) {
+            GCPnts_AbscissaPoint a(Precision::Confusion(),adaptor,-start,first);
+            if(!a.IsDone())return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"start extension failed");
+            first=a.Parameter();
+        }
+        if(end>0) {
+            GCPnts_AbscissaPoint a(Precision::Confusion(),adaptor,end,last);
+            if(!a.IsDone())return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"end extension failed");
+            last=a.Parameter();
+        }
+        if(curve->IsPeriodic()&&last-first>curve->Period()+Precision::PConfusion())return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"extension overlaps a full periodic curve");
+        return OCCT_BRIDGE_OK;
+    }
+
+    occt_bridge_status_t extend_bounded_curve(occt_bridge_session_t* s,
+        Handle(Geom_Curve)& curve, double start, double end, double& first, double& last) {
+        gp_Pnt a,b;
+        gp_Vec da,db;
+        curve->D1(first,a,da);
+        curve->D1(last,b,db);
+        if(da.Magnitude()<=Precision::Confusion()||db.Magnitude()<=Precision::Confusion())return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"extension tangent is degenerate");
+        const gp_Pnt target_a=a.Translated(-da.Normalized()*start),target_b=b.Translated(db.Normalized()*end);
+        Handle(Geom_BoundedCurve) bounded=GeomConvert::CurveToBSplineCurve(new Geom_TrimmedCurve(curve,first,last));
+        if(start>0)GeomLib::ExtendCurveToPoint(bounded,target_a,1,Standard_False);
+        if(end>0)GeomLib::ExtendCurveToPoint(bounded,target_b,1,Standard_True);
+        curve=bounded;
+        first=curve->FirstParameter();
+        last=curve->LastParameter();
+        return OCCT_BRIDGE_OK;
+    }
+
+    occt_bridge_status_t extend_curve(occt_bridge_session_t* s, occt_bridge_shape_id_t id,
+        double start, double end, occt_bridge_shape_id_t* out) {
+        if(out==nullptr) {
+            return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"out_shape is null");
+        }
+        *out=OCCT_BRIDGE_INVALID_SHAPE_ID;
+        if(!std::isfinite(start)||!std::isfinite(end)||start<0||end<0||start+end<=0)return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"invalid extension distances");
+        const auto* shape=find_shape(s,id);
+        if(!shape)return fail(s,OCCT_BRIDGE_SHAPE_NOT_FOUND,"extension curve was not found");
+        auto edge=single_edge(*shape);
+        if(edge.IsNull())return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"curve editing requires exactly one edge");
+        double first,last;
+        auto original=BRep_Tool::Curve(edge,first,last);
+        if(original.IsNull())return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"curve has no geometry");
+        if(BRep_Tool::IsClosed(*shape))return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"trim a closed curve before extending it");
+        const bool reversed=edge.Orientation()==TopAbs_REVERSED;
+        if(reversed)std::swap(start,end);
+        Handle(Geom_Curve) curve=Handle(Geom_Curve)::DownCast(original->Copy());
+        GeomAdaptor_Curve adaptor(curve);
+        const bool analytic = adaptor.GetType()==GeomAbs_Line || adaptor.GetType()==GeomAbs_Circle || adaptor.GetType()==GeomAbs_Ellipse;
+        const auto status = analytic ? extend_analytic_curve(s,curve,adaptor,start,end,first,last)
+                                     : extend_bounded_curve(s,curve,start,end,first,last);
+        if(status!=OCCT_BRIDGE_OK)return status;
+        return store_curve(s,curve,first,last,reversed,out);
+    }
+
+
 }
 extern "C" {
     occt_bridge_status_t occt_bridge_fillet_wire_corner(occt_bridge_session_t* s, occt_bridge_shape_id_t id, occt_bridge_vec3_t point, double radius, occt_bridge_shape_id_t* out) {
@@ -596,52 +657,7 @@ extern "C" {
         });
     }
     occt_bridge_status_t occt_bridge_extend_curve(occt_bridge_session_t* s, occt_bridge_shape_id_t id, double start, double end, occt_bridge_shape_id_t* out) {
-        return guarded(s,[&] {
-            if(out==nullptr) {
-                return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"out_shape is null");
-            }
-            *out=OCCT_BRIDGE_INVALID_SHAPE_ID;
-            if(!std::isfinite(start)||!std::isfinite(end)||start<0||end<0||start+end<=0)return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"invalid extension distances");
-            const auto* shape=find_shape(s,id);
-            if(!shape)return fail(s,OCCT_BRIDGE_SHAPE_NOT_FOUND,"extension curve was not found");
-            auto edge=single_edge(*shape);
-            if(edge.IsNull())return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"curve editing requires exactly one edge");
-            double first,last;
-            auto original=BRep_Tool::Curve(edge,first,last);
-            if(original.IsNull())return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"curve has no geometry");
-            if(BRep_Tool::IsClosed(*shape))return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"trim a closed curve before extending it");
-            const bool reversed=edge.Orientation()==TopAbs_REVERSED;
-            if(reversed)std::swap(start,end);
-            Handle(Geom_Curve) curve=Handle(Geom_Curve)::DownCast(original->Copy());
-            GeomAdaptor_Curve adaptor(curve);
-            if(adaptor.GetType()==GeomAbs_Line||adaptor.GetType()==GeomAbs_Circle||adaptor.GetType()==GeomAbs_Ellipse) {
-                if(start>0) {
-                    GCPnts_AbscissaPoint a(Precision::Confusion(),adaptor,-start,first);
-                    if(!a.IsDone())return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"start extension failed");
-                    first=a.Parameter();
-                }
-                if(end>0) {
-                    GCPnts_AbscissaPoint a(Precision::Confusion(),adaptor,end,last);
-                    if(!a.IsDone())return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"end extension failed");
-                    last=a.Parameter();
-                }
-                if(curve->IsPeriodic()&&last-first>curve->Period()+Precision::PConfusion())return fail(s,OCCT_BRIDGE_INVALID_ARGUMENT,"extension overlaps a full periodic curve");
-            } else {
-                gp_Pnt a,b;
-                gp_Vec da,db;
-                curve->D1(first,a,da);
-                curve->D1(last,b,db);
-                if(da.Magnitude()<=Precision::Confusion()||db.Magnitude()<=Precision::Confusion())return fail(s,OCCT_BRIDGE_INVALID_GEOMETRY,"extension tangent is degenerate");
-                const gp_Pnt target_a=a.Translated(-da.Normalized()*start),target_b=b.Translated(db.Normalized()*end);
-                Handle(Geom_BoundedCurve) bounded=GeomConvert::CurveToBSplineCurve(new Geom_TrimmedCurve(curve,first,last));
-                if(start>0)GeomLib::ExtendCurveToPoint(bounded,target_a,1,Standard_False);
-                if(end>0)GeomLib::ExtendCurveToPoint(bounded,target_b,1,Standard_True);
-                curve=bounded;
-                first=curve->FirstParameter();
-                last=curve->LastParameter();
-            }
-            return store_curve(s,curve,first,last,reversed,out);
-        });
+        return guarded(s,[&] { return extend_curve(s,id,start,end,out); });
     }
     occt_bridge_status_t occt_bridge_join_wires(occt_bridge_session_t* s,const occt_bridge_shape_id_t* ids,size_t count,int closed,occt_bridge_shape_id_t* out) {
         return guarded(s,[&] {
