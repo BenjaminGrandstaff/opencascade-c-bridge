@@ -12,6 +12,7 @@ import { installDrawing } from './sketch-studio-draw.mjs';
 import { installConstraints } from './sketch-studio-constrain.mjs';
 import { layoutLabels, sketchLabels } from './sketch-studio-labels.mjs';
 import { installExtras } from './sketch-studio-extras.mjs';
+import { installTemplates } from './sketch-studio-templates.mjs';
 import { installPlanes } from './sketch-studio-plane-panel.mjs';
 import {installFeatureHistory} from './sketch-studio-feature-history.mjs';
 import {installStudioSolids} from './sketch-studio-solids.mjs';
@@ -784,6 +785,7 @@ export function startStudio(document) {
   installPatterns(studio, document);
   installInstances(studio, document);
   installExtras(studio, document);
+  installTemplates(studio, document);
   installPlanes(studio, document);
   installPointPicking(studio, document);
   installStudioLinks(studio, document);

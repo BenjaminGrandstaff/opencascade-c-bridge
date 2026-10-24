@@ -7980,3 +7980,181 @@ fn studio_exports_the_shown_part_as_dxf() {
         );
     }
 }
+
+#[test]
+fn studio_adds_a_fastened_joint_and_reports_its_screw() {
+    // The fastened-lid example's lid and base, before any joint.
+    let request: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tools/model/fastened-lid.request.json"
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    let mut document: ModelDocument = serde_json::from_value(request["model"].clone()).unwrap();
+    document.family.features.truncate(2);
+    document.family.requirements.clear();
+    let directory = Directory::new();
+    let model = PathBuf::from(directory.model(&document));
+    let mut studio = serve::Studio::load(&model, Some("lid".into())).unwrap();
+    for module in [
+        "/solid-joints.mjs",
+        "/solid-parts.mjs",
+        "/sketch-studio-templates.mjs",
+    ] {
+        assert_eq!(studio.handle("GET", module, b"").status, 200, "{module}");
+    }
+    let (_, features) = get(&mut studio, "/api/features");
+    // The panel's catalog: screw sizes and their standard lengths.
+    assert_eq!(
+        features["hardware"]["parts"][0]["part"],
+        "socket_head_cap_screw_iso_4762"
+    );
+    assert_eq!(features["hardware"]["screw_lengths"]["5"][0], 8.0);
+    let length =
+        |v: f64| json!({"literal": {"value": v, "dimension": "length", "unit": "millimeter"}});
+    let at =
+        |x: f64, y: f64| json!({"components": {"x": length(x), "y": length(y), "z": length(0.0)}});
+    let edit = |tapped_depth: Option<f64>, apply: bool| {
+        let mut joint = json!({"stack": ["lid", "base"], "positions": [at(10.0, 10.0), at(70.0, 50.0)],
+            "axis": {"literal": {"x": {"value": 0, "dimension": "scalar", "unit": null},
+                "y": {"value": 0, "dimension": "scalar", "unit": null},
+                "z": {"value": -1, "dimension": "scalar", "unit": null}}},
+            "nominal_diameter": length(5.0), "fastening": "tapped", "head": "counterbored", "washers": true});
+        if let Some(engagement) = tapped_depth {
+            joint["engagement"] = length(engagement);
+        }
+        json!({"version": features["version"], "instance": "lid", "expected": features["features"], "action": "add",
+            "features": [
+                {"id": "fixing-hardware", "operation": {"fastened_joint": joint}},
+                {"id": "fixing-lid", "operation": {"joint_holes": {"joint": "fixing-hardware", "input": "lid"}}},
+                {"id": "fixing-base", "operation": {"joint_holes": {"joint": "fixing-hardware", "input": "base"}}},
+                {"id": "fixing", "operation": {"compound": {"inputs": ["fixing-lid", "fixing-base", "fixing-hardware"]}}}],
+            "output": "fixing", "apply": apply})
+    };
+    let post = |studio: &mut serve::Studio, edit: &serde_json::Value| {
+        let response = studio.handle("POST", "/api/features", edit.to_string().as_bytes());
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap_or_default();
+        (response.status, body)
+    };
+    let (status, preview) = post(&mut studio, &edit(None, false));
+    assert_eq!(status, 200, "{preview}");
+    assert_eq!(preview["can_apply"], true, "{preview}");
+    let joint = &preview["fastened_joints"][0];
+    assert_eq!(joint["feature"], "fixing-hardware");
+    assert_eq!(joint["screw"]["length_mm"], 12.0);
+    assert_eq!(joint["hardware"][0]["designation"], "ISO 4762 M5 × 12");
+    assert_eq!(joint["hardware"][0]["quantity"], 2);
+    // Engagements the joint cannot give are refused with the reason: 30 mm
+    // asks for a 35 mm screw, whose 22 mm thread starts in the lid, and
+    // 15 mm for a 20 mm screw whose tapped hole would break out of the base.
+    for (engagement, reason) in [
+        (30.0, "ask for less thread engagement"),
+        (15.0, "tapped hole in 'base'"),
+    ] {
+        let (_, refused) = post(&mut studio, &edit(Some(engagement), false));
+        assert_eq!(refused["can_apply"], false);
+        assert!(
+            refused["error"].as_str().unwrap().contains(reason),
+            "{refused}"
+        );
+    }
+    let (status, applied) = post(&mut studio, &edit(None, true));
+    assert_eq!(status, 200, "{applied}");
+    assert_eq!(get(&mut studio, "/api/features").1["output"], "fixing");
+}
+
+#[test]
+fn studio_starts_a_design_from_a_template_as_an_undoable_edit() {
+    let directory = Directory::new();
+    let model = PathBuf::from(directory.model(&sketch_block_document()));
+    let original = fs::read_to_string(&model).unwrap();
+    let mut studio = serve::Studio::load(&model, Some("body".into())).unwrap();
+    let (status, listed) = get(&mut studio, "/api/templates");
+    assert_eq!(status, 200);
+    let ids: Vec<&str> = listed["templates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ids,
+        [
+            "l-bracket",
+            "printed-enclosure",
+            "shaft",
+            "sheet-metal-channel"
+        ]
+    );
+    assert!(listed["templates"][2]["inputs"][0]["default"].is_number());
+    let version = get(&mut studio, "/api/state").1["version"].clone();
+    let post = |studio: &mut serve::Studio, body: serde_json::Value| {
+        let response = studio.handle("POST", "/api/template", body.to_string().as_bytes());
+        (
+            response.status,
+            serde_json::from_slice::<serde_json::Value>(&response.body).unwrap_or_default(),
+        )
+    };
+    // Preview: the shaft builds and passes its checks; 50 kN does not.
+    let (status, preview) = post(
+        &mut studio,
+        json!({"version": version, "template": "shaft", "inputs": {"diameter": 25}, "apply": false}),
+    );
+    assert_eq!(status, 200, "{preview}");
+    assert_eq!(preview["can_apply"], true, "{preview}");
+    assert_eq!(preview["output"], "body");
+    assert_eq!(preview["gltf"]["asset"]["version"], "2.0");
+    // A 30 mm stainless shaft weighs 1.13 kg, over the 1 kg limit.
+    for (inputs, reason) in [
+        (json!({"load_n": 50000}), "required verification failed"),
+        (json!({"diameter": 30}), "mass"),
+    ] {
+        let (_, refused) = post(
+            &mut studio,
+            json!({"version": version, "template": "shaft", "inputs": inputs, "apply": false}),
+        );
+        assert_eq!(refused["can_apply"], false, "{refused}");
+        assert!(
+            refused["error"].as_str().unwrap().contains(reason),
+            "{refused}"
+        );
+    }
+    let (status, bad) = post(
+        &mut studio,
+        json!({"version": version, "template": "shaft", "inputs": {"diameter": 1}, "apply": false}),
+    );
+    assert_eq!(status, 422);
+    assert!(
+        bad["error"]
+            .as_str()
+            .unwrap()
+            .contains("diameter must be in 2..200"),
+        "{bad}"
+    );
+    // Starting replaces the document in memory only; undo brings it back.
+    let (status, applied) = post(
+        &mut studio,
+        json!({"version": version, "template": "shaft", "inputs": {"diameter": 25}, "apply": true}),
+    );
+    assert_eq!(status, 200, "{applied}");
+    let (_, features) = get(&mut studio, "/api/features");
+    assert_eq!(features["output"], "body");
+    assert_eq!(features["family"], "shaft");
+    assert_eq!(fs::read_to_string(&model).unwrap(), original);
+    let now = get(&mut studio, "/api/state").1["version"].clone();
+    let undo = studio.handle(
+        "POST",
+        "/api/undo",
+        json!({"version": now}).to_string().as_bytes(),
+    );
+    assert_eq!(undo.status, 200, "{}", String::from_utf8_lossy(&undo.body));
+    assert_ne!(get(&mut studio, "/api/features").1["family"], "shaft");
+    // A stale version is refused.
+    let (status, _) = post(
+        &mut studio,
+        json!({"version": 0, "template": "shaft", "apply": false}),
+    );
+    assert_eq!(status, 422);
+}

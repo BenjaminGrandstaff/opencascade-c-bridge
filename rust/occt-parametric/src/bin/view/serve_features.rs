@@ -13,7 +13,7 @@ impl Studio {
             "history":self.document.family.history,"feature_states":self.document.family.history_states().ok().map(|states|states.into_iter().map(|(id,state)|{let mut value=serde_json::to_value(state).unwrap();value["feature"]=json!(id);value}).collect::<Vec<_>>()),
             "features":self.document.family.features,"parameters":self.document.family.parameters,"dependencies":dependencies,
             "output":self.output.as_deref().or_else(||self.document.family.history_output().ok().flatten()),
-            "thread_sizes":thread_sizes()})
+            "thread_sizes":thread_sizes(),"hardware":hardware_catalog()})
     }
     pub(super) fn feature_edit(&mut self, body: &[u8]) -> Result<Value, String> {
         #[derive(serde::Deserialize)]
@@ -44,8 +44,18 @@ impl Studio {
         if !primary_instances(&self.document)?.contains(&edit.instance) {
             return Err("Unknown editable instance.".into());
         }
-        if edit.features.is_empty() || edit.features.len() > 3 {
-            return Err("A solid edit must contain one to three features.".into());
+        // A joint brings one hole feature per stacked part and the assembly.
+        let joint = edit
+            .features
+            .iter()
+            .any(|f| matches!(f.operation, FeatureOperation::FastenedJoint { .. }));
+        let most = if joint {
+            occt_parametric::fasteners::MAX_JOINT_STACK + 2
+        } else {
+            3
+        };
+        if edit.features.is_empty() || edit.features.len() > most {
+            return Err(format!("A solid edit must contain one to {most} features."));
         }
         if matches!(edit.action, Action::Add)
             && edit.features.last().is_none_or(|f| f.id != edit.output)
@@ -80,10 +90,14 @@ impl Studio {
                 | FeatureOperation::FillPattern { .. }
                 | FeatureOperation::TablePattern { .. }
                 | FeatureOperation::SheetMetal { .. }
-                | FeatureOperation::SheetMetalFlat { .. } => (),
+                | FeatureOperation::SheetMetalFlat { .. }
+                | FeatureOperation::FastenedJoint { .. }
+                | FeatureOperation::JointHoles { .. }
+                | FeatureOperation::StandardPart { .. }
+                | FeatureOperation::Compound { .. } => (),
                 _ => {
                     return Err(
-                        "Solid controls support extrusions, revolutions, sweeps, profile lofts, fillets, chamfers, holes, shells, drafts, face edits, mirrors, patterns, sheet metal, unions and cuts."
+                        "Solid controls support extrusions, revolutions, sweeps, profile lofts, fillets, chamfers, holes, shells, drafts, face edits, mirrors, patterns, sheet metal, fastened joints, catalog parts, groups, unions and cuts."
                             .into(),
                     );
                 }
@@ -208,19 +222,19 @@ impl Studio {
             })
             .ok()
         };
-        let generated = build_solid(&document, &edit.output, &edit.features);
+        let generated = build_solid(&document, &edit.output, &edit.features, &edit.instance);
         if edit.apply {
-            let (gltf, requirements, geometry) = generated?;
+            let (gltf, requirements, geometry, _) = generated?;
             self.accept(document, gltf, requirements, Some(edit.output.clone()))?;
             Ok(
                 json!({"applied":true,"output":edit.output,"geometry":geometry,"state":self.state()}),
             )
         } else {
             match generated {
-                Ok((gltf, _, geometry)) => {
+                Ok((gltf, _, geometry, joints)) => {
                     let gltf: Value = serde_json::from_str(&gltf).map_err(|e| e.to_string())?;
                     Ok(
-                        json!({"applied":false,"can_apply":true,"version":self.version,"instance":edit.instance,"output":edit.output,"geometry":geometry,"annotations":annotations,"gltf":gltf}),
+                        json!({"applied":false,"can_apply":true,"version":self.version,"instance":edit.instance,"output":edit.output,"geometry":geometry,"fastened_joints":joints,"annotations":annotations,"gltf":gltf}),
                     )
                 }
                 Err(error) => Ok(
@@ -234,7 +248,8 @@ fn build_solid(
     document: &ModelDocument,
     output: &str,
     changed: &[FeatureDefinition],
-) -> Result<(String, Value, Value), String> {
+    instance: &str,
+) -> Result<(String, Value, Value, Value), String> {
     let primary = primary_instances(document)?;
     let mut graph = document.instance_graph().map_err(|e| e.to_string())?;
     let session = Session::new().map_err(|e| e.to_string())?;
@@ -312,11 +327,97 @@ fn build_solid(
     let gltf = graph
         .export_gltf_generated(&session, &generation, output, MeshSettings::default())
         .map_err(|e| e.to_string())?;
+    let joints = joint_reports(&session, &graph, &generation, instance, output)?;
     Ok((
         gltf,
         requirement_report(document, &generation),
         Value::Object(geometry),
+        joints,
     ))
+}
+
+/// The fastened joints `output` is built from on `instance`, as build
+/// reports list them, so a preview shows the screw chosen and the parts.
+fn joint_reports(
+    session: &Session,
+    graph: &occt_parametric::InstanceGraph<'_>,
+    generation: &occt_parametric::GraphRegeneration<'_>,
+    instance: &str,
+    output: &str,
+) -> Result<Value, String> {
+    use occt_parametric::PartInstanceFasteners;
+    let resolved = graph
+        .resolve_with_placement(instance)
+        .map_err(|e| e.to_string())?;
+    let family = resolved.instance.definition;
+    let upstream: HashSet<String> = family
+        .feature_inputs()
+        .map(|inputs| {
+            let mut seen = HashSet::new();
+            let mut pending = vec![output.to_owned()];
+            while let Some(id) = pending.pop() {
+                if seen.insert(id.clone()) {
+                    pending.extend(
+                        inputs
+                            .get(id.as_str())
+                            .into_iter()
+                            .flatten()
+                            .map(|input| input.to_string()),
+                    );
+                }
+            }
+            seen
+        })
+        .map_err(|e| e.to_string())?;
+    if !family.features.iter().any(|f| {
+        upstream.contains(&f.id) && matches!(f.operation, FeatureOperation::FastenedJoint { .. })
+    }) {
+        return Ok(json!([]));
+    }
+    let result = generation
+        .result(instance)
+        .ok_or("Instance result is unavailable.")?;
+    let placements: Vec<_> = std::iter::once(resolved.placement)
+        .chain(resolved.frames.iter().copied())
+        .collect();
+    let joints = resolved
+        .instance
+        .fastened_joints(session, result, &placements)
+        .map_err(|e| e.message)?;
+    Ok(json!(
+        joints
+            .iter()
+            .filter(|(id, _)| upstream.contains(id))
+            .map(|(id, placed)| placed.plan.report(id, &placed.stack))
+            .collect::<Vec<_>>()
+    ))
+}
+
+/// The catalog the studio offers for joints and inserted parts: each
+/// standard part with its sizes, whether it takes a length, and the
+/// standard screw lengths per size. O(catalog).
+fn hardware_catalog() -> Value {
+    use occt_parametric::standard_parts::StandardPartKind;
+    let parts: Vec<Value> = [
+        StandardPartKind::SocketHeadCapScrewIso4762,
+        StandardPartKind::HexNutIso4032,
+        StandardPartKind::PlainWasherIso7089,
+        StandardPartKind::DowelPinIso8734,
+    ]
+    .into_iter()
+    .map(|part| json!({"part": part, "sizes": part.sizes(), "takes_length": part.takes_length()}))
+    .collect();
+    let lengths: serde_json::Map<String, Value> = StandardPartKind::SocketHeadCapScrewIso4762
+        .sizes()
+        .into_iter()
+        .map(|size| {
+            (
+                format!("{size}"),
+                json!(occt_parametric::fasteners::standard_screw_lengths(size)),
+            )
+        })
+        .collect();
+    json!({"parts": parts, "screw_lengths": lengths})
 }
 
 /// The tap sizes the studio offers for threaded holes: the frozen Carr Lane
