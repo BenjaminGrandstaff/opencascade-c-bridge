@@ -1686,3 +1686,104 @@ fn discovered_regions_reject_partial_selections_without_storing_results() {
     }
     assert_eq!(s.shape_count().unwrap(), 0);
 }
+
+#[test]
+fn mixed_elliptical_arc_wires_connect_at_native_endpoints_in_both_directions() {
+    let s = Session::new().unwrap();
+    let p = |x, y| Vec3::new(x, y, 0.);
+    {
+        for (a, b) in [(5., 3.), (3., 5.)] {
+            for clockwise in [false, true] {
+                let wire = s
+                    .create_curve_wire(
+                        &[
+                            CurveSegment::EllipseArc {
+                                center: p(0., 0.),
+                                major: p(a, 0.),
+                                minor: p(0., b),
+                                start: p(a, 0.),
+                                end: p(-a, 0.),
+                                clockwise,
+                            },
+                            CurveSegment::Line {
+                                start: p(-a, 0.),
+                                end: p(a, 0.),
+                            },
+                        ],
+                        true,
+                    )
+                    .unwrap();
+                assert!(s.wire_is_closed(&wire).unwrap());
+                assert_eq!(s.subshape_count(&wire, ShapeType::Edge).unwrap(), 2);
+                let first = s.subshape(&wire, ShapeType::Edge, 0).unwrap();
+                let (start, end, _, _) = s.curve_end_data(&first).unwrap();
+                assert!((start.x - a).abs() < 1e-10 && start.y.abs() < 1e-10);
+                assert!((end.x + a).abs() < 1e-10 && end.y.abs() < 1e-10);
+                let face = s.create_face_from_wire(&wire).unwrap();
+                let area = std::f64::consts::PI * a * b / 2.;
+                assert!((s.surface_area(&face).unwrap() - area).abs() < 1e-8);
+                let solid = s
+                    .create_prism_from_face(&face, Vec3::new(0., 0., 3.))
+                    .unwrap();
+                assert!((s.volume(&solid).unwrap() - area * 3.).abs() < 1e-7);
+            }
+        }
+    }
+    assert_eq!(s.shape_count().unwrap(), 0);
+}
+
+#[test]
+fn curve_wire_errors_follow_incremental_segment_order_without_storing_partial_wires() {
+    let s = Session::new().unwrap();
+    let p = |x| Vec3::new(x, 0., 0.);
+    let line = |a, b| CurveSegment::Line {
+        start: p(a),
+        end: p(b),
+    };
+    let periodic = CurveSegment::BSpline {
+        non_clamped: false,
+        periodic: true,
+        poles: vec![
+            Vec3::new(1., 0., 0.),
+            Vec3::new(0., 1., 0.),
+            Vec3::new(-1., 0., 0.),
+            Vec3::new(0., -1., 0.),
+        ],
+        degree: 3,
+        knots: vec![0., 1., 2., 3., 4.],
+        multiplicities: vec![1; 5],
+        weights: vec![],
+    };
+    for (segments, closed, expected) in [
+        (
+            vec![line(0., 1.), line(3., 4.), line(4., 4.)],
+            false,
+            "curve segments are disconnected",
+        ),
+        (
+            vec![line(0., 1.), line(3., 3.)],
+            false,
+            "consecutive curve segment points coincide",
+        ),
+        (
+            vec![line(0., 0.), periodic.clone()],
+            true,
+            "consecutive curve segment points coincide",
+        ),
+        (
+            vec![line(0., 1.), periodic],
+            true,
+            "periodic explicit B-spline requires a standalone closed wire",
+        ),
+        (
+            vec![line(0., 1.), line(1., 2.)],
+            true,
+            "curve wire is not closed",
+        ),
+    ] {
+        let before = s.shape_count().unwrap();
+        let error = s.create_curve_wire(&segments, closed).unwrap_err();
+        assert_eq!(error.message, expected);
+        assert_eq!(s.shape_count().unwrap(), before);
+    }
+}

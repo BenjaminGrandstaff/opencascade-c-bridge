@@ -321,6 +321,69 @@ const char* add_curve_segment(
     return add_wire_segment(wire, simple);
 }
 
+occt_bridge_status_t validate_curve_wire_segment(occt_bridge_session_t* session,
+    const occt_bridge_curve_segment_t& segment, const occt_bridge_vec3_t* points,
+    size_t point_count, size_t segment_count, int closed) {
+    if (const char* error = curve_segment_error(segment, points, point_count)) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, error);
+    }
+    if (segment.kind == 3 && (segment.flags & kPeriodic) != 0 && (segment_count != 1 || closed != 1)) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "periodic explicit B-spline requires a standalone closed wire");
+    }
+    return OCCT_BRIDGE_OK;
+}
+
+occt_bridge_status_t append_curve_wire_piece(occt_bridge_session_t* session,
+    BRepBuilderAPI_MakeWire& piece, BRepBuilderAPI_MakeWire& wire, size_t index,
+    gp_Pnt& first_point, gp_Pnt& previous_end) {
+    TopoDS_Vertex a, b;
+    TopExp::Vertices(piece.Wire(), a, b);
+    if (a.IsNull() || b.IsNull()) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "curve segment has no native endpoints");
+    const gp_Pnt start = BRep_Tool::Pnt(a), end = BRep_Tool::Pnt(b);
+    if (index == 0) first_point = start;
+    else if (start.Distance(previous_end) > Precision::Confusion()) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "curve segments are disconnected");
+    }
+    previous_end = end;
+    wire.Add(piece.Wire());
+    if (!wire.IsDone()) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "curve wire construction failed");
+    return OCCT_BRIDGE_OK;
+}
+
+occt_bridge_status_t create_curve_wire(occt_bridge_session_t* session,
+    const occt_bridge_vec3_t* points, size_t point_count,
+    const occt_bridge_curve_segment_t* segments, size_t segment_count,
+    int closed, occt_bridge_shape_id_t* out_shape) {
+    if (out_shape == nullptr) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
+    }
+    *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
+    if (points == nullptr || segments == nullptr || segment_count == 0
+        || (closed != 0 && closed != 1)) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid curve-wire parameters");
+    }
+    BRepBuilderAPI_MakeWire wire;
+    gp_Pnt first_point, previous_end;
+    for (size_t index = 0; index < segment_count; ++index) {
+        const auto& segment = segments[index];
+        const auto segment_status = validate_curve_wire_segment(session,segment,points,point_count,segment_count,closed);
+        if(segment_status!=OCCT_BRIDGE_OK)return segment_status;
+        BRepBuilderAPI_MakeWire piece;
+        if (const char* error = add_curve_segment(piece, segment, points)) {
+            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, error);
+        }
+        const auto status = append_curve_wire_piece(session,piece,wire,index,first_point,previous_end);
+        if(status!=OCCT_BRIDGE_OK)return status;
+    }
+    if (closed == 1 && first_point.Distance(previous_end) > Precision::Confusion()) {
+        return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "curve wire is not closed");
+    }
+    if (closed == 1 && !BRep_Tool::IsClosed(wire.Wire())) {
+        return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "curve wire did not form a closed native boundary");
+    }
+    return store_shape(session, wire.Wire(), out_shape);
+}
+
 }  // namespace
 
 extern "C" {
@@ -392,56 +455,10 @@ occt_bridge_status_t occt_bridge_create_segment_wire(
 }
 
 occt_bridge_status_t occt_bridge_create_curve_wire(
-    occt_bridge_session_t* session,
-    const occt_bridge_vec3_t* points,
-    size_t point_count,
-    const occt_bridge_curve_segment_t* segments,
-    size_t segment_count,
-    int closed,
-    occt_bridge_shape_id_t* out_shape) {
-    return guarded(session, [&] {
-        if (out_shape == nullptr) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "out_shape is null");
-        }
-        *out_shape = OCCT_BRIDGE_INVALID_SHAPE_ID;
-        if (points == nullptr || segments == nullptr || segment_count == 0
-            || (closed != 0 && closed != 1)) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "invalid curve-wire parameters");
-        }
-        BRepBuilderAPI_MakeWire wire;
-        gp_Pnt first_point, previous_end;
-        for (size_t index = 0; index < segment_count; ++index) {
-            const auto& segment = segments[index];
-            if (const char* error = curve_segment_error(segment, points, point_count)) {
-                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, error);
-            }
-            if (segment.kind == 3 && (segment.flags & kPeriodic) != 0 && (segment_count != 1 || closed != 1)) {
-                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "periodic explicit B-spline requires a standalone closed wire");
-            }
-            BRepBuilderAPI_MakeWire piece;
-            if (const char* error = add_curve_segment(piece, segment, points)) {
-                return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, error);
-            }
-            TopoDS_Vertex a, b;
-            TopExp::Vertices(piece.Wire(), a, b);
-            if (a.IsNull() || b.IsNull()) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "curve segment has no native endpoints");
-            const gp_Pnt start = BRep_Tool::Pnt(a), end = BRep_Tool::Pnt(b);
-            if (index == 0) first_point = start;
-            else if (start.Distance(previous_end) > Precision::Confusion()) {
-                return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "curve segments are disconnected");
-            }
-            previous_end = end;
-            wire.Add(piece.Wire());
-            if (!wire.IsDone()) return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "curve wire construction failed");
-        }
-        if (closed == 1 && first_point.Distance(previous_end) > Precision::Confusion()) {
-            return fail(session, OCCT_BRIDGE_INVALID_ARGUMENT, "curve wire is not closed");
-        }
-        if (closed == 1 && !BRep_Tool::IsClosed(wire.Wire())) {
-            return fail(session, OCCT_BRIDGE_INVALID_GEOMETRY, "curve wire did not form a closed native boundary");
-        }
-        return store_shape(session, wire.Wire(), out_shape);
-    });
+    occt_bridge_session_t* session, const occt_bridge_vec3_t* points, size_t point_count,
+    const occt_bridge_curve_segment_t* segments, size_t segment_count,
+    int closed, occt_bridge_shape_id_t* out_shape) {
+    return guarded(session,[&] { return create_curve_wire(session,points,point_count,segments,segment_count,closed,out_shape); });
 }
 
 occt_bridge_status_t occt_bridge_curve_point_at_fraction(
